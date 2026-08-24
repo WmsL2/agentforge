@@ -1,0 +1,16 @@
+# Normalize text files to LF for cross-platform development.
+* text=auto eol=lf
+
+# Windows-native command scripts may keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Explicit binary files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
