@@ -1,4 +1,3 @@
-
 name: CI
 
 on:
@@ -35,6 +34,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -49,6 +49,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
@@ -92,13 +93,63 @@ jobs:
 
   test-frontend:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test_db
+
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+
+      SECRET_KEY: ci-only-agentforge-secret-key-1234567890
+      API_KEY: ci-only-agentforge-api-key
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
+      - name: Install backend dependencies
+        run: uv sync --directory backend --dev
+
+      - name: Install frontend dependencies
         run: bun install --frozen-lockfile
         working-directory: frontend
 
@@ -114,19 +165,82 @@ jobs:
         run: bun run test:coverage
         working-directory: frontend
 
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps
+      - name: Apply database migrations
+        run: uv run --directory backend agentforge db upgrade
+
+      - name: Create E2E test user
+        run: >
+          uv run --directory backend agentforge user create
+          --email test@example.com
+          --password TestPassword123!
+
+      - name: Start backend
+        run: |
+          nohup uv run --directory backend agentforge server run \
+            --host 0.0.0.0 \
+            --port 8000 \
+            > /tmp/agentforge-backend.log 2>&1 &
+
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://localhost:8000/api/v1/health/live > /dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Backend failed to start."
+          cat /tmp/agentforge-backend.log
+          exit 1
+
+      - name: Start frontend
+        run: |
+          nohup bun run dev > /tmp/agentforge-frontend.log 2>&1 &
+        working-directory: frontend
+        env:
+          BACKEND_URL: http://localhost:8000
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+          NEXT_PUBLIC_WS_URL: ws://localhost:8000
+          COOKIE_SECURE: "false"
+
+      - name: Wait for frontend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://localhost:3000/login > /dev/null; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Frontend failed to start."
+          cat /tmp/agentforge-frontend.log
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
         working-directory: frontend
 
-      - name: Run E2E tests
-        run: bun run test:e2e
+      - name: Run Foundation E2E tests
+        run: >
+          bunx playwright test
+          e2e/auth.spec.ts
+          e2e/home.spec.ts
+          --project=chromium
         working-directory: frontend
         env:
           CI: true
+          TEST_USER_EMAIL: test@example.com
+          TEST_USER_PASSWORD: TestPassword123!
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -153,6 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
       - uses: actions/checkout@v4
 
