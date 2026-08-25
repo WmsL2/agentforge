@@ -146,7 +146,7 @@ jobs:
         working-directory: backend
 
       - name: Run pip-audit
-        run: uv run pip-audit --require-hashes=false --progress-spinner=off
+        run: uv run pip-audit --progress-spinner=off
         working-directory: backend
 
   docker:
