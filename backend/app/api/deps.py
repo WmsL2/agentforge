@@ -76,6 +76,7 @@ def get_rating_service(db: DBSession) -> MessageRatingService:
 
 
 MessageRatingSvc = Annotated[MessageRatingService, Depends(get_rating_service)]
+
 from app.services.file_upload import FileUploadService
 
 
@@ -85,6 +86,7 @@ def get_file_upload_service(db: DBSession) -> FileUploadService:
 
 
 FileUploadSvc = Annotated[FileUploadService, Depends(get_file_upload_service)]
+
 from app.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
 from app.core.security import verify_token
 from app.db.models.user import User, UserRole
@@ -247,6 +249,7 @@ async def get_current_user_ws(
 
     if not auth_token:
         raise WebSocketException(code=4001, reason="Missing authentication token")
+
     payload = verify_token(auth_token)
     if payload is None:
         raise WebSocketException(code=4001, reason="Invalid or expired token")
@@ -304,15 +307,7 @@ async def verify_api_key(
 
 
 ValidAPIKey = Annotated[str, Depends(verify_api_key)]
-from app.services.contact import ContactService
 
-
-def get_contact_service() -> ContactService:
-    """Create ContactService instance."""
-    return ContactService()
-
-
-ContactSvc = Annotated[ContactService, Depends(get_contact_service)]
 from app.services.user_slash_command import UserSlashCommandService
 
 
@@ -321,6 +316,7 @@ def get_user_slash_command_service(db: DBSession) -> UserSlashCommandService:
 
 
 UserSlashCommandSvc = Annotated[UserSlashCommandService, Depends(get_user_slash_command_service)]
+
 from app.services.admin import AdminService
 
 
