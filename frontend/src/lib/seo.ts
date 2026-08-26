@@ -1,82 +1,129 @@
-/** Single source of truth for SEO metadata.
+/**
+ * Single source of truth for AgentForge SEO metadata.
  *
- *  All public-page metadata helpers (root layout, per-page generateMetadata,
- *  sitemap, robots, manifest, OG image generator) pull from here. Edit one
- *  file to retheme the site's identity.
+ * Public-page metadata helpers such as the root layout, per-page metadata,
+ * sitemap, robots, manifest, and Open Graph image generation read from here.
  *
- *  ENV: NEXT_PUBLIC_SITE_URL = canonical https origin (no trailing slash).
- *  Falls back to a sensible localhost default in dev.
+ * ENV:
+ * NEXT_PUBLIC_SITE_URL = canonical site origin without a trailing slash.
+ * Local development falls back to http://localhost:3000.
  */
 
 import type { Metadata } from "next";
 
-import { APP_NAME } from "@/lib/constants";
 import { defaultLocale, locales } from "@/i18n";
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 
 export const SITE = {
   name: APP_NAME,
-  /** Tagline used in title templates + OG defaults. */
-  tagline: "AI assistant for modern teams",
-  /** One-paragraph default description (≤160 chars for SERP truncation). */
+
+  /**
+   * Product identity used by title templates and Open Graph defaults.
+   *
+   * Keep this aligned with the AgentForge ownership boundary:
+   * the current v0.1 release provides the validated engineering foundation,
+   * while the Agent Platform Core is developed in subsequent versions.
+   */
+  tagline: APP_DESCRIPTION,
+
+  /**
+   * Default public description.
+   *
+   * This describes the project direction without presenting later platform-core
+   * capabilities as already completed in v0.1.
+   */
   description:
-    "Plug in your docs, your tools, and your data. Ask anything — get answers grounded in everything your team has ever shipped.",
-  /** Canonical absolute origin. NO trailing slash. */
+    "AgentForge is an enterprise agent workflow platform built on a validated full-stack foundation, with its workflow and runtime core developed in later versions.",
+
+  /** Canonical absolute origin. No trailing slash. */
   url:
     (process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") as string | undefined) ??
     "http://localhost:3000",
-  /** Twitter handle for `twitter:site` (with @). Empty string disables. */
+
+  /**
+   * Twitter/X handle for twitter:site.
+   * Keep empty until an official AgentForge account exists.
+   */
   twitter: "",
-  /** Theme color used in PWA manifest + browser chrome. */
+
+  /** Theme color used by metadata consumers such as browser chrome and PWA surfaces. */
   themeColor: "#0E0E0C",
-  /** Long-form keywords. Light SEO weight today; useful for clarity. */
+
+  /**
+   * Product and architecture keywords.
+   *
+   * These identify the domain AgentForge is being built for. They do not imply
+   * that every listed platform-core capability is complete in v0.1.
+   */
   keywords: [
-    "AI assistant",
-    "team knowledge",
-    "AI agent",
-    "RAG",
-    "team productivity",
-    "knowledge base",
-    "internal search",
-    "B2B SaaS",
+    "AgentForge",
+    "enterprise agent workflow platform",
+    "AI agent platform",
+    "agent workflow",
+    "workflow orchestration",
+    "agent runtime",
+    "tool execution",
+    "Model Context Protocol",
+    "MCP",
+    "durable execution",
+    "Human-in-the-Loop",
+    "HITL",
+    "agent observability",
   ],
-  /** Locale defaults — pulls from your i18n config. */
+
+  /** Locale defaults inherited from the application i18n configuration. */
   defaultLocale,
   locales: [...locales],
 } as const;
 
-/** Map our locale codes → BCP-47 / Open Graph locale strings. */
+/** Map application locale codes to BCP-47 / Open Graph locale values. */
 export const OG_LOCALE: Record<(typeof locales)[number], string> = {
   en: "en_US",
   pl: "pl_PL",
 };
 
 interface PageMetaInput {
-  /** Page-specific title fragment. The template adds " | <brand>". */
+  /** Page-specific title fragment. The helper appends the AgentForge brand when needed. */
   title: string;
+
+  /** Page-specific description. */
   description: string;
-  /** Path WITHOUT locale prefix (e.g. "/pricing", "/"). Used to build canonical + alternates. */
+
+  /**
+   * Path without the locale prefix.
+   *
+   * Examples:
+   * "/" or "/about".
+   */
   path?: string;
-  /** Active locale. Defaults to site default. */
+
+  /** Active locale. Defaults to the configured site locale. */
   locale?: (typeof locales)[number];
-  /** Disable indexing (e.g. drafts, internal pages). */
+
+  /** Prevent search-engine indexing for internal or non-public pages. */
   noindex?: boolean;
-  /** Override OG image. Defaults to dynamic /opengraph-image. */
+
+  /** Override the default dynamically generated Open Graph image. */
   ogImage?: string;
 }
 
-/** Build a fully-formed Next.js Metadata object for a public page. */
+/** Build a complete Next.js Metadata object for a public AgentForge page. */
 export function pageMetadata(input: PageMetaInput): Metadata {
   const locale = input.locale ?? SITE.defaultLocale;
   const path = normalizePath(input.path ?? "/");
   const localizedPath = path === "/" ? `/${locale}` : `/${locale}${path}`;
   const canonical = `${SITE.url}${localizedPath}`;
-  const title = input.title === SITE.name ? SITE.name : `${input.title} | ${SITE.name}`;
+
+  const title =
+    input.title === SITE.name ? SITE.name : `${input.title} | ${SITE.name}`;
+
   const ogImageUrl = input.ogImage ?? `${SITE.url}/opengraph-image`;
 
   return {
     title,
     description: input.description,
     keywords: [...SITE.keywords],
+
     alternates: {
       canonical,
       languages: Object.fromEntries(
@@ -86,6 +133,7 @@ export function pageMetadata(input: PageMetaInput): Metadata {
         ]),
       ),
     },
+
     openGraph: {
       title,
       description: input.description,
@@ -93,7 +141,9 @@ export function pageMetadata(input: PageMetaInput): Metadata {
       siteName: SITE.name,
       type: "website",
       locale: OG_LOCALE[locale],
-      alternateLocale: SITE.locales.filter((l) => l !== locale).map((l) => OG_LOCALE[l]),
+      alternateLocale: SITE.locales
+        .filter((loc) => loc !== locale)
+        .map((loc) => OG_LOCALE[loc]),
       images: [
         {
           url: ogImageUrl,
@@ -103,21 +153,42 @@ export function pageMetadata(input: PageMetaInput): Metadata {
         },
       ],
     },
+
     twitter: {
       card: "summary_large_image",
       title,
       description: input.description,
       images: [ogImageUrl],
-      ...(SITE.twitter ? { site: SITE.twitter, creator: SITE.twitter } : {}),
+      ...(SITE.twitter
+        ? {
+            site: SITE.twitter,
+            creator: SITE.twitter,
+          }
+        : {}),
     },
+
     robots: input.noindex
-      ? { index: false, follow: false }
-      : { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+      ? {
+          index: false,
+          follow: false,
+        }
+      : {
+          index: true,
+          follow: true,
+          "max-image-preview": "large",
+          "max-snippet": -1,
+        },
   };
 }
 
-function normalizePath(p: string): string {
-  if (!p.startsWith("/")) return `/${p}`;
-  if (p.length > 1 && p.endsWith("/")) return p.slice(0, -1);
-  return p;
+function normalizePath(path: string): string {
+  if (!path.startsWith("/")) {
+    return `/${path}`;
+  }
+
+  if (path.length > 1 && path.endsWith("/")) {
+    return path.slice(0, -1);
+  }
+
+  return path;
 }
