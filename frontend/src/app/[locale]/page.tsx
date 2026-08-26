@@ -1,142 +1,129 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
-  Download,
-  Lock,
-  Quote,
-  RefreshCw,
-  Search,
-  Smartphone,
-  ThumbsUp,
-  Users,
+  ArrowRight,
+  Boxes,
+  CheckCircle2,
+  Database,
+  GitBranch,
+  Github,
+  KeyRound,
+  Layers3,
+  Network,
+  PlayCircle,
+  ServerCog,
+  ShieldCheck,
   Workflow,
 } from "lucide-react";
-import { getTranslations } from "next-intl/server";
 
 import type { Locale } from "@/i18n";
+import { APP_DESCRIPTION, APP_NAME, ROUTES } from "@/lib/constants";
 import { pageMetadata } from "@/lib/seo";
 
-import { CaseStudy } from "@/components/marketing/case-study";
-import { ComparisonTable } from "@/components/marketing/comparison-table";
-import { DataFlowDiagram } from "@/components/marketing/data-flow-diagram";
-import { EnterpriseSecurity } from "@/components/marketing/enterprise-security";
-import { FaqAccordion } from "@/components/marketing/faq-accordion";
-import { FeatureBento } from "@/components/marketing/feature-bento";
-import { FeatureMockup } from "@/components/marketing/feature-mockup";
-import { FinalCta } from "@/components/marketing/final-cta";
-import { IntegrationsGrid } from "@/components/marketing/integrations-grid";
-import { OutcomesBand } from "@/components/marketing/outcomes-band";
-import {
-  buildFooterColumns,
-  buildFooterLegal,
-  buildMarketingNav,
-} from "@/components/marketing/footer-config";
-import { Hero } from "@/components/marketing/hero";
-import { HowItWorks } from "@/components/marketing/how-it-works";
-import { LogosStrip } from "@/components/marketing/logos-strip";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
-import { Marquee } from "@/components/marketing/marquee";
-import { PillNav } from "@/components/marketing/pill-nav";
-import { PricingTeaser } from "@/components/marketing/pricing-teaser";
-import { Reveal } from "@/components/marketing/reveal";
-import { Section } from "@/components/marketing/section";
-import { SmoothScroll } from "@/components/marketing/smooth-scroll";
-import { TestimonialGrid } from "@/components/marketing/testimonial-grid";
-import { JsonLd } from "@/components/seo/json-ld";
-import { APP_NAME, ROUTES } from "@/lib/constants";
-import { faqSchema, organizationSchema, websiteSchema } from "@/lib/schema-org";
+const PRODUCT_NAME = "AgentForge";
+const REPOSITORY_URL = "https://github.com/WmsL2/agentforge";
 
-const LOGOS = [
-  { brand: "google" as const, name: "Google" },
-  { brand: "microsoft" as const, name: "Microsoft" },
-  { brand: "stripe" as const, name: "Stripe" },
-  { brand: "notion" as const, name: "Notion" },
-  { brand: "linear" as const, name: "Linear" },
-  { brand: "vercel" as const, name: "Vercel" },
-  { brand: "figma" as const, name: "Figma" },
-  { brand: "loom" as const, name: "Loom" },
-];
+const FOUNDATION_CAPABILITIES = [
+  {
+    title: "Application foundation",
+    description:
+      "FastAPI backend and Next.js frontend provide the HTTP, UI, routing, and application shell.",
+    icon: Layers3,
+  },
+  {
+    title: "Authentication & sessions",
+    description:
+      "JWT-based authentication, users, sessions, protected routes, and backend authorization are in place.",
+    icon: KeyRound,
+  },
+  {
+    title: "Persistence layer",
+    description:
+      "PostgreSQL, SQLAlchemy, repositories, services, and Alembic migrations form the persistence foundation.",
+    icon: Database,
+  },
+  {
+    title: "Async infrastructure",
+    description:
+      "Redis and Celery provide the broker and background execution infrastructure required by later platform work.",
+    icon: ServerCog,
+  },
+  {
+    title: "Delivery baseline",
+    description:
+      "Docker Compose and GitHub Actions provide repeatable local environments and continuous integration.",
+    icon: Boxes,
+  },
+  {
+    title: "Quality baseline",
+    description:
+      "Ruff, pytest, ESLint, TypeScript, Vitest, Playwright, build checks, and CI guard the engineering foundation.",
+    icon: CheckCircle2,
+  },
+] as const;
 
-const MARQUEE_ITEMS = [
-  "Discover",
-  "Search",
-  "Summarize",
-  "Decide",
-  "Connect",
-  "Automate",
-  "Track",
-  "Improve",
-  "Onboard",
-  "Analyze",
-  "Translate",
-  "Draft",
-  "Schedule",
-  "Resolve",
-  "Forecast",
-  "Iterate",
-];
+const PLATFORM_CORE = [
+  {
+    title: "Workflow Engine",
+    description:
+      "Workflow definitions, validation, execution semantics, node transitions, and versioned workflow behavior.",
+    icon: Workflow,
+  },
+  {
+    title: "Agent Runtime",
+    description:
+      "A runtime abstraction for model execution, agent loops, state transitions, and pluggable execution backends.",
+    icon: PlayCircle,
+  },
+  {
+    title: "Tool / MCP Platform",
+    description:
+      "Tool registration, schema normalization, execution policy, MCP connectivity, and controlled tool invocation.",
+    icon: Network,
+  },
+  {
+    title: "Durable Execution",
+    description:
+      "Checkpoint persistence, pause and resume semantics, recovery, and Human-in-the-Loop control points.",
+    icon: GitBranch,
+  },
+  {
+    title: "Run Observability",
+    description:
+      "Structured Run, Step, and Trace records for debugging, replay, operational visibility, and auditability.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Workspace / RBAC",
+    description:
+      "Enterprise resource boundaries and role-based access control for future multi-user platform operation.",
+    icon: Boxes,
+  },
+] as const;
 
-const TESTIMONIALS = [
+const ROADMAP = [
   {
-    quote:
-      "Our team finds answers in seconds instead of digging through Notion and Google Drive. It paid for itself in the first week.",
-    name: "Marta Kowal",
-    title: "Head of Operations",
-    company: "Northwind Labs",
+    version: "v0.1",
+    title: "Foundation",
+    status: "Current",
+    description:
+      "Establish and validate the engineering foundation before building AgentForge-owned platform capabilities.",
   },
   {
-    quote:
-      "We rolled it out to support, then sales picked it up, then everyone wanted access. It just keeps surprising us.",
-    name: "Daniel Reyes",
-    title: "VP Customer Success",
-    company: "Acme Studios",
+    version: "v0.2",
+    title: "Workflow Core",
+    status: "Next",
+    description:
+      "Begin the self-built workflow domain, validation model, execution engine, and runtime boundary.",
   },
   {
-    quote:
-      "The chat is great — the analytics dashboard is what sold it to me. We finally see how the team is using AI.",
-    name: "Priya Anand",
-    title: "Chief of Staff",
-    company: "Helios",
+    version: "Later",
+    title: "Platform Expansion",
+    status: "Planned",
+    description:
+      "Add durable execution, Tool/MCP integration, observability, enterprise resource boundaries, and richer orchestration.",
   },
-];
-
-const PLANS = [
-  {
-    name: "Starter",
-    price: "$0",
-    cadence: "/ month",
-    description: "For individuals exploring the product.",
-    features: ["100 messages / day", "1 connected data source", "Community support"],
-    cta: { label: "Start free", href: ROUTES.REGISTER },
-  },
-  {
-    name: "Pro",
-    price: "$29",
-    cadence: "/ user / month",
-    description: "For small teams getting real work done.",
-    features: [
-      "Unlimited messages",
-      "10 connected sources",
-      "Email + chat support",
-      "Workflow automations",
-    ],
-    cta: { label: "Start 14-day trial", href: ROUTES.REGISTER },
-    featured: true,
-    badge: "Most popular",
-  },
-  {
-    name: "Business",
-    price: "$99",
-    cadence: "/ user / month",
-    description: "For organisations rolling out across teams.",
-    features: [
-      "Everything in Pro",
-      "SSO + audit log",
-      "Role-based access control",
-      "Dedicated success manager",
-    ],
-    cta: { label: "Talk to sales", href: ROUTES.CONTACT },
-  },
-];
+] as const;
 
 export async function generateMetadata({
   params,
@@ -144,328 +131,416 @@ export async function generateMetadata({
   params: Promise<{ locale: Locale }>;
 }): Promise<Metadata> {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "marketing.landing" });
+
   return pageMetadata({
     title: APP_NAME,
-    description: t("metaDescription"),
+    description: APP_DESCRIPTION,
     path: "/",
     locale,
   });
 }
 
-export default async function HomePage() {
-  const t = await getTranslations("marketing.landing");
-  const tNav = await getTranslations("marketing");
-
-  const navLinks = buildMarketingNav((k) => tNav(k));
-  const footerColumns = buildFooterColumns((k) => tNav(k));
-  const footerLegal = buildFooterLegal((k) => tNav(k));
-
-  const heroStats = [
-    { value: "10k", label: t("hero.stat_teams") },
-    { value: "98%", label: t("hero.stat_speed") },
-    { value: "24/7", label: t("hero.stat_uptime") },
-  ];
-  const faqItems = t.raw("faq.items") as { q: string; a: string }[];
-
+export default function HomePage() {
   return (
-    <>
-      <SmoothScroll />
-      <JsonLd data={[organizationSchema(), websiteSchema(), faqSchema(faqItems)]} />
+    <div className="bg-background text-foreground min-h-screen">
+      <header className="border-foreground/10 bg-background/90 sticky top-0 z-40 border-b backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <a href="#main" className="font-display text-lg font-semibold tracking-tight">
+            {PRODUCT_NAME}
+          </a>
 
-      <PillNav
-        brand={APP_NAME}
-        links={navLinks}
-        ctaLabel={tNav("nav.getStarted")}
-        ctaHref={ROUTES.REGISTER}
-        secondaryCta={{ label: tNav("nav.signIn"), href: ROUTES.LOGIN }}
-      />
+          <nav
+            aria-label="Primary navigation"
+            className="text-foreground/65 hidden items-center gap-6 text-sm md:flex"
+          >
+            <a className="hover:text-foreground transition-colors" href="#foundation">
+              Foundation
+            </a>
+            <a className="hover:text-foreground transition-colors" href="#architecture">
+              Architecture
+            </a>
+            <a className="hover:text-foreground transition-colors" href="#roadmap">
+              Roadmap
+            </a>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href={ROUTES.LOGIN}
+              className="text-foreground/70 hover:text-foreground hidden rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:inline-flex"
+            >
+              Sign in
+            </Link>
+            <Link
+              href={ROUTES.DASHBOARD}
+              className="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            >
+              Open app
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </header>
 
       <main id="main">
-        <Hero
-          eyebrow={t("hero.eyebrow")}
-          title={
-            <>
-              {t("hero.titlePre")} <em>{t("hero.titleHighlight")}</em> <em>{t("hero.titleEm")}</em>
-            </>
-          }
-          description={t("hero.description")}
-          primaryCta={{ label: t("hero.ctaPrimary"), href: ROUTES.REGISTER }}
-          secondaryCta={{ label: t("hero.ctaSecondary"), href: ROUTES.CONTACT }}
-          ratingLabel={t("hero.ratingLabel")}
-          trustNote={t("hero.trustNote")}
-          stats={heroStats}
-          theme="dark"
-        />
+        <section className="border-foreground/10 relative overflow-hidden border-b">
+          <div
+            aria-hidden
+            className="from-brand/10 via-background to-background absolute inset-0 bg-gradient-to-br"
+          />
 
-        <Marquee items={MARQUEE_ITEMS} />
+          <div className="relative mx-auto grid max-w-7xl gap-14 px-5 py-20 sm:px-8 md:py-28 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:py-32">
+            <div>
+              <div className="border-foreground/10 bg-foreground/[0.03] mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs">
+                <span className="bg-brand h-2 w-2 rounded-full" />
+                v0.1 · Foundation
+              </div>
 
-        <Section theme="light" padding="py-16 md:py-20">
-          <Reveal>
-            <LogosStrip label="Trusted by teams across industries" logos={LOGOS} />
-          </Reveal>
-        </Section>
+              <h1 className="font-display max-w-4xl text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
+                Enterprise infrastructure for{" "}
+                <span className="text-foreground/55">agent workflows.</span>
+              </h1>
 
-        <Section theme="dark" id="how">
-          <div className="mb-14 max-w-2xl">
-            <div className="mb-5">
-              <span className="eyebrow-badge">How it works</span>
+              <p className="text-foreground/65 mt-7 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
+                {PRODUCT_NAME} is an Enterprise Agent Workflow Platform. The current v0.1 release
+                focuses on establishing a reliable full-stack engineering foundation before the
+                workflow engine, runtime, tool platform, durable execution, and enterprise resource
+                model are built.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href={ROUTES.DASHBOARD}
+                  className="bg-foreground text-background hover:bg-foreground/90 inline-flex h-11 items-center gap-2 rounded-lg px-5 text-sm font-semibold transition-colors"
+                >
+                  Open dashboard
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+
+                <a
+                  href={REPOSITORY_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="border-foreground/15 hover:border-foreground/30 hover:bg-foreground/[0.03] inline-flex h-11 items-center gap-2 rounded-lg border px-5 text-sm font-semibold transition-colors"
+                >
+                  <Github className="h-4 w-4" />
+                  View source
+                </a>
+              </div>
+
+              <p className="text-foreground/45 mt-5 max-w-2xl text-sm leading-6">
+                v0.1 deliberately does not claim Workflow Engine, MCP, Checkpoint/HITL, enterprise
+                RBAC, or other later platform capabilities as completed features.
+              </p>
             </div>
-            <h2 className="text-display-lg text-foreground [&_em]:font-accent [&_em]:font-normal [&_em]:italic">
-              Get started in <em>three steps.</em>
-            </h2>
+
+            <div className="border-foreground/10 bg-card/70 rounded-3xl border p-5 shadow-sm backdrop-blur sm:p-7">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-foreground/45 font-mono text-xs tracking-wider uppercase">
+                    Platform status
+                  </p>
+                  <h2 className="font-display mt-1 text-xl font-semibold">
+                    Foundation before orchestration
+                  </h2>
+                </div>
+                <div className="bg-brand/15 flex h-11 w-11 items-center justify-center rounded-xl">
+                  <Layers3 className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="mt-7 space-y-3">
+                <div className="border-foreground/10 bg-background rounded-2xl border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-medium">Web engineering foundation</span>
+                    <span className="bg-brand/15 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase">
+                      Validated
+                    </span>
+                  </div>
+                  <p className="text-foreground/55 mt-2 text-sm leading-6">
+                    Auth, database, Redis, Celery, frontend, Docker, tests, and CI.
+                  </p>
+                </div>
+
+                <div className="border-foreground/10 bg-background rounded-2xl border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-medium">Agent Platform Core</span>
+                    <span className="border-foreground/15 text-foreground/55 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold uppercase">
+                      Planned
+                    </span>
+                  </div>
+                  <p className="text-foreground/55 mt-2 text-sm leading-6">
+                    Workflow, runtime, tools, durable execution, traces, and enterprise boundaries.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-foreground/10 mt-5 border-t pt-5">
+                <p className="text-foreground/45 font-mono text-[11px] tracking-wider uppercase">
+                  Design principle
+                </p>
+                <p className="text-foreground/75 mt-2 text-sm leading-6">
+                  Reuse mature web infrastructure. Own the agent platform architecture.
+                </p>
+              </div>
+            </div>
           </div>
-          <Reveal>
-            <HowItWorks />
-          </Reveal>
-        </Section>
+        </section>
 
-        <Section theme="light">
-          <Reveal>
-            <OutcomesBand />
-          </Reveal>
-        </Section>
-
-        <Section theme="dark" id="features">
-          <Reveal>
-            <FeatureBento
-              eyebrow="Connected knowledge"
-              title={
-                <>
-                  All your data, <em>one assistant.</em>
-                </>
-              }
-              description="Sync from Google Drive, Notion, Slack, S3 and more. Files stay where they are — we keep them indexed and ready to answer."
-              cta={{ label: "See connected sources", href: ROUTES.RAG }}
-              mockup={<FeatureMockup kind="rag" className="max-w-none" />}
-              mockupSide="left"
-              stat={{ value: "20+", label: "connected data sources" }}
-              bullets={[
-                {
-                  icon: RefreshCw,
-                  title: "Always up to date",
-                  body: "Documents re-index automatically when they change at the source.",
-                },
-                {
-                  icon: Lock,
-                  title: "Granular permissions",
-                  body: "Each user only sees what they're allowed to see. Nothing leaks.",
-                },
-                {
-                  icon: Search,
-                  title: "Built-in search",
-                  body: "Find anything across every connected source from one box.",
-                },
-              ]}
-            />
-          </Reveal>
-        </Section>
-
-        <Section theme="light">
-          <Reveal>
-            <FeatureBento
-              eyebrow="AI Chat"
-              title={
-                <>
-                  Answers grounded in <em>your own work.</em>
-                </>
-              }
-              description="Ask questions in plain English and get answers with citations. Your assistant remembers context and adapts as your work evolves."
-              cta={{ label: "Try the chat", href: ROUTES.CHAT }}
-              mockup={<FeatureMockup kind="agents" className="max-w-none" />}
-              mockupSide="right"
-              stat={{ value: "100%", label: "answers cite their sources" }}
-              bullets={[
-                {
-                  icon: Quote,
-                  title: "Cites sources, every time",
-                  body: "Every answer links back to the document or ticket it came from.",
-                },
-                {
-                  icon: Workflow,
-                  title: "Multi-step reasoning",
-                  body: "Breaks complex requests into steps and acts on each.",
-                },
-                {
-                  icon: Smartphone,
-                  title: "Works on web and mobile",
-                  body: "Identical across devices, plus Slack and Teams integrations.",
-                },
-              ]}
-            />
-          </Reveal>
-        </Section>
-
-        <Section theme="dark">
-          <Reveal>
-            <FeatureBento
-              eyebrow="Insights"
-              title={
-                <>
-                  Know what your team <em>is asking.</em>
-                </>
-              }
-              description="A live dashboard of every question asked, answer rated, and workflow run. Spot gaps, find power users, and prove the ROI."
-              cta={{ label: "Explore the dashboard", href: ROUTES.DASHBOARD }}
-              mockup={<FeatureMockup kind="billing" className="max-w-none" />}
-              mockupSide="left"
-              stat={{ value: "+18%", label: "avg. monthly engagement" }}
-              bullets={[
-                {
-                  icon: Users,
-                  title: "Usage by team or person",
-                  body: "Drill down to see who's getting value and where questions concentrate.",
-                },
-                {
-                  icon: ThumbsUp,
-                  title: "Quality feedback loop",
-                  body: "Users rate answers; you see what's working and what to improve.",
-                },
-                {
-                  icon: Download,
-                  title: "Export to your warehouse",
-                  body: "Stream events to BigQuery, Snowflake or your tools via the API.",
-                },
-              ]}
-            />
-          </Reveal>
-        </Section>
-
-        <Section theme="light" className="relative overflow-hidden">
-          <div aria-hidden className="bg-dots pointer-events-none absolute inset-0 -z-10" />
-          <div className="mb-14 max-w-2xl">
-            <div className="mb-5">
-              <span className="eyebrow-badge">How it connects</span>
-            </div>
-            <h2 className="text-display-lg text-foreground [&_em]:font-accent [&_em]:font-normal [&_em]:italic">
-              Your data flows in. <em>Answers come back.</em>
+        <section id="foundation" className="mx-auto max-w-7xl px-5 py-20 sm:px-8 md:py-24">
+          <div className="max-w-3xl">
+            <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
+              v0.1 Foundation
+            </p>
+            <h2 className="font-display mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+              What is implemented today
             </h2>
-            <p className="text-foreground/70 mt-5 max-w-xl text-lg leading-relaxed">
-              Source documents, conversations, and cloud files are continuously indexed. Every
-              answer is grounded in your own work — with citations back to the source.
+            <p className="text-foreground/60 mt-4 text-base leading-7">
+              These capabilities belong to the engineering foundation. They make the platform
+              deployable, testable, and ready for the AgentForge-owned core that follows.
             </p>
           </div>
-          <Reveal>
-            <DataFlowDiagram />
-          </Reveal>
-        </Section>
 
-        <Section theme="dark" id="security">
-          <Reveal>
-            <EnterpriseSecurity
-              cta={{ label: "Read our security overview", href: ROUTES.SECURITY }}
-            />
-          </Reveal>
-        </Section>
+          <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {FOUNDATION_CAPABILITIES.map((capability) => {
+              const Icon = capability.icon;
 
-        <Section theme="light">
-          <Reveal>
-            <IntegrationsGrid cta={{ label: "Browse all integrations", href: ROUTES.HELP }} />
-          </Reveal>
-        </Section>
-
-        <Section theme="dark">
-          <Reveal>
-            <CaseStudy
-              quote="We replaced three internal tools and cut answer time from hours to seconds. Onboarding a new hire used to take a month — now it's a week."
-              name="Marta Kowal"
-              role="COO"
-              company="Northwind Labs"
-              metrics={[
-                { value: "−68%", label: "time to first answer" },
-                { value: "3×", label: "faster onboarding" },
-                { value: "12 hrs", label: "saved per person / week" },
-              ]}
-            />
-          </Reveal>
-        </Section>
-
-        <Section theme="light">
-          <div className="mb-14 text-center">
-            <p className="eyebrow text-foreground/55 mb-4">{t("testimonials.eyebrow")}</p>
-            <h2 className="text-display-lg text-foreground [&_em]:font-accent mx-auto max-w-2xl [&_em]:font-normal [&_em]:italic">
-              {t("testimonials.titlePre")} <em>{t("testimonials.titleEm")}</em>
-            </h2>
+              return (
+                <article
+                  key={capability.title}
+                  className="border-foreground/10 bg-card rounded-2xl border p-6"
+                >
+                  <div className="bg-foreground/[0.06] flex h-10 w-10 items-center justify-center rounded-xl">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="font-display mt-5 text-lg font-semibold">{capability.title}</h3>
+                  <p className="text-foreground/60 mt-2 text-sm leading-6">
+                    {capability.description}
+                  </p>
+                </article>
+              );
+            })}
           </div>
-          <Reveal>
-            <TestimonialGrid items={TESTIMONIALS} />
-          </Reveal>
-        </Section>
+        </section>
 
-        <Section theme="light">
-          <Reveal>
-            <ComparisonTable
-              brand={APP_NAME}
-              alternatives={["Generic AI chat", "DIY / in-house"]}
-              rows={[
-                { feature: "Grounded in your own data", cells: ["yes", "no", "partial"] },
-                { feature: "Citations on every answer", cells: ["yes", "no", "partial"] },
-                { feature: "Connects to your tools", cells: ["yes", "partial", "partial"] },
-                {
-                  feature: "Enterprise security (SSO, audit)",
-                  cells: ["yes", "partial", "partial"],
-                },
-                { feature: "Usage analytics & ROI", cells: ["yes", "no", "partial"] },
-                { feature: "Live in minutes", cells: ["yes", "yes", "no"] },
-                { feature: "Dedicated support", cells: ["yes", "no", "partial"] },
-              ]}
-            />
-          </Reveal>
-        </Section>
-
-        <Section theme="dark" id="pricing">
-          <div className="mb-14 max-w-2xl">
-            <div className="mb-5">
-              <span className="eyebrow-badge">{t("pricing.eyebrow")}</span>
+        <section id="architecture" className="border-foreground/10 bg-foreground/[0.025] border-y">
+          <div className="mx-auto max-w-7xl px-5 py-20 sm:px-8 md:py-24">
+            <div className="max-w-3xl">
+              <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
+                Ownership boundary
+              </p>
+              <h2 className="font-display mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+                Mature foundation. Self-built platform core.
+              </h2>
+              <p className="text-foreground/60 mt-4 text-base leading-7">
+                AgentForge is not defined by the starter stack. The starter stack provides common
+                web engineering capabilities; the Agent Platform Core is the part designed and
+                implemented specifically for AgentForge.
+              </p>
             </div>
-            <h2 className="text-display-lg text-foreground [&_em]:font-accent [&_em]:font-normal [&_em]:italic">
-              {t("pricing.titlePre")} <em>{t("pricing.titleEm")}</em>
+
+            <div className="mt-12 grid gap-6 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
+              <div className="border-foreground/10 bg-background rounded-3xl border p-7">
+                <div className="flex items-center gap-3">
+                  <div className="bg-foreground/[0.06] flex h-10 w-10 items-center justify-center rounded-xl">
+                    <ServerCog className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-foreground/45 font-mono text-[11px] tracking-wider uppercase">
+                      Inherited foundation
+                    </p>
+                    <h3 className="font-display text-xl font-semibold">
+                      Web Engineering Foundation
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-foreground/65 mt-6 flex flex-wrap gap-2 text-sm">
+                  {[
+                    "FastAPI",
+                    "Authentication",
+                    "PostgreSQL",
+                    "SQLAlchemy",
+                    "Redis",
+                    "Celery",
+                    "Next.js",
+                    "Docker",
+                    "CI",
+                  ].map((item) => (
+                    <span
+                      key={item}
+                      className="border-foreground/10 bg-foreground/[0.03] rounded-lg border px-3 py-1.5"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-foreground/55 mt-6 text-sm leading-6">
+                  Purpose: provide reliable application infrastructure without spending project
+                  effort rebuilding solved web engineering problems.
+                </p>
+              </div>
+
+              <div className="hidden items-center justify-center lg:flex">
+                <ArrowRight className="text-foreground/30 h-7 w-7" />
+              </div>
+
+              <div className="border-brand/30 bg-brand/[0.04] rounded-3xl border p-7">
+                <div className="flex items-center gap-3">
+                  <div className="bg-brand/15 flex h-10 w-10 items-center justify-center rounded-xl">
+                    <Workflow className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-foreground/45 font-mono text-[11px] tracking-wider uppercase">
+                      AgentForge owned
+                    </p>
+                    <h3 className="font-display text-xl font-semibold">Agent Platform Core</h3>
+                  </div>
+                </div>
+
+                <div className="text-foreground/65 mt-6 flex flex-wrap gap-2 text-sm">
+                  {[
+                    "Workflow Engine",
+                    "Agent Runtime",
+                    "Tool / MCP",
+                    "Checkpoint / HITL",
+                    "Run / Step / Trace",
+                    "Workspace / RBAC",
+                  ].map((item) => (
+                    <span
+                      key={item}
+                      className="border-brand/20 bg-background/60 rounded-lg border px-3 py-1.5"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-foreground/55 mt-6 text-sm leading-6">
+                  Status: planned beyond the v0.1 Foundation. These are not presented as completed
+                  capabilities on this page.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-12">
+              <div className="mb-6 flex items-center gap-3">
+                <GitBranch className="h-5 w-5" />
+                <h3 className="font-display text-xl font-semibold">Planned platform core</h3>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {PLATFORM_CORE.map((capability) => {
+                  const Icon = capability.icon;
+
+                  return (
+                    <article
+                      key={capability.title}
+                      className="border-foreground/10 bg-background rounded-2xl border p-5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="text-foreground/70 h-5 w-5" />
+                        <h4 className="font-semibold">{capability.title}</h4>
+                      </div>
+                      <p className="text-foreground/55 mt-3 text-sm leading-6">
+                        {capability.description}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="roadmap" className="mx-auto max-w-7xl px-5 py-20 sm:px-8 md:py-24">
+          <div className="max-w-3xl">
+            <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
+              Development roadmap
+            </p>
+            <h2 className="font-display mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+              Build the platform in layers
             </h2>
-            <p className="text-foreground/70 mt-5 max-w-xl text-lg leading-relaxed">
-              {t("pricing.subtitle")}
+            <p className="text-foreground/60 mt-4 text-base leading-7">
+              Each version should leave the repository in a validated state before the next platform
+              layer is added.
             </p>
           </div>
-          <Reveal>
-            <PricingTeaser plans={PLANS} fullPricingHref={ROUTES.PRICING} />
-          </Reveal>
-        </Section>
 
-        <Section theme="light" id="faq">
-          <div className="mb-14 text-center">
-            <p className="eyebrow text-foreground/55 mb-4">{t("faq.eyebrow")}</p>
-            <h2 className="text-display-lg text-foreground">{t("faq.title")}</h2>
+          <div className="mt-10 grid gap-4 lg:grid-cols-3">
+            {ROADMAP.map((item) => (
+              <article
+                key={`${item.version}-${item.title}`}
+                className="border-foreground/10 bg-card rounded-2xl border p-6"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-mono text-sm font-semibold">{item.version}</span>
+                  <span
+                    className={
+                      item.status === "Current"
+                        ? "bg-brand/15 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase"
+                        : "border-foreground/15 text-foreground/50 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold uppercase"
+                    }
+                  >
+                    {item.status}
+                  </span>
+                </div>
+
+                <h3 className="font-display mt-5 text-xl font-semibold">{item.title}</h3>
+                <p className="text-foreground/60 mt-3 text-sm leading-6">{item.description}</p>
+              </article>
+            ))}
           </div>
-          <Reveal>
-            <FaqAccordion
-              items={faqItems.map((it) => ({ ...it, q: it.q.replace("{appName}", APP_NAME) }))}
-            />
-          </Reveal>
-        </Section>
+        </section>
 
-        <Section theme="light" padding="pb-24 md:pb-32">
-          <Reveal>
-            <FinalCta
-              stat={{ value: t("finalCta.statValue"), label: t("finalCta.statLabel") }}
-              title={
-                <>
-                  {t("finalCta.titlePre")} <em>{t("finalCta.titleEm")}</em>
-                </>
-              }
-              description={t("finalCta.description")}
-              primary={{ label: t("finalCta.primary"), href: ROUTES.REGISTER }}
-              secondary={{ label: t("finalCta.secondary"), href: ROUTES.PRICING }}
-            />
-          </Reveal>
-        </Section>
+        <section className="border-foreground/10 bg-foreground/[0.025] border-t">
+          <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+            <div className="border-foreground/10 bg-card grid gap-8 rounded-3xl border p-7 md:grid-cols-[1fr_auto] md:items-center md:p-10">
+              <div>
+                <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
+                  AgentForge v0.1
+                </p>
+                <h2 className="font-display mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+                  Foundation established. Platform core comes next.
+                </h2>
+                <p className="text-foreground/60 mt-3 max-w-2xl text-sm leading-6 sm:text-base">
+                  Inspect the repository, run the stack locally, or continue into the authenticated
+                  application shell.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3 md:justify-end">
+                <a
+                  href={REPOSITORY_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="border-foreground/15 hover:border-foreground/30 inline-flex h-11 items-center gap-2 rounded-lg border px-5 text-sm font-semibold transition-colors"
+                >
+                  <Github className="h-4 w-4" />
+                  Repository
+                </a>
+                <Link
+                  href={ROUTES.DASHBOARD}
+                  className="bg-foreground text-background hover:bg-foreground/90 inline-flex h-11 items-center gap-2 rounded-lg px-5 text-sm font-semibold transition-colors"
+                >
+                  Open app
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
-      <MarketingFooter
-        brand={APP_NAME}
-        tagline={tNav("footer.tagline")}
-        operationalLabel={tNav("footer.operational")}
-        columns={footerColumns}
-        legal={footerLegal}
-      />
-    </>
+      <footer className="border-foreground/10 border-t">
+        <div className="text-foreground/50 mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-sm sm:px-8 md:flex-row md:items-center md:justify-between">
+          <p>
+            {PRODUCT_NAME} · {APP_DESCRIPTION}
+          </p>
+          <p>v0.1 Foundation</p>
+        </div>
+      </footer>
+    </div>
   );
 }
