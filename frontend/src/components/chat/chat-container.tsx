@@ -279,41 +279,6 @@ export function ChatContainer() {
       [messages, sendMessage],
     );
 
-  const slashContext = {
-    clearChat: clearMessages,
-
-    regenerateLast: () => {
-      for (
-        let i =
-          messages.length - 1;
-        i >= 0;
-        i--
-      ) {
-        const message =
-          messages[i];
-
-        if (
-          message?.role ===
-          "assistant"
-        ) {
-          handleRegenerate(
-            message.id,
-          );
-
-          return;
-        }
-      }
-    },
-
-    openSettings: () => {
-      document
-        .querySelector<HTMLButtonElement>(
-          "[data-chat-settings-trigger]",
-        )
-        ?.click();
-    },
-  };
-
   return (
     <ChatUI
       messages={messages}
@@ -335,9 +300,6 @@ export function ChatContainer() {
       }
       onRegenerate={
         handleRegenerate
-      }
-      slashContext={
-        slashContext
       }
       queuedMessages={
         queuedMessages
@@ -394,7 +356,6 @@ interface ChatUIProps {
   onRegenerate?: (
     messageId: string,
   ) => void;
-  slashContext?: import("./slash-commands").SlashCommandContext;
   queuedMessages?: import("@/hooks/use-chat").QueuedMessage[];
   onCancelQueued?: (
     id: string,
@@ -424,7 +385,6 @@ function ChatUI({
   onTemperatureChange,
   onThinkingEffortChange,
   onRegenerate,
-  slashContext,
   queuedMessages,
   onCancelQueued,
   messagesEndRef,
@@ -540,9 +500,6 @@ function ChatUI({
                   isProcessing
                 }
                 onStop={onStop}
-                slashContext={
-                  slashContext
-                }
               />
             </div>
 
