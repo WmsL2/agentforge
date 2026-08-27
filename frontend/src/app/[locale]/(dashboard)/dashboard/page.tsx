@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Database, List, MessageSquare, Plus, Star } from "lucide-react";
+import { List, MessageSquare, Plus, Star } from "lucide-react";
 
 import { ActiveSessions } from "@/components/dashboard/active-sessions";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -33,7 +33,6 @@ function getGreeting(): string {
 export default function DashboardPage() {
   const { user } = useAuth();
 
-  // All independent → run in parallel, cached by React Query.
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => apiClient.get<HealthResponse>("/health"),
@@ -51,14 +50,6 @@ export default function DashboardPage() {
     },
   });
 
-  const rag = {
-    data: {
-      collections: 0,
-      vectors: 0,
-    },
-    isLoading: false,
-  };
-
   const firstName =
     user?.full_name?.split(" ")[0] ||
     user?.email?.split("@")[0];
@@ -74,7 +65,7 @@ export default function DashboardPage() {
             ? `${getGreeting()}, ${firstName}`
             : getGreeting()
         }
-        description="Here's what's happening with your workspace today."
+        description="Foundation status and current application activity."
         actions={
           <Button asChild>
             <Link href={ROUTES.CHAT}>
@@ -113,11 +104,11 @@ export default function DashboardPage() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-          Workspace metrics
+          Application metrics
         </h2>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <StatCard
           label="Conversations"
           value={
@@ -126,39 +117,14 @@ export default function DashboardPage() {
               : (conversations.data ?? 0).toLocaleString()
           }
           icon={MessageSquare}
-          footer="across all chats"
+          footer="stored conversations"
           loading={conversations.isLoading}
-        />
-
-        <StatCard
-          label="Knowledge base"
-          value={
-            rag.data
-              ? rag.data.vectors.toLocaleString()
-              : "—"
-          }
-          unit={
-            rag.data
-              ? `vector${rag.data.vectors === 1 ? "" : "s"}`
-              : undefined
-          }
-          icon={Database}
-          footer={
-            rag.data
-              ? `${rag.data.collections} collection${
-                  rag.data.collections === 1 ? "" : "s"
-                } indexed`
-              : "indexed vectors"
-          }
-          loading={rag.isLoading}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <RecentActivity />
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-2" />
 
       <ActiveSessions />
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, Database, MessageSquare, Settings } from "lucide-react";
+import { BookOpen, MessageSquare, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { BACKEND_URL, ROUTES } from "@/lib/constants";
@@ -14,10 +14,23 @@ interface Action {
 }
 
 const ACTIONS: Action[] = [
-  { label: "Start a chat", icon: MessageSquare, href: ROUTES.CHAT, featured: true },
-  { label: "Upload to KB", icon: Database, href: ROUTES.RAG },
-  { label: "Settings", icon: Settings, href: ROUTES.SETTINGS },
-  { label: "API docs", icon: BookOpen, href: `${BACKEND_URL}/docs`, external: true },
+  {
+    label: "Start a chat",
+    icon: MessageSquare,
+    href: ROUTES.CHAT,
+    featured: true,
+  },
+  {
+    label: "Settings",
+    icon: Settings,
+    href: ROUTES.SETTINGS,
+  },
+  {
+    label: "API docs",
+    icon: BookOpen,
+    href: `${BACKEND_URL}/docs`,
+    external: true,
+  },
 ];
 
 export function QuickActions() {
@@ -26,16 +39,24 @@ export function QuickActions() {
       <h2 className="text-foreground/55 mb-2.5 font-mono text-[11px] tracking-wider uppercase">
         Quick actions
       </h2>
+
       <div className="flex flex-wrap gap-1.5">
         {ACTIONS.map((action) => (
-          <ActionPill key={action.label} action={action} />
+          <ActionPill
+            key={action.label}
+            action={action}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function ActionPill({ action }: { action: Action }) {
+function ActionPill({
+  action,
+}: {
+  action: Action;
+}) {
   const inner = (
     <span
       className={cn(
@@ -52,10 +73,19 @@ function ActionPill({ action }: { action: Action }) {
 
   if (action.external) {
     return (
-      <a href={action.href} target="_blank" rel="noopener noreferrer">
+      <a
+        href={action.href}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {inner}
       </a>
     );
   }
-  return <Link href={action.href}>{inner}</Link>;
+
+  return (
+    <Link href={action.href}>
+      {inner}
+    </Link>
+  );
 }
