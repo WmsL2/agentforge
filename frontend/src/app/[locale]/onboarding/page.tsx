@@ -1,21 +1,22 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
-import { getResumeStep } from "@/components/onboarding/onboarding-state";
+import type { Locale } from "@/i18n";
+import { ROUTES } from "@/lib/constants";
 
 /**
- * Resume-aware entry point: send the user to the furthest step they reached
- * (falls back to the first step). Runs client-side because the furthest step
- * lives in localStorage.
+ * Transitional compatibility route for the removed starter-template
+ * onboarding flow.
+ *
+ * AgentForge v0.1 does not expose the template's framework-selection,
+ * data-connection, or team-invitation setup wizard. Existing links are kept
+ * temporarily and redirected to the authenticated dashboard.
  */
-export default function OnboardingIndex() {
-  const router = useRouter();
+export default async function OnboardingPage({
+  params,
+}: {
+  params: Promise<{ locale: Locale }>;
+}) {
+  const { locale } = await params;
 
-  useEffect(() => {
-    router.replace(`/onboarding/${getResumeStep()}`);
-  }, [router]);
-
-  return null;
+  redirect(`/${locale}${ROUTES.DASHBOARD}`);
 }

@@ -1,54 +1,22 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 
-import { AuthGuard } from "@/components/layout/auth-guard";
-import { StepAgent } from "@/components/onboarding/step-agent";
-import { StepData } from "@/components/onboarding/step-data";
-import { StepDone } from "@/components/onboarding/step-done";
-import { StepTeam } from "@/components/onboarding/step-team";
-import { StepWelcome } from "@/components/onboarding/step-welcome";
-import { ONBOARDING_STEPS, type OnboardingStep } from "@/components/onboarding/onboarding-state";
 import type { Locale } from "@/i18n";
-import { pageMetadata } from "@/lib/seo";
+import { ROUTES } from "@/lib/constants";
 
-export const dynamic = "force-static";
-
-export function generateStaticParams() {
-  return ONBOARDING_STEPS.map((step) => ({ step }));
-}
-
-export async function generateMetadata({
+/**
+ * Compatibility route for historical starter-template onboarding step URLs.
+ *
+ * The original wizard advertised framework selection, data connection, and
+ * team setup that do not represent the AgentForge v0.1 Foundation product.
+ * Preserve the URL temporarily and redirect authenticated users toward the
+ * actual application surface.
+ */
+export default async function OnboardingStepPage({
   params,
 }: {
   params: Promise<{ locale: Locale; step: string }>;
-}): Promise<Metadata> {
-  const { locale, step } = await params;
-  return pageMetadata({
-    title: "Get started",
-    description: "Set up your workspace.",
-    path: `/onboarding/${step}`,
-    locale,
-    noindex: true,
-  });
-}
+}) {
+  const { locale } = await params;
 
-interface PageProps {
-  params: Promise<{ step: string }>;
-}
-
-export default async function OnboardingStepPage({ params }: PageProps) {
-  const { step } = await params;
-  if (!ONBOARDING_STEPS.includes(step as OnboardingStep)) {
-    notFound();
-  }
-
-  return (
-    <AuthGuard>
-      {step === "welcome" && <StepWelcome />}
-      {step === "agent" && <StepAgent />}
-      {step === "data" && <StepData />}
-      {step === "team" && <StepTeam />}
-      {step === "done" && <StepDone />}
-    </AuthGuard>
-  );
+  redirect(`/${locale}${ROUTES.DASHBOARD}`);
 }

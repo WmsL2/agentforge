@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Database, List, MessageSquare, Plus, Star } from "lucide-react";
+
 import { ActiveSessions } from "@/components/dashboard/active-sessions";
-import { OnboardingBanner } from "@/components/dashboard/onboarding-banner";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
@@ -16,6 +15,7 @@ import { apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
 import { cn, isAppAdmin } from "@/lib/utils";
 import type { HealthResponse } from "@/types";
+
 interface ConversationsResponse {
   total?: number;
   items: Array<{ id: string }>;
@@ -23,8 +23,10 @@ interface ConversationsResponse {
 
 function getGreeting(): string {
   const hour = new Date().getHours();
+
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
+
   return "Good evening";
 }
 
@@ -37,25 +39,41 @@ export default function DashboardPage() {
     queryFn: () => apiClient.get<HealthResponse>("/health"),
     staleTime: 60_000,
   });
+
   const conversations = useQuery({
     queryKey: ["conversations", "count"],
     queryFn: async () => {
-      const d = await apiClient.get<ConversationsResponse>("/conversations?limit=1");
-      return d.total ?? d.items?.length ?? 0;
+      const data = await apiClient.get<ConversationsResponse>(
+        "/conversations?limit=1",
+      );
+
+      return data.total ?? data.items?.length ?? 0;
     },
   });
-  const rag = { data: { collections: 0, vectors: 0 }, isLoading: false };
 
-  const firstName = user?.full_name?.split(" ")[0] || user?.email?.split("@")[0];
+  const rag = {
+    data: {
+      collections: 0,
+      vectors: 0,
+    },
+    isLoading: false,
+  };
+
+  const firstName =
+    user?.full_name?.split(" ")[0] ||
+    user?.email?.split("@")[0];
+
   const healthy = !health.isError;
 
   return (
     <div className="space-y-6 pb-8">
-      <OnboardingBanner />
-
       <PageHeader
         eyebrow="Dashboard"
-        title={firstName ? `${getGreeting()}, ${firstName}` : getGreeting()}
+        title={
+          firstName
+            ? `${getGreeting()}, ${firstName}`
+            : getGreeting()
+        }
         description="Here's what's happening with your workspace today."
         actions={
           <Button asChild>
@@ -73,15 +91,23 @@ export default function DashboardPage() {
             aria-hidden
             className={cn(
               "inline-block h-2 w-2 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-destructive",
+              healthy
+                ? "bg-emerald-500"
+                : "bg-destructive",
             )}
           />
+
           <span className="text-foreground font-medium">
-            {healthy ? health.data?.status || "Operational" : "API offline"}
+            {healthy
+              ? health.data?.status || "Operational"
+              : "API offline"}
           </span>
         </span>
+
         {health.data?.version && (
-          <span className="text-muted-foreground font-mono text-xs">v{health.data.version}</span>
+          <span className="text-muted-foreground font-mono text-xs">
+            v{health.data.version}
+          </span>
         )}
       </div>
 
@@ -94,19 +120,34 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Conversations"
-          value={conversations.isLoading ? "—" : (conversations.data ?? 0).toLocaleString()}
+          value={
+            conversations.isLoading
+              ? "—"
+              : (conversations.data ?? 0).toLocaleString()
+          }
           icon={MessageSquare}
           footer="across all chats"
           loading={conversations.isLoading}
         />
+
         <StatCard
           label="Knowledge base"
-          value={rag.data ? rag.data.vectors.toLocaleString() : "—"}
-          unit={rag.data ? `vector${rag.data.vectors === 1 ? "" : "s"}` : undefined}
+          value={
+            rag.data
+              ? rag.data.vectors.toLocaleString()
+              : "—"
+          }
+          unit={
+            rag.data
+              ? `vector${rag.data.vectors === 1 ? "" : "s"}`
+              : undefined
+          }
           icon={Database}
           footer={
             rag.data
-              ? `${rag.data.collections} collection${rag.data.collections === 1 ? "" : "s"} indexed`
+              ? `${rag.data.collections} collection${
+                  rag.data.collections === 1 ? "" : "s"
+                } indexed`
               : "indexed vectors"
           }
           loading={rag.isLoading}
@@ -117,7 +158,8 @@ export default function DashboardPage() {
         <RecentActivity />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2"></div>
+      <div className="grid gap-4 lg:grid-cols-2" />
+
       <ActiveSessions />
 
       <QuickActions />
@@ -127,6 +169,7 @@ export default function DashboardPage() {
           <h2 className="font-display text-foreground mb-3 text-base font-semibold">
             Admin actions
           </h2>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <AdminTile
               icon={Star}
@@ -134,6 +177,7 @@ export default function DashboardPage() {
               description="View and manage ratings"
               href={ROUTES.ADMIN_RATINGS}
             />
+
             <AdminTile
               icon={List}
               label="All conversations"
@@ -166,9 +210,15 @@ function AdminTile({
       <span className="bg-foreground/8 text-foreground flex h-9 w-9 items-center justify-center rounded-full">
         <Icon className="h-4 w-4" />
       </span>
+
       <div className="flex-1">
-        <p className="text-foreground text-sm font-semibold">{label}</p>
-        <p className="text-muted-foreground text-xs">{description}</p>
+        <p className="text-foreground text-sm font-semibold">
+          {label}
+        </p>
+
+        <p className="text-muted-foreground text-xs">
+          {description}
+        </p>
       </div>
     </Link>
   );
