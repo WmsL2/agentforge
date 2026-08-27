@@ -21,7 +21,6 @@ import {
   Search,
   Settings,
   Shield,
-  Slash,
   Star,
   UserCircle,
 } from "lucide-react";
@@ -65,7 +64,9 @@ export function CommandPalette() {
     useState<ConversationItem[]>([]);
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
+    const handler = (
+      event: KeyboardEvent,
+    ) => {
       if (
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "k"
@@ -105,11 +106,10 @@ export function CommandPalette() {
   useEffect(() => {
     if (!open) return;
 
-    const frame = window.requestAnimationFrame(
-      () => {
+    const frame =
+      window.requestAnimationFrame(() => {
         inputRef.current?.focus();
-      },
-    );
+      });
 
     return () => {
       window.cancelAnimationFrame(frame);
@@ -303,16 +303,6 @@ export function CommandPalette() {
             onSelect={() =>
               go(
                 ROUTES.SETTINGS_NOTIFICATIONS,
-              )
-            }
-          />
-
-          <PaletteItem
-            icon={Slash}
-            label={t("slashCommands")}
-            onSelect={() =>
-              go(
-                ROUTES.SETTINGS_SLASH_COMMANDS,
               )
             }
           />
