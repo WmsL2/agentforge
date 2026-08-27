@@ -65,7 +65,10 @@ def get_conversation_share_service(db: DBSession) -> ConversationShareService:
     return ConversationShareService(db)
 
 
-ConversationShareSvc = Annotated[ConversationShareService, Depends(get_conversation_share_service)]
+ConversationShareSvc = Annotated[
+    ConversationShareService,
+    Depends(get_conversation_share_service),
+]
 
 from app.services.message_rating import MessageRatingService
 
@@ -110,7 +113,6 @@ async def get_current_user(
     if payload is None:
         raise AuthenticationError(message="Invalid or expired token")
 
-    # Ensure this is an access token, not a refresh token
     if payload.get("type") != "access":
         raise AuthenticationError(message="Invalid token type")
 
@@ -207,11 +209,13 @@ def _extract_ws_auth(websocket: WebSocket) -> tuple[str | None, str | None]:
     raw = websocket.headers.get("sec-websocket-protocol") or ""
     token: str | None = None
     app_subprotocol: str | None = None
+
     for proto in (p.strip() for p in raw.split(",") if p.strip()):
         if proto.startswith(_WS_TOKEN_PROTOCOL_PREFIX):
             token = proto[len(_WS_TOKEN_PROTOCOL_PREFIX) :]
         elif app_subprotocol is None:
             app_subprotocol = proto
+
     return token, app_subprotocol
 
 
@@ -271,8 +275,6 @@ async def get_current_user_ws(
         if not user.is_active:
             raise WebSocketException(code=4001, reason="User account is disabled")
 
-        # Eagerly load all columns, then detach from session to avoid
-        # "instance not bound to a Session" errors after the context manager exits
         await db.refresh(user)
         db.expunge(user)
         return user
@@ -307,15 +309,6 @@ async def verify_api_key(
 
 
 ValidAPIKey = Annotated[str, Depends(verify_api_key)]
-
-from app.services.user_slash_command import UserSlashCommandService
-
-
-def get_user_slash_command_service(db: DBSession) -> UserSlashCommandService:
-    return UserSlashCommandService(db)
-
-
-UserSlashCommandSvc = Annotated[UserSlashCommandService, Depends(get_user_slash_command_service)]
 
 from app.services.admin import AdminService
 

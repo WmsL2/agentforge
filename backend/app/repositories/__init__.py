@@ -12,8 +12,6 @@ from app.repositories import chat_file as chat_file_repo
 from app.repositories import conversation_share as conversation_share_repo
 from app.repositories import message_rating as message_rating_repo
 
-from app.repositories import user_slash_command as user_slash_command_repo
-
 __all__ = [
     "user_repo",
     "session_repo",
@@ -21,5 +19,4 @@ __all__ = [
     "chat_file_repo",
     "conversation_share_repo",
     "message_rating_repo",
-    "user_slash_command_repo",
 ]
