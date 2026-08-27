@@ -1,12 +1,20 @@
 import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
 
-import { buildFooterColumns, buildFooterLegal, buildMarketingNav } from "./footer-config";
+import {
+  buildFooterColumns,
+  buildFooterLegal,
+  buildMarketingNav,
+} from "./footer-config";
 import { MarketingFooter } from "./marketing-footer";
 import { PillNav } from "./pill-nav";
 import { Section } from "./section";
 import { SmoothScroll } from "./smooth-scroll";
-import { APP_NAME, ROUTES } from "@/lib/constants";
+import {
+  APP_DESCRIPTION,
+  APP_NAME,
+  ROUTES,
+} from "@/lib/constants";
 
 type Width = "narrow" | "wide" | "full";
 
@@ -36,31 +44,50 @@ export async function MarketingPageLayout({
   width = "wide",
 }: MarketingPageLayoutProps) {
   const t = await getTranslations("marketing");
-  const navLinks = buildMarketingNav((k) => t(k));
-  const footerColumns = buildFooterColumns((k) => t(k));
-  const footerLegal = buildFooterLegal((k) => t(k));
+
+  const navLinks = buildMarketingNav((key) => t(key));
+  const footerColumns = buildFooterColumns((key) => t(key));
+  const footerLegal = buildFooterLegal((key) => t(key));
 
   const bodyClass = WIDTH_CLASS[width];
 
   return (
     <>
       <SmoothScroll />
+
       <PillNav
         brand={APP_NAME}
         links={navLinks}
         ctaLabel={t("nav.getStarted")}
         ctaHref={ROUTES.REGISTER}
-        secondaryCta={{ label: t("nav.signIn"), href: ROUTES.LOGIN }}
+        secondaryCta={{
+          label: t("nav.signIn"),
+          href: ROUTES.LOGIN,
+        }}
       />
 
       <main id="main">
-        <Section theme="light" padding="pt-28 pb-12 md:pt-32 md:pb-16">
+        <Section
+          theme="light"
+          padding="pt-28 pb-12 md:pt-32 md:pb-16"
+        >
           <div className="mx-auto max-w-3xl">
-            {eyebrow && <span className="eyebrow-badge mb-6">{eyebrow}</span>}
-            <h1 className="text-display-xl mb-5">{title}</h1>
-            {description && (
-              <p className="text-foreground/70 max-w-2xl text-lg leading-relaxed">{description}</p>
+            {eyebrow && (
+              <span className="eyebrow-badge mb-6">
+                {eyebrow}
+              </span>
             )}
+
+            <h1 className="text-display-xl mb-5">
+              {title}
+            </h1>
+
+            {description && (
+              <p className="text-foreground/70 max-w-2xl text-lg leading-relaxed">
+                {description}
+              </p>
+            )}
+
             {meta && (
               <div className="text-foreground/50 mt-6 font-mono text-xs tracking-wider uppercase">
                 {meta}
@@ -70,8 +97,13 @@ export async function MarketingPageLayout({
         </Section>
 
         {wrap ? (
-          <Section theme="light" padding="pb-32 md:pb-40">
-            <div className={`mx-auto ${bodyClass}`}>{children}</div>
+          <Section
+            theme="light"
+            padding="pb-32 md:pb-40"
+          >
+            <div className={`mx-auto ${bodyClass}`}>
+              {children}
+            </div>
           </Section>
         ) : (
           children
@@ -80,8 +112,7 @@ export async function MarketingPageLayout({
 
       <MarketingFooter
         brand={APP_NAME}
-        tagline={t("footer.tagline")}
-        operationalLabel={t("footer.operational")}
+        tagline={APP_DESCRIPTION}
         columns={footerColumns}
         legal={footerLegal}
       />
