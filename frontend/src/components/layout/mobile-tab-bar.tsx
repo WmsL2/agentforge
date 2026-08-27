@@ -1,20 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
 import { useTranslations } from "next-intl";
-import { LayoutDashboard, MessageSquare, Search, Settings } from "lucide-react";
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Search,
+  Settings,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { useAuth } from "@/hooks";
 import { ROUTES } from "@/lib/constants";
-import { cn, isAppAdmin } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface TabItem {
   label: string;
   href?: string;
   icon: LucideIcon;
-  /** When true, treat as active if pathname starts with `href`. */
   startsWith?: boolean;
   onClick?: () => void;
 }
@@ -22,37 +28,57 @@ interface TabItem {
 export function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
   const t = useTranslations("nav");
 
-  const stripped = pathname.replace(/^\/[a-z]{2}/, "");
+  const stripped = pathname.replace(
+    /^\/[a-z]{2}/,
+    "",
+  );
 
   const items: TabItem[] = [
-    { label: t("chat"), href: ROUTES.CHAT, icon: MessageSquare, startsWith: true },
+    {
+      label: t("chat"),
+      href: ROUTES.CHAT,
+      icon: MessageSquare,
+      startsWith: true,
+    },
     {
       label: t("home"),
-      href: isAppAdmin(user) ? ROUTES.DASHBOARD : ROUTES.CHAT,
+      href: ROUTES.DASHBOARD,
       icon: LayoutDashboard,
+      startsWith: true,
     },
     {
       label: t("search"),
       icon: Search,
       onClick: () => {
-        // Trigger global ⌘K command palette via synthetic keyboard event.
-        const event = new KeyboardEvent("keydown", {
-          key: "k",
-          metaKey: true,
-          bubbles: true,
-        });
-        document.dispatchEvent(event);
+        window.dispatchEvent(
+          new CustomEvent(
+            "command-palette:open",
+          ),
+        );
       },
     },
-    { label: t("settings"), href: ROUTES.SETTINGS, icon: Settings, startsWith: true },
+    {
+      label: t("settings"),
+      href: ROUTES.SETTINGS,
+      icon: Settings,
+      startsWith: true,
+    },
   ];
 
   const isActive = (item: TabItem) => {
     if (!item.href) return false;
-    if (item.startsWith) return stripped === item.href || stripped.startsWith(item.href + "/");
+
+    if (item.startsWith) {
+      return (
+        stripped === item.href ||
+        stripped.startsWith(
+          `${item.href}/`,
+        )
+      );
+    }
+
     return stripped === item.href;
   };
 
@@ -64,21 +90,37 @@ export function MobileTabBar() {
     >
       {items.map((item) => {
         const active = isActive(item);
+
         const className = cn(
           "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-medium uppercase tracking-wider transition-colors min-h-[56px]",
-          active ? "text-foreground" : "text-foreground/55 hover:text-foreground",
+          active
+            ? "text-foreground"
+            : "text-foreground/55 hover:text-foreground",
         );
+
         const inner = (
           <>
             <item.icon
-              className={cn("h-5 w-5 transition-transform", active && "text-foreground scale-110")}
+              className={cn(
+                "h-5 w-5 transition-transform",
+                active &&
+                  "text-foreground scale-110",
+              )}
             />
-            <span className="font-mono">{item.label}</span>
+
+            <span className="font-mono">
+              {item.label}
+            </span>
+
             {active && (
-              <span aria-hidden className="bg-brand absolute top-0 h-0.5 w-8 rounded-full" />
+              <span
+                aria-hidden
+                className="bg-brand absolute top-0 h-0.5 w-8 rounded-full"
+              />
             )}
           </>
         );
+
         if (item.onClick) {
           return (
             <button
@@ -86,22 +128,31 @@ export function MobileTabBar() {
               type="button"
               onClick={item.onClick}
               aria-label={item.label}
-              className={cn(className, "relative")}
+              className={cn(
+                className,
+                "relative",
+              )}
             >
               {inner}
             </button>
           );
         }
+
         return (
           <Link
             key={item.label}
             href={item.href!}
             aria-label={item.label}
-            aria-current={active ? "page" : undefined}
-            className={cn(className, "relative")}
-            onClick={(e) => {
+            aria-current={
+              active ? "page" : undefined
+            }
+            className={cn(
+              className,
+              "relative",
+            )}
+            onClick={(event) => {
               if (item.href === stripped) {
-                e.preventDefault();
+                event.preventDefault();
                 router.refresh();
               }
             }}
