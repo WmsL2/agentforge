@@ -1,6 +1,5 @@
-
 # Backend development configuration
-# Usage: docker-compose up -d
+# Usage: docker compose up -d
 
 services:
   app:
@@ -14,6 +13,8 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./backend/cli:/app/cli:ro
+      - ./backend/alembic:/app/alembic:ro
+      - ./backend/alembic.ini:/app/alembic.ini:ro
       - media_data:/app/media
     env_file:
       - ./backend/.env
@@ -36,7 +37,6 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-
 
   db:
     image: postgres:16-alpine
@@ -102,6 +102,16 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
   celery_beat:
     image: agentforge_backend:dev
@@ -125,6 +135,8 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      disable: true
 
   flower:
     image: agentforge_backend:dev
@@ -148,6 +160,18 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; r = httpx.get('http://localhost:5555', timeout=5); r.raise_for_status()",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
 networks:
   backend:

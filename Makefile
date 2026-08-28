@@ -1,17 +1,45 @@
-.PHONY: install format lint test run clean help db-init dev dev-down dev-logs dev-rebuild dev-frontend docker-clean stage stage-down prod prod-down upgrade upgrade-dry-run upgrade-new-features upgrade-finalize
+.PHONY: install format lint test test-cov run run-prod routes clean help \
+	db-init db-migrate db-upgrade db-downgrade db-current db-history \
+	dev dev-down dev-logs dev-rebuild dev-restart-workers frontend-dev \
+	docker-clean seed bootstrap quickstart \
+	prod prod-down prod-logs \
+	upgrade upgrade-dry-run upgrade-new-features upgrade-finalize \
+	create-admin user-create user-list \
+	celery-worker celery-beat celery-flower \
+	docker-up docker-down docker-logs docker-build docker-shell \
+	docker-frontend docker-frontend-down docker-frontend-logs docker-frontend-build \
+	docker-prod docker-prod-down docker-prod-logs docker-prod-build \
+	docker-db docker-db-stop docker-redis docker-redis-stop \
+	vercel-deploy
 
-# === Environments ===========================================================
-# `make dev`   — local development (docker-compose.dev.yml + bind-mounted source)
-# `make stage` — staging (docker-compose.yml — built images, no live reload)
-# `make prod`  — production (docker-compose.prod.yml — needs backend/.env + nginx)
-# Each env has matching -down / -logs / -rebuild siblings.
+# === Development runtime ====================================================
+#
+# Day-to-day AgentForge development uses:
+#
+#   Docker:
+#     - FastAPI backend
+#     - PostgreSQL
+#     - Redis
+#     - Celery worker
+#     - Celery beat
+#     - Flower
+#
+#   Host:
+#     - Next.js frontend via `bun run dev`
+#
+# docker-compose.yml is the single source of truth for the backend development
+# stack. Backend application source is bind-mounted into the containers.
+#
+# The frontend Docker image is intentionally NOT used for normal development.
+# docker-compose.frontend.yml exists only for production-image/container
+# verification and must be rebuilt before each verification run.
 
-# Wait for postgres to accept connections. Polls pg_isready instead of a
-# fixed sleep — handles slow startups and cold-start image pulls.
+
+# Wait for PostgreSQL to accept connections.
 define _wait_for_db
-	@echo "Waiting for PostgreSQL ($(1))..."
+	@echo "Waiting for PostgreSQL..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
-		if docker compose -f $(1) exec -T db pg_isready -U postgres >/dev/null 2>&1; then \
+		if docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1; then \
 			echo "  ✅ DB ready"; exit 0; \
 		fi; \
 		printf '.'; sleep 2; \
@@ -19,103 +47,139 @@ define _wait_for_db
 	echo "  ❌ DB not ready after 30s — check 'make dev-logs'"; exit 1
 endef
 
-# === Local dev: build → up → migrate ===
-# Idempotent — re-run anytime. Migrations are no-ops when already at head;
-# admin seeding is a separate target (`make seed`) so re-running `make dev`
-# doesn't keep retrying user creation.
-dev:
-	@echo "▶ Building backend image…"
-	docker compose -f docker-compose.dev.yml build app
-	@echo "▶ Starting services…"
-	@if ! docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) up -d; then \
-		echo ""; \
-		echo "⚠ First start failed. Tearing down stale containers and retrying once…"; \
-		echo "  (volumes preserved — DB data is safe; use 'make clean' for a full wipe)"; \
-		docker compose -f docker-compose.dev.yml down --remove-orphans; \
-		docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) up -d; \
-	fi
-	$(call _wait_for_db,docker-compose.dev.yml)
-	@echo "▶ Applying migrations…"
-	docker compose -f docker-compose.dev.yml exec -T app agentforge db upgrade
-	@echo ""
-	@echo "🚀 Dev stack ready:"
-	@echo "   API:      http://localhost:8000"
-	@echo "   Docs:     http://localhost:8000/docs"
-	@echo "   Admin:    http://localhost:8000/admin"
-	@echo "   Frontend: http://localhost:3000  (run 'make dev-frontend' or 'cd frontend && bun dev')"
-	@echo ""
-	@echo "First time? Run 'make seed' to create the default admin user."
 
-# === First-time setup: seed default admin user (one-shot) ===
-# Skipped when admin@example.com already exists. Safe to run again — exits
-# clean either way. Replace email/password before deploying anywhere real.
+# === Local development ======================================================
+
+# Start the backend development stack and apply migrations.
+#
+# Backend app source is bind-mounted and Uvicorn reloads application changes.
+# Celery processes do not auto-reload; use `make dev-restart-workers` after
+# changing code executed by Celery.
+#
+# Rebuild the backend image with `make dev-rebuild` after changing Python
+# dependencies, uv.lock, pyproject.toml, or backend/Dockerfile.
+dev:
+	@echo "▶ Starting AgentForge backend development stack..."
+	@if ! docker compose up -d; then \
+		echo ""; \
+		echo "⚠ First start failed. Tearing down stale containers and retrying once..."; \
+		echo "  Volumes are preserved; database data is safe."; \
+		docker compose down --remove-orphans; \
+		docker compose up -d; \
+	fi
+	$(call _wait_for_db)
+	@echo "▶ Applying migrations..."
+	docker compose exec -T app agentforge db upgrade
+	@echo ""
+	@echo "🚀 Backend development stack ready:"
+	@echo "   API:        http://localhost:8000"
+	@echo "   Docs:       http://localhost:8000/docs"
+	@echo "   Flower:     http://localhost:5555"
+	@echo "   PostgreSQL: localhost:5432"
+	@echo "   Redis:      localhost:6379"
+	@echo ""
+	@echo "▶ Start the frontend in another terminal:"
+	@echo "   make frontend-dev"
+	@echo "   or: cd frontend && bun run dev"
+
+
+# First-time setup from a fresh checkout.
+bootstrap:
+	@echo "▶ Building backend image..."
+	docker compose build app
+	$(MAKE) dev
+	$(MAKE) seed
+
+
+# One-shot local development admin seed.
 seed:
-	@echo "▶ Seeding admin user (admin@example.com / admin123)…"
-	@if docker compose -f docker-compose.dev.yml exec -T app \
+	@echo "▶ Seeding admin user (admin@example.com / admin123)..."
+	@if docker compose exec -T app \
 		agentforge user list 2>/dev/null \
 		| grep -q "admin@example.com"; then \
 		echo "  (admin@example.com already exists — nothing to do)"; \
 	else \
-		docker compose -f docker-compose.dev.yml exec -T app \
+		docker compose exec -T app \
 			agentforge user create \
-				--email admin@example.com --password admin123 --superuser \
-		&& echo "  ✅ Admin created. Login at http://localhost:8000/admin"; \
+				--email admin@example.com \
+				--password admin123 \
+				--superuser \
+		&& echo "  ✅ Admin created"; \
 	fi
 
-# Convenience: bootstrap a fresh checkout end-to-end.
-bootstrap: dev seed
 
+# Legacy convenience alias.
+quickstart: dev
+
+
+# Run the Next.js development server on the host.
+#
+# This is the canonical frontend development mode.
+frontend-dev:
+	cd frontend && bun run dev
+
+
+# Stop the backend development stack.
+# Named volumes are preserved.
 dev-down:
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) down
+	docker compose down
 
-# Full wipe — containers, networks, AND volumes. Use after a corrupted state
-# (e.g. detached networks, port conflicts that left orphans). DESTROYS DB data.
-docker-clean:
-	@echo "▶ Removing containers, networks, AND volumes for the dev stack…"
-	@echo "  ⚠️  This deletes all local DB data and uploaded files."
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) down -v --remove-orphans
-	@echo "✅ Cleaned. Run 'make dev' to start fresh."
 
+# Tail backend development container logs.
 dev-logs:
-	docker compose -f docker-compose.dev.yml $(COMPOSE_DEV_PROFILES) logs -f
+	docker compose logs -f
 
+
+# Restart Celery processes after changing task/worker code.
+#
+# Source files are bind-mounted into the containers, but Celery does not
+# automatically reload Python modules the way Uvicorn does.
+dev-restart-workers:
+	docker compose restart celery_worker celery_beat flower
+
+
+# Force-rebuild the shared backend image and recreate processes using it.
+#
+# Use after changes to:
+#   - backend/pyproject.toml
+#   - backend/uv.lock
+#   - backend/Dockerfile
+#   - Python/system dependencies
 dev-rebuild:
-	docker compose -f docker-compose.dev.yml build --no-cache app
-	docker compose -f docker-compose.dev.yml up -d --force-recreate app
-dev-frontend:
-	docker compose -f docker-compose.frontend.yml up -d
-	@echo ""
-	@echo "✅ Frontend at http://localhost:3000  (backend must be up — 'make dev')"
+	docker compose build --no-cache app
+	docker compose up -d --force-recreate app celery_worker celery_beat flower
 
-# === Staging: built images, no bind mounts (production-like, local DB) ===
-stage:
-	docker compose -f docker-compose.yml up -d --build
-	$(call _wait_for_db,docker-compose.yml)
-	docker compose -f docker-compose.yml exec -T app agentforge db upgrade
-	@echo "✅ Staging stack at http://localhost:8000"
 
-stage-down:
-	docker compose -f docker-compose.yml down
+# Full local development wipe.
+# WARNING: destroys PostgreSQL, Redis, and uploaded-file volumes.
+docker-clean:
+	@echo "▶ Removing containers, networks, and development volumes..."
+	@echo "  ⚠️  This deletes all local database data and uploaded files."
+	docker compose down -v --remove-orphans
+	@echo "✅ Development Docker state removed."
 
-# === Production: external Nginx, real secrets in backend/.env ===
+
+# === Production =============================================================
+
 prod:
-	@test -f backend/.env || (echo "❌ backend/.env missing — run 'cp backend/.env.example backend/.env' and fill in real secrets" && exit 1)
+	@test -f backend/.env || (echo "❌ backend/.env missing — copy backend/.env.example and fill real secrets" && exit 1)
 	docker compose --env-file backend/.env -f docker-compose.prod.yml up -d --build
-	@echo "▶ Waiting for DB then running migrations…"
+	@echo "▶ Waiting before applying migrations..."
 	@sleep 5
 	docker compose --env-file backend/.env -f docker-compose.prod.yml exec -T app agentforge db upgrade
-	@echo "✅ Production stack up. Configure your nginx host with nginx/nginx.conf"
+	@echo "✅ Production stack started. Configure external Nginx with nginx/nginx.conf."
+
 
 prod-down:
 	docker compose --env-file backend/.env -f docker-compose.prod.yml down
 
+
 prod-logs:
 	docker compose --env-file backend/.env -f docker-compose.prod.yml logs -f
 
-# Legacy alias
-quickstart: dev
 
-# === Setup ===
+# === Setup ==================================================================
+
 install:
 	uv sync --directory backend --dev
 	@if git rev-parse --git-dir > /dev/null 2>&1; then \
@@ -127,46 +191,54 @@ install:
 	@echo ""
 	@echo "✅ Installation complete!"
 	@echo ""
-	@echo "Next steps:"
-	@echo "  • make docker-db        # Start PostgreSQL"
-	@echo "  • make db-upgrade       # Apply migrations"
-	@echo "  • make run              # Start development server"
-	@echo ""
-	@echo "Note: backend/.env is pre-configured for development"
+	@echo "Recommended development workflow:"
+	@echo "  • make dev           # Start Docker backend stack"
+	@echo "  • make frontend-dev  # Start local Next.js dev server"
 
-# === Template upgrade ===
-# Pull latest template changes via 3-way merge. `make help` lists the targets.
+
+# === Template upgrade =======================================================
+
 upgrade:
 	uvx fastapi-fullstack@latest upgrade $(ARGS)
+
 
 upgrade-dry-run:
 	uvx fastapi-fullstack@latest upgrade --dry-run $(ARGS)
 
+
 upgrade-new-features:
 	uvx fastapi-fullstack@latest upgrade --with-new-features $(ARGS)
+
 
 upgrade-finalize:
 	uvx fastapi-fullstack@latest upgrade finalize $(ARGS)
 
-# === Code Quality ===
+
+# === Code quality ===========================================================
+
 format:
 	uv run --directory backend ruff format app tests cli
 	uv run --directory backend ruff check app tests cli --fix
+
 
 lint:
 	uv run --directory backend ruff check app tests cli
 	uv run --directory backend ruff format app tests cli --check
 	uv run --directory backend ty check
 
-# === Testing ===
+
+# === Testing ================================================================
+
 test:
 	uv run --directory backend pytest tests/ -v
+
 
 test-cov:
 	uv run --directory backend pytest tests/ -v --cov=app --cov-report=html --cov-report=term-missing
 
 
-# === Database ===
+# === Database ===============================================================
+
 db-init: docker-db
 	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 8
@@ -175,150 +247,184 @@ db-init: docker-db
 	@echo ""
 	@echo "✅ Database initialized!"
 
+
 db-migrate:
 	@read -p "Migration message: " msg; \
 	uv run --directory backend agentforge db migrate -m "$$msg"
 
+
 db-upgrade:
 	uv run --directory backend agentforge db upgrade
+
 
 db-downgrade:
 	uv run --directory backend agentforge db downgrade
 
+
 db-current:
 	uv run --directory backend agentforge db current
+
 
 db-history:
 	uv run --directory backend agentforge db history
 
-# === Server ===
+
+# === Server =================================================================
+
 run:
 	uv run --directory backend agentforge server run --reload
+
 
 run-prod:
 	uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000
 
+
 routes:
 	uv run --directory backend agentforge server routes
 
-# === Users ===
+
+# === Users ==================================================================
+
 create-admin:
 	@echo "Creating admin user..."
 	uv run --directory backend agentforge user create-admin
 
+
 user-create:
 	uv run --directory backend agentforge user create
+
 
 user-list:
 	uv run --directory backend agentforge user list
 
-# === Celery ===
+
+# === Celery =================================================================
+
 celery-worker:
 	uv run --directory backend agentforge celery worker
 
+
 celery-beat:
 	uv run --directory backend agentforge celery beat
+
 
 celery-flower:
 	uv run --directory backend agentforge celery flower
 	@echo ""
 	@echo "✅ Flower started at http://localhost:5555"
 
-# === Docker: Backend (Development) ===
-docker-up:
-	docker compose build app
-	docker compose up -d
-	@echo ""
-	@echo "✅ Backend services started!"
-	@echo "   API: http://localhost:8000"
-	@echo "   Docs: http://localhost:8000/docs"
-	@echo "   Flower: http://localhost:5555"
-	@echo "   PostgreSQL: localhost:5432"
-	@echo "   Redis: localhost:6379"
+
+# === Docker: backend development ============================================
+
+# Compatibility alias for the canonical development stack.
+docker-up: dev
+
 
 docker-down:
 	docker compose down
 	docker compose -f docker-compose.frontend.yml down 2>/dev/null || true
 
+
 docker-logs:
 	docker compose logs -f
 
+
 docker-build:
-	docker compose build
+	docker compose build app
+
 
 docker-shell:
 	docker compose exec app /bin/bash
 
-# === Docker: Frontend (Development) ===
+
+# === Docker: frontend image verification ====================================
+
+# Build and run a fresh production-style frontend image.
+#
+# This is NOT the normal frontend development workflow.
+# Stop `bun run dev` first because both modes use port 3000.
 docker-frontend:
-	docker compose -f docker-compose.frontend.yml up -d
+	@echo "▶ Building fresh frontend verification image..."
+	@echo "  ⚠ Stop local 'bun run dev' first; port 3000 must be free."
+	docker compose -f docker-compose.frontend.yml up -d --build --force-recreate frontend
 	@echo ""
-	@echo "✅ Frontend started!"
-	@echo "   URL: http://localhost:3000"
+	@echo "✅ Frontend verification container started:"
+	@echo "   http://localhost:3000"
 	@echo ""
-	@echo "Note: Backend must be running (make docker-up)"
+	@echo "Stop it after verification with:"
+	@echo "   make docker-frontend-down"
+
 
 docker-frontend-down:
 	docker compose -f docker-compose.frontend.yml down
 
+
 docker-frontend-logs:
 	docker compose -f docker-compose.frontend.yml logs -f
 
-docker-frontend-build:
-	docker compose -f docker-compose.frontend.yml build
 
-# === Docker: Production (with Traefik) ===
+docker-frontend-build:
+	docker compose -f docker-compose.frontend.yml build frontend
+
+
+# === Docker: production =====================================================
+
 docker-prod:
 	docker compose -f docker-compose.prod.yml up -d
 	@echo ""
-	@echo "✅ Production services started with Traefik!"
-	@echo ""
-	@echo "Endpoints (replace DOMAIN with your domain):"
-	@echo "   Frontend: https://$$DOMAIN"
-	@echo "   API: https://api.$$DOMAIN"
-	@echo "   Flower: https://flower.$$DOMAIN"
-	@echo "   Traefik: https://traefik.$$DOMAIN"
+	@echo "✅ Production services started"
+
 
 docker-prod-down:
 	docker compose -f docker-compose.prod.yml down
 
+
 docker-prod-logs:
 	docker compose -f docker-compose.prod.yml logs -f
+
 
 docker-prod-build:
 	docker compose -f docker-compose.prod.yml build
 
 
-# === Docker: Individual Services ===
+# === Docker: individual services ===========================================
+
 docker-db:
 	docker compose up -d db
 	@echo ""
 	@echo "✅ PostgreSQL started on port 5432"
 	@echo "   Connection: postgresql://postgres:postgres@localhost:5432/agentforge"
 
+
 docker-db-stop:
 	docker compose stop db
+
 
 docker-redis:
 	docker compose up -d redis
 	@echo ""
 	@echo "✅ Redis started on port 6379"
 
+
 docker-redis-stop:
 	docker compose stop redis
 
-# === Vercel (Frontend Deployment) ===
+
+# === Vercel =================================================================
+
 vercel-deploy:
 	cd frontend && npx vercel --prod
 	@echo ""
 	@echo "✅ Frontend deployed to Vercel!"
-	@echo "   Set environment variables in Vercel dashboard:"
+	@echo "   Configure:"
 	@echo "   BACKEND_URL=https://api.your-domain.com"
 	@echo "   NEXT_PUBLIC_API_URL=https://api.your-domain.com"
 	@echo "   NEXT_PUBLIC_WS_URL=wss://api.your-domain.com"
 	@echo "   NEXT_PUBLIC_SITE_URL=https://your-domain.com"
 
-# === Cleanup ===
+
+# === Cleanup ================================================================
+
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
@@ -326,76 +432,81 @@ clean:
 	find . -type d -name .ty_cache -exec rm -rf {} + 2>/dev/null || true
 	rm -rf htmlcov/ .coverage coverage.xml
 
-# === Help ===
+
+# === Help ===================================================================
+
 help:
 	@echo ""
-	@echo "agentforge - Available Commands"
+	@echo "AgentForge - Available Commands"
 	@echo "======================================"
 	@echo ""
-	@echo "🚀 Bootstrap (first-time setup):"
-	@echo "  make bootstrap      'make dev' + 'make seed' — full setup from a fresh clone"
+	@echo "First-time setup:"
+	@echo "  make bootstrap             Build backend + start stack + seed local admin"
 	@echo ""
-	@echo "Day-to-day dev:"
-	@echo "  make dev            Build + start dev stack + apply migrations (idempotent)"
-	@echo "  make seed           One-shot admin seed (admin@example.com / admin123)"
-	@echo "  make dev-down       Stop dev stack"
-	@echo "  make dev-logs       Tail dev container logs"
-	@echo "  make dev-rebuild    Force-rebuild backend image"
-	@echo "  make docker-clean   Wipe containers + networks + volumes (DESTROYS data)"
-	@echo "  make dev-frontend   Start frontend container (after 'make dev')"
+	@echo "Day-to-day development:"
+	@echo "  make dev                   Start Docker backend stack + apply migrations"
+	@echo "  make frontend-dev          Start local Next.js dev server on port 3000"
+	@echo "  make dev-down              Stop Docker backend stack"
+	@echo "  make dev-logs              Tail Docker backend logs"
+	@echo "  make dev-restart-workers   Restart Celery worker / beat / Flower"
+	@echo "  make dev-rebuild           Rebuild backend image after dependency changes"
 	@echo ""
-	@echo "📦 Other environments:"
-	@echo "  make stage          Production-like stack on localhost (no bind mounts)"
-	@echo "  make prod           Production stack (requires backend/.env + nginx)"
+	@echo "Development state:"
+	@echo "  make seed                  Seed local admin if missing"
+	@echo "  make docker-clean          DESTROY local Docker volumes and database data"
 	@echo ""
-	@echo "Setup (without Docker):"
-	@echo "  make install       Install Python deps + pre-commit hooks"
+	@echo "Backend without Docker:"
+	@echo "  make install               Install backend dependencies + pre-commit"
+	@echo "  make run                   Run FastAPI locally with reload"
 	@echo ""
-	@echo "Development:"
-	@echo "  make run           Start dev server (with hot reload)"
-	@echo "  make test          Run tests"
-	@echo "  make lint          Check code quality"
-	@echo "  make format        Auto-format code"
+	@echo "Code quality:"
+	@echo "  make test                  Run backend tests"
+	@echo "  make test-cov              Run backend tests with coverage"
+	@echo "  make lint                  Run backend lint/type checks"
+	@echo "  make format                Auto-format backend code"
 	@echo ""
 	@echo "Database:"
-	@echo "  make db-init       Initialize database (start + migrate)"
-	@echo "  make db-migrate    Create new migration"
-	@echo "  make db-upgrade    Apply migrations"
-	@echo "  make db-downgrade  Rollback last migration"
-	@echo "  make db-current    Show current migration"
+	@echo "  make db-migrate            Create a migration"
+	@echo "  make db-upgrade            Apply migrations"
+	@echo "  make db-downgrade          Roll back migration"
+	@echo "  make db-current            Show current migration"
+	@echo "  make db-history            Show migration history"
 	@echo ""
 	@echo "Users:"
-	@echo "  make create-admin  Create admin user (for SQLAdmin access)"
-	@echo "  make user-create   Create new user (interactive)"
-	@echo "  make user-list     List all users"
+	@echo "  make create-admin          Create admin user"
+	@echo "  make user-create           Create user"
+	@echo "  make user-list             List users"
 	@echo ""
 	@echo "Celery:"
-	@echo "  make celery-worker  Start Celery worker"
-	@echo "  make celery-beat    Start Celery beat scheduler"
-	@echo "  make celery-flower  Start Flower monitoring UI"
+	@echo "  make celery-worker         Run worker locally"
+	@echo "  make celery-beat           Run beat locally"
+	@echo "  make celery-flower         Run Flower locally"
 	@echo ""
-	@echo "Docker (Development):"
-	@echo "  make docker-up            Start backend services"
-	@echo "  make docker-down          Stop all services"
-	@echo "  make docker-logs          View backend logs"
-	@echo "  make docker-build         Build backend images"
-	@echo "  make docker-frontend      Start frontend (separate)"
-	@echo "  make docker-frontend-down Stop frontend"
-	@echo "  make docker-db            Start only PostgreSQL"
-	@echo "  make docker-redis         Start only Redis"
+	@echo "Docker backend:"
+	@echo "  make docker-up             Alias for make dev"
+	@echo "  make docker-down           Stop backend + verification frontend containers"
+	@echo "  make docker-logs           Tail backend logs"
+	@echo "  make docker-build          Build backend image"
+	@echo "  make docker-shell          Open backend container shell"
 	@echo ""
-	@echo "Docker (Production with Traefik):"
-	@echo "  make docker-prod          Start production stack"
-	@echo "  make docker-prod-down     Stop production stack"
-	@echo "  make docker-prod-logs     View production logs"
+	@echo "Frontend container verification:"
+	@echo "  make docker-frontend       Rebuild + start fresh frontend image"
+	@echo "  make docker-frontend-down  Stop verification frontend"
+	@echo "  make docker-frontend-logs  Tail verification frontend logs"
+	@echo "  make docker-frontend-build Build frontend image only"
+	@echo ""
+	@echo "Production:"
+	@echo "  make prod                  Build/start production stack + migrate"
+	@echo "  make prod-down             Stop production stack"
+	@echo "  make prod-logs             Tail production logs"
 	@echo ""
 	@echo "Template upgrade:"
-	@echo "  make upgrade-dry-run       Preview template updates (no changes)"
-	@echo "  make upgrade               Pull latest template changes (3-way merge)"
-	@echo "  make upgrade-new-features  Upgrade + opt into newly added features"
-	@echo "  make upgrade-finalize      Bump manifest after resolving conflicts"
+	@echo "  make upgrade-dry-run       Preview template update"
+	@echo "  make upgrade               Apply template update"
+	@echo "  make upgrade-new-features  Upgrade with newly added template features"
+	@echo "  make upgrade-finalize      Finalize template upgrade"
 	@echo ""
 	@echo "Other:"
-	@echo "  make routes        Show all API routes"
-	@echo "  make clean         Clean cache files"
+	@echo "  make routes                Show FastAPI routes"
+	@echo "  make clean                 Clean local cache files"
 	@echo ""
