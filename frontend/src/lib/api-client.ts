@@ -6,6 +6,14 @@
 
 import { useAuthStore } from "@/stores";
 
+import {
+  getApiErrorMessage,
+} from "./error-message";
+
+export {
+  getApiErrorMessage,
+} from "./error-message";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -17,40 +25,53 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, "body"> {
+interface RequestOptions
+  extends Omit<RequestInit, "body"> {
   params?: Record<string, string>;
   body?: unknown;
 }
 
-// The proxy route that mints a fresh access token from the refresh cookie.
-const REFRESH_ENDPOINT = "/auth/refresh";
+const REFRESH_ENDPOINT =
+  "/auth/refresh";
 
-// Shared in-flight refresh promise so a burst of concurrent 401s triggers only
-// ONE refresh round-trip. Reset once the refresh settles.
-let refreshPromise: Promise<boolean> | null = null;
+let refreshPromise:
+  | Promise<boolean>
+  | null = null;
 
-/**
- * Attempt a single token refresh, de-duplicating concurrent callers.
- * Resolves true on success (cookies + in-memory access token updated), false
- * if the refresh itself failed (caller should surface the original 401).
- */
 function refreshAccessToken(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = fetch(`/api${REFRESH_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    })
-      .then(async (res) => {
-        if (!res.ok) return false;
+    refreshPromise = fetch(
+      `/api${REFRESH_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          return false;
+        }
+
         try {
-          const data = (await res.json()) as { access_token?: string };
+          const data =
+            (await response.json()) as {
+              access_token?: string;
+            };
+
           if (data?.access_token) {
-            // Keep the in-memory token (used for WS auth) in sync.
-            useAuthStore.getState().setAccessToken(data.access_token);
+            useAuthStore
+              .getState()
+              .setAccessToken(
+                data.access_token,
+              );
           }
         } catch {
-          // Body wasn't JSON — cookies were still rotated, treat as success.
+          // Cookies may still have been rotated successfully.
         }
+
         return true;
       })
       .catch(() => false)
@@ -58,17 +79,27 @@ function refreshAccessToken(): Promise<boolean> {
         refreshPromise = null;
       });
   }
+
   return refreshPromise;
 }
 
 class ApiClient {
-  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-    const { params, body, ...fetchOptions } = options;
+  private async request<T>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    const {
+      params,
+      body,
+      ...fetchOptions
+    } = options;
 
     let url = `/api${endpoint}`;
 
     if (params) {
-      const searchParams = new URLSearchParams(params);
+      const searchParams =
+        new URLSearchParams(params);
+
       url += `?${searchParams.toString()}`;
     }
 
@@ -76,66 +107,130 @@ class ApiClient {
       fetch(url, {
         ...fetchOptions,
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
           ...fetchOptions.headers,
         },
-        body: body ? JSON.stringify(body) : undefined,
+        body:
+          body !== undefined
+            ? JSON.stringify(body)
+            : undefined,
       });
 
     let response = await doFetch();
 
-    // Transparent 401 recovery: refresh once, then retry the request once.
-    // Never recurse into the refresh endpoint itself (would loop), and only
-    // attempt this a single time per call.
-    if (response.status === 401 && endpoint !== REFRESH_ENDPOINT) {
-      const refreshed = await refreshAccessToken();
+    if (
+      response.status === 401 &&
+      endpoint !== REFRESH_ENDPOINT
+    ) {
+      const refreshed =
+        await refreshAccessToken();
+
       if (refreshed) {
         response = await doFetch();
       }
     }
 
     if (!response.ok) {
-      let errorData;
+      let errorData: unknown;
+
       try {
-        errorData = await response.json();
+        errorData =
+          await response.json();
       } catch {
         errorData = null;
       }
+
       throw new ApiError(
         response.status,
-        errorData?.detail || errorData?.message || "Request failed",
+        getApiErrorMessage(
+          errorData,
+        ),
         errorData,
       );
     }
 
-    // Handle empty responses
-    const text = await response.text();
+    const text =
+      await response.text();
+
     if (!text) {
       return null as T;
     }
 
-    return JSON.parse(text);
+    return JSON.parse(text) as T;
   }
 
-  get<T>(endpoint: string, options?: RequestOptions) {
-    return this.request<T>(endpoint, { ...options, method: "GET" });
+  get<T>(
+    endpoint: string,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>(
+      endpoint,
+      {
+        ...options,
+        method: "GET",
+      },
+    );
   }
 
-  post<T>(endpoint: string, body?: unknown, options?: RequestOptions) {
-    return this.request<T>(endpoint, { ...options, method: "POST", body });
+  post<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>(
+      endpoint,
+      {
+        ...options,
+        method: "POST",
+        body,
+      },
+    );
   }
 
-  put<T>(endpoint: string, body?: unknown, options?: RequestOptions) {
-    return this.request<T>(endpoint, { ...options, method: "PUT", body });
+  put<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>(
+      endpoint,
+      {
+        ...options,
+        method: "PUT",
+        body,
+      },
+    );
   }
 
-  patch<T>(endpoint: string, body?: unknown, options?: RequestOptions) {
-    return this.request<T>(endpoint, { ...options, method: "PATCH", body });
+  patch<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>(
+      endpoint,
+      {
+        ...options,
+        method: "PATCH",
+        body,
+      },
+    );
   }
 
-  delete<T>(endpoint: string, options?: RequestOptions) {
-    return this.request<T>(endpoint, { ...options, method: "DELETE" });
+  delete<T>(
+    endpoint: string,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>(
+      endpoint,
+      {
+        ...options,
+        method: "DELETE",
+      },
+    );
   }
 }
 
-export const apiClient = new ApiClient();
+export const apiClient =
+  new ApiClient();
