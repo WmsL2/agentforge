@@ -314,8 +314,9 @@ class ConversationService:
         skip: int = 0,
         limit: int = 100,
         include_tool_calls: bool = False,
+        user_id: UUID | None = None,
     ) -> tuple[list[Message | MessageRead], int]:
-        await self.get_conversation(conversation_id)
+        await self.get_conversation(conversation_id, user_id=user_id)
         items = await conversation_repo.get_messages_by_conversation(
             self.db,
             conversation_id,
@@ -330,8 +331,9 @@ class ConversationService:
         self,
         conversation_id: UUID,
         data: MessageCreate,
+        user_id: UUID | None = None,
     ) -> Message:
-        await self.get_conversation(conversation_id)
+        await self.get_conversation(conversation_id, user_id=user_id)
         return await conversation_repo.create_message(
             self.db,
             conversation_id=conversation_id,

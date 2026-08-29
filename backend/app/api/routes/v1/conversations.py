@@ -160,11 +160,13 @@ async def list_messages(
     limit: int = Query(100, ge=1, le=500),
 ) -> Any:
     """List messages in a conversation."""
+    uid = None if current_user.has_role(UserRole.ADMIN) else current_user.id
     items, total = await conversation_service.list_messages(
         conversation_id,
         skip=skip,
         limit=limit,
         include_tool_calls=True,
+        user_id=uid,
     )
     return MessageList(items=items, total=total)  # ty: ignore[invalid-argument-type]
 
@@ -181,4 +183,8 @@ async def add_message(
     current_user: CurrentUser,
 ) -> Any:
     """Add a message to a conversation."""
-    return await conversation_service.add_message(conversation_id, data)
+    return await conversation_service.add_message(
+        conversation_id,
+        data,
+        user_id=current_user.id,
+    )
