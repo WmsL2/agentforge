@@ -122,7 +122,6 @@ class ConversationUpdate(BaseSchema):
 
     title: str | None = Field(default=None, max_length=255)
     is_archived: bool | None = None
-    is_demo: bool | None = None
 
 
 class ConversationRead(ConversationBase, TimestampSchema):
@@ -131,7 +130,6 @@ class ConversationRead(ConversationBase, TimestampSchema):
     id: UUID
     user_id: UUID | None = None
     is_archived: bool = False
-    is_demo: bool = False
 
 
 class ConversationReadWithMessages(ConversationRead):
@@ -170,24 +168,4 @@ class ConversationAdminList(BaseSchema):
 
 class ConversationExport(BaseSchema):
     conversations: list[Any]
-    total: int
-
-
-class DemoConversationSummary(BaseSchema):
-    """Lightweight card for the public demo gallery."""
-
-    id: UUID
-    title: str | None = None
-    message_count: int = 0
-    preview: str | None = Field(
-        default=None, description="First user prompt, truncated to 200 chars"
-    )
-    created_at: datetime
-    updated_at: datetime | None = None
-
-
-class DemoConversationList(BaseSchema):
-    """Paginated list of public demo conversations."""
-
-    items: list[DemoConversationSummary]
     total: int

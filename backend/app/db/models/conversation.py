@@ -37,7 +37,6 @@ class Conversation(Base, TimestampMixin):
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     messages: Mapped[list["Message"]] = relationship(
         "Message",

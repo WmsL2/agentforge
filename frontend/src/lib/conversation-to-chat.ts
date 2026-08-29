@@ -2,7 +2,7 @@ import type { ChatMessage, ChatMessageFile, MessagePart, ToolCall } from "@/type
 
 /**
  * Shape of a persisted message as returned by the backend (MessageRead).
- * Both the conversation history endpoint and the public demo endpoint return this.
+ * Returned by the backend conversation message endpoints.
  */
 export interface RawToolCall {
   tool_call_id: string;
@@ -28,8 +28,7 @@ export interface RawMessage {
  *
  * The DB stores flat fields (content + tool_calls) with no interleaving metadata, so we
  * reconstruct a realistic ordered timeline for assistant turns: tool parts first (tools ran
- * before the final answer), then the text part. Used by both the authenticated chat (when
- * loading a saved conversation) and the public demo replay.
+ * before the final answer), then the text part.
  */
 export function buildAssistantParts(
   toolCalls: ToolCall[],

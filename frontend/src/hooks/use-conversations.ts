@@ -15,7 +15,6 @@ interface CreateConversationResponse {
   created_at: string;
   updated_at: string;
   is_archived: boolean;
-  is_demo?: boolean;
 }
 
 interface MessagesResponse {
@@ -131,7 +130,6 @@ export function useConversations() {
           created_at: response.created_at,
           updated_at: response.updated_at,
           is_archived: response.is_archived,
-          is_demo: response.is_demo ?? false,
         };
         writeCache((prev) => [newConversation, ...prev]);
         return newConversation;

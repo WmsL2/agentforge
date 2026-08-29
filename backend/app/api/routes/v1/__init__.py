@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from app.api.routes.v1 import health
 from app.api.routes.v1 import admin_users, auth, users
 from app.api.routes.v1 import sessions
-from app.api.routes.v1 import conversations, public_demos
+from app.api.routes.v1 import conversations
 from app.api.routes.v1 import admin_conversations
 from app.api.routes.v1 import agent
 from app.api.routes.v1 import files
@@ -29,12 +29,6 @@ v1_router.include_router(
     conversations.router,
     prefix="/conversations",
     tags=["conversations"],
-)
-
-v1_router.include_router(
-    public_demos.router,
-    prefix="/demos",
-    tags=["demos"],
 )
 
 v1_router.include_router(agent.router, tags=["agent"])

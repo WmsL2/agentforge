@@ -373,7 +373,6 @@ AgentForge product direction and should be removed after dependency/reference
 analysis:
 
 - generic contact/sales backend;
-- public demo gallery;
 - message rating product feature;
 - conversation sharing product feature;
 - user slash-command product feature;
