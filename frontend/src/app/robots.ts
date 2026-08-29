@@ -31,7 +31,6 @@ export default function robots(): MetadataRoute.Robots {
           "/sessions",
           "/invitations/*",
           "/auth/callback",
-          "/shared/*",
           "/onboarding",
           "/onboarding/*",
           "/forgot-password",

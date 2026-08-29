@@ -4,8 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 
 from app.api.deps import ConversationSvc, CurrentAdmin
+from app.schemas.admin_conversation import AdminConversationList
 from app.schemas.conversation import ConversationReadWithMessages
-from app.schemas.conversation_share import AdminConversationList
 
 router = APIRouter()
 

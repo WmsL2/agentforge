@@ -11,8 +11,8 @@ from app.db.models.conversation import Conversation, Message, ToolCall
 from app.repositories import (
     chat_file_repo,
     conversation_repo,
-    conversation_share_repo,
 )
+from app.schemas.admin_conversation import AdminConversationList, AdminConversationRead
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationUpdate,
@@ -22,7 +22,6 @@ from app.schemas.conversation import (
     ToolCallComplete,
     ToolCallCreate,
 )
-from app.schemas.conversation_share import AdminConversationList, AdminConversationRead
 
 logger = logging.getLogger(__name__)
 
@@ -141,13 +140,10 @@ class ConversationService:
             and conversation.user_id is not None
             and str(conversation.user_id) != str(user_id)
         ):
-            # Not the owner — check if user has a share granting access
-            share = await conversation_share_repo.get_share(self.db, conversation_id, user_id)
-            if not share:
-                raise NotFoundError(
-                    message="Conversation not found",
-                    details={"conversation_id": str(conversation_id)},
-                )
+            raise NotFoundError(
+                message="Conversation not found",
+                details={"conversation_id": str(conversation_id)},
+            )
         return conversation
 
     async def list_conversations(

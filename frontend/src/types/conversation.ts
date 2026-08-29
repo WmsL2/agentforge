@@ -45,23 +45,6 @@ export interface ConversationWithMessages extends Conversation {
   messages: ConversationMessage[];
 }
 
-export interface ConversationShare {
-  id: string;
-  conversation_id: string;
-  shared_by: string;
-  shared_with?: string;
-  share_token?: string;
-  permission: "view" | "edit";
-  shared_with_email?: string;
-  shared_by_email?: string;
-  created_at: string;
-}
-
-export interface ConversationShareListResponse {
-  items: ConversationShare[];
-  total: number;
-}
-
 export interface AdminConversation {
   id: string;
   user_id?: string;

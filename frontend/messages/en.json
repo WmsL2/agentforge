@@ -166,20 +166,7 @@
     "delete": "Delete",
     "newConversation": "New conversation",
     "analyzeFiles": "Analyze the attached file(s)",
-    "copyMessage": "Copy",
-    "shareConversation": "Share Conversation",
-    "shareDescription": "Share this conversation with other users or generate a public link.",
-    "userIdOrEmail": "User ID or email",
-    "generateShareLink": "Generate share link",
-    "sharedWith": "Shared with",
-    "conversationShared": "Conversation shared",
-    "linkGenerated": "Share link generated",
-    "accessRevoked": "Access revoked",
-    "revokeAccess": "Revoke access",
-    "copyLink": "Link copied to clipboard",
-    "failedToShare": "Failed to share conversation",
-    "failedToGenerateLink": "Failed to generate link",
-    "failedToRevoke": "Failed to revoke access"
+    "copyMessage": "Copy"
   },
   "admin": {
     "conversationsTitle": "Admin: Conversations",

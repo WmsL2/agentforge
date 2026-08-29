@@ -9,12 +9,10 @@ from app.repositories import conversation as conversation_repo
 
 from app.repositories import chat_file as chat_file_repo
 
-from app.repositories import conversation_share as conversation_share_repo
 
 __all__ = [
     "user_repo",
     "session_repo",
     "conversation_repo",
     "chat_file_repo",
-    "conversation_share_repo",
 ]

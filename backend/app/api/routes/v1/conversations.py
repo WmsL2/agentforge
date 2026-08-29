@@ -5,7 +5,6 @@ from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import (
-    ConversationShareSvc,
     ConversationSvc,
     CurrentAdmin,
     CurrentUser,
@@ -22,11 +21,6 @@ from app.schemas.conversation import (
     MessageCreate,
     MessageList,
     MessageRead,
-)
-from app.schemas.conversation_share import (
-    ConversationShareCreate,
-    ConversationShareList,
-    ConversationShareRead,
 )
 
 router = APIRouter()
@@ -62,27 +56,6 @@ async def list_conversations_admin(
         search=search,
     )
     return ConversationAdminList(items=items, total=total)
-
-
-@router.get("/shared-with-me", response_model=ConversationList)
-async def list_shared_with_me(
-    share_service: ConversationShareSvc,
-    current_user: CurrentUser,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-) -> Any:
-    """List conversations shared with the current user."""
-    items, total = await share_service.list_shared_with_me(current_user.id, skip=skip, limit=limit)
-    return ConversationList(items=items, total=total)
-
-
-@router.get("/shared/{token}", response_model=ConversationReadWithMessages)
-async def get_shared_conversation(
-    token: str,
-    share_service: ConversationShareSvc,
-) -> Any:
-    """Access a shared conversation via public token (no auth required)."""
-    return await share_service.get_by_token(token)
 
 
 @router.get("", response_model=ConversationList)
@@ -209,51 +182,3 @@ async def add_message(
 ) -> Any:
     """Add a message to a conversation."""
     return await conversation_service.add_message(conversation_id, data)
-
-
-@router.post(
-    "/{conversation_id}/shares",
-    response_model=ConversationShareRead,
-    status_code=status.HTTP_201_CREATED,
-)
-async def share_conversation(
-    conversation_id: UUID,
-    data: ConversationShareCreate,
-    share_service: ConversationShareSvc,
-    current_user: CurrentUser,
-) -> Any:
-    """Share a conversation with another user or generate a public link."""
-    result = await share_service.share_conversation(
-        conversation_id,
-        shared_by=current_user.id,
-        shared_with=data.shared_with,
-        generate_link=data.generate_link,
-        permission=data.permission,
-    )
-    return result["share"]
-
-
-@router.get("/{conversation_id}/shares", response_model=ConversationShareList)
-async def list_shares(
-    conversation_id: UUID,
-    share_service: ConversationShareSvc,
-    current_user: CurrentUser,
-) -> Any:
-    """List all shares for a conversation (owner only)."""
-    shares = await share_service.list_shares(conversation_id, current_user.id)
-    return ConversationShareList(items=shares, total=len(shares))
-
-
-@router.delete(
-    "/{conversation_id}/shares/{share_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_model=None,
-)
-async def revoke_share(
-    conversation_id: UUID,
-    share_id: UUID,
-    share_service: ConversationShareSvc,
-    current_user: CurrentUser,
-) -> None:
-    """Revoke a conversation share."""
-    await share_service.revoke_share(share_id, current_user.id)

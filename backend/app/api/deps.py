@@ -35,7 +35,6 @@ Redis = Annotated[RedisClient, Depends(get_redis)]
 from app.services.user import UserService
 from app.services.session import SessionService
 from app.services.conversation import ConversationService
-from app.services.conversation_share import ConversationShareService
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -59,16 +58,6 @@ def get_conversation_service(db: DBSession) -> ConversationService:
 
 ConversationSvc = Annotated[ConversationService, Depends(get_conversation_service)]
 
-
-def get_conversation_share_service(db: DBSession) -> ConversationShareService:
-    """Create ConversationShareService instance with database session."""
-    return ConversationShareService(db)
-
-
-ConversationShareSvc = Annotated[
-    ConversationShareService,
-    Depends(get_conversation_share_service),
-]
 
 from app.services.file_upload import FileUploadService
 

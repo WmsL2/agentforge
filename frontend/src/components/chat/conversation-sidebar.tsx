@@ -15,12 +15,10 @@ import {
   MessageSquare,
   MoreVertical,
   Pencil,
-  Share2,
   SquarePen,
   Trash2,
 } from "lucide-react";
 import type { Conversation } from "@/types";
-import { ShareDialog } from "./share-dialog";
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -30,7 +28,6 @@ interface ConversationItemProps {
   onArchive: () => void;
   onUnarchive: () => void;
   onRename: (title: string) => void;
-  onShare: () => void;
 }
 
 function ConversationItem({
@@ -41,7 +38,6 @@ function ConversationItem({
   onArchive,
   onUnarchive,
   onRename,
-  onShare,
 }: ConversationItemProps) {
   const t = useTranslations("chat");
   const [showMenu, setShowMenu] = useState(false);
@@ -131,17 +127,6 @@ function ConversationItem({
                 <Pencil className="h-4 w-4" />
                 {t("rename")}
               </button>
-              <button
-                className="hover:bg-secondary flex min-h-[44px] w-full items-center gap-2 px-3 py-3 text-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onShare();
-                  setShowMenu(false);
-                }}
-              >
-                <Share2 className="h-4 w-4" />
-                {t("share")}
-              </button>
               {conversation.is_archived ? (
                 <button
                   className="hover:bg-secondary flex min-h-[44px] w-full items-center gap-2 px-3 py-3 text-sm"
@@ -217,7 +202,6 @@ function ConversationList({
 }: ConversationListProps) {
   const t = useTranslations("chat");
   const [view, setView] = useState<ConversationView>("active");
-  const [shareConversationId, setShareConversationId] = useState<string | null>(null);
 
   const all = conversations ?? [];
   const activeCount = all.filter((c) => !c.is_archived).length;
@@ -312,21 +296,11 @@ function ConversationList({
                 onArchive={() => onArchive(conversation.id)}
                 onUnarchive={() => onUnarchive(conversation.id)}
                 onRename={(title) => onRename(conversation.id, title)}
-                onShare={() => setShareConversationId(conversation.id)}
               />
             ))}
           </div>
         )}
       </div>
-      {shareConversationId && (
-        <ShareDialog
-          conversationId={shareConversationId}
-          open={!!shareConversationId}
-          onOpenChange={(open) => {
-            if (!open) setShareConversationId(null);
-          }}
-        />
-      )}
     </>
   );
 }

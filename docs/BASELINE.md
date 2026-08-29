@@ -374,7 +374,6 @@ analysis:
 
 - generic contact/sales backend;
 - message rating product feature;
-- conversation sharing product feature;
 - user slash-command product feature;
 - generic SaaS pricing;
 - generic marketing testimonials;
