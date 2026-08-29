@@ -1,4 +1,4 @@
-import { RatingValue, type ChatMessageFile, type UserRating } from "./chat";
+import type { ChatMessageFile } from "./chat";
 
 export interface Conversation {
   id: string;
@@ -22,8 +22,6 @@ export interface ConversationMessage {
   tokens_used?: number;
   tool_calls?: ConversationToolCall[];
   files?: ChatMessageFile[];
-  user_rating?: UserRating;
-  rating_count?: { likes: number; dislikes: number } | null;
 }
 
 export interface ConversationToolCall {
@@ -46,41 +44,6 @@ export interface ConversationListResponse {
 
 export interface ConversationWithMessages extends Conversation {
   messages: ConversationMessage[];
-}
-/**
- * Message rating types.
- */
-
-export interface MessageRating {
-  id: string;
-  message_id: string;
-  user_id: string;
-  rating: RatingValue;
-  comment: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MessageRatingWithDetails extends MessageRating {
-  message_content: string | null;
-  message_role: string | null;
-  conversation_id: string | null;
-  user_email: string | null;
-  user_name: string | null;
-}
-
-export interface MessageRatingListResponse {
-  items: MessageRatingWithDetails[];
-  total: number;
-}
-
-export interface RatingSummary {
-  total_ratings: number;
-  like_count: number;
-  dislike_count: number;
-  average_rating: number;
-  with_comments: number;
-  ratings_by_day: Array<{ date: string; likes: number; dislikes: number }>;
 }
 
 export interface ConversationShare {

@@ -853,12 +853,7 @@ class TestConversationServiceExportAll:
             mock_repo.get_conversation_by_id = AsyncMock(return_value=mock_conv)
             mock_repo.get_messages_by_conversation = AsyncMock(return_value=[mock_msg])
             mock_repo.count_messages = AsyncMock(return_value=1)
-            # Patch the *use site* — service does `from app.repositories import
-            # message_rating_repo` so the binding lives on app.services.conversation,
-            # not on app.repositories.
-            with patch("app.services.conversation.message_rating_repo") as mock_rating_repo:
-                mock_rating_repo.get_ratings_with_users_for_messages = AsyncMock(return_value=[])
-                result = await service.export_all()
+            result = await service.export_all()
 
             assert len(result) == 1
             assert result[0]["id"] == str(conv_id)

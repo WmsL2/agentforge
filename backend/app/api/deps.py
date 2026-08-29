@@ -70,16 +70,6 @@ ConversationShareSvc = Annotated[
     Depends(get_conversation_share_service),
 ]
 
-from app.services.message_rating import MessageRatingService
-
-
-def get_rating_service(db: DBSession) -> MessageRatingService:
-    """Create MessageRatingService instance with database session."""
-    return MessageRatingService(db)
-
-
-MessageRatingSvc = Annotated[MessageRatingService, Depends(get_rating_service)]
-
 from app.services.file_upload import FileUploadService
 
 

@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import (
@@ -9,7 +9,6 @@ from app.api.deps import (
     ConversationSvc,
     CurrentAdmin,
     CurrentUser,
-    MessageRatingSvc,
 )
 from app.db.models.user import UserRole
 from app.schemas.conversation import (
@@ -28,10 +27,6 @@ from app.schemas.conversation_share import (
     ConversationShareCreate,
     ConversationShareList,
     ConversationShareRead,
-)
-from app.schemas.message_rating import (
-    MessageRatingCreate,
-    MessageRatingRead,
 )
 
 router = APIRouter()
@@ -192,13 +187,11 @@ async def list_messages(
     limit: int = Query(100, ge=1, le=500),
 ) -> Any:
     """List messages in a conversation."""
-    uid = None if current_user.has_role(UserRole.ADMIN) else current_user.id
     items, total = await conversation_service.list_messages(
         conversation_id,
         skip=skip,
         limit=limit,
         include_tool_calls=True,
-        user_id=uid,
     )
     return MessageList(items=items, total=total)  # ty: ignore[invalid-argument-type]
 
@@ -216,49 +209,6 @@ async def add_message(
 ) -> Any:
     """Add a message to a conversation."""
     return await conversation_service.add_message(conversation_id, data)
-
-
-@router.post(
-    "/{conversation_id}/messages/{message_id}/rate",
-    response_model=MessageRatingRead,
-)
-async def rate_message(
-    conversation_id: UUID,
-    message_id: UUID,
-    data: MessageRatingCreate,
-    rating_service: MessageRatingSvc,
-    current_user: CurrentUser,
-    response: Response,
-) -> Any:
-    """Rate an assistant message — 201 for new rating, 200 when updating."""
-    rating, is_new = await rating_service.rate_message(
-        conversation_id=conversation_id,
-        message_id=message_id,
-        user_id=current_user.id,
-        data=data,
-    )
-    if is_new:
-        response.status_code = status.HTTP_201_CREATED
-    return rating
-
-
-@router.delete(
-    "/{conversation_id}/messages/{message_id}/rate",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_model=None,
-)
-async def remove_rating(
-    conversation_id: UUID,
-    message_id: UUID,
-    rating_service: MessageRatingSvc,
-    current_user: CurrentUser,
-) -> None:
-    """Remove your rating from a message."""
-    await rating_service.remove_rating(
-        conversation_id=conversation_id,
-        message_id=message_id,
-        user_id=current_user.id,
-    )
 
 
 @router.post(

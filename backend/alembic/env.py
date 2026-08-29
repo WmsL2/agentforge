@@ -12,7 +12,6 @@ from app.db.base import Base
 # Import all models here to ensure they are registered with metadata
 from app.db.models.user import User  # noqa: F401
 from app.db.models.conversation import Conversation, Message, ToolCall  # noqa: F401
-from app.db.models.message_rating import MessageRating  # noqa: F401
 from app.db.models.session import Session  # noqa: F401
 from app.db.models.chat_file import ChatFile  # noqa: F401
 

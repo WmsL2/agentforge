@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, CreditCard, LayoutDashboard, MessageSquare, Star, Users } from "lucide-react";
+import { Activity, CreditCard, LayoutDashboard, MessageSquare, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
@@ -19,7 +19,6 @@ const ITEMS: NavItem[] = [
   { label: "Overview", href: ROUTES.ADMIN, icon: LayoutDashboard },
   { label: "Users", href: ROUTES.ADMIN_USERS, icon: Users },
   { label: "Conversations", href: ROUTES.ADMIN_CONVERSATIONS, icon: MessageSquare },
-  { label: "Ratings", href: ROUTES.ADMIN_RATINGS, icon: Star },
   { label: "Stripe events", href: ROUTES.ADMIN_STRIPE_EVENTS, icon: CreditCard },
   { label: "System health", href: ROUTES.ADMIN_SYSTEM, icon: Activity },
 ];

@@ -20,8 +20,6 @@ export interface RawMessage {
   created_at: string;
   tool_calls?: RawToolCall[] | null;
   thinking?: string | null;
-  user_rating?: number | null;
-  rating_count?: { likes: number; dislikes: number } | null;
   files?: ChatMessageFile[] | null;
 }
 
@@ -75,8 +73,6 @@ export function conversationMessageToChatMessage(msg: RawMessage): ChatMessage {
     conversationId: msg.conversation_id,
     toolCalls,
     parts,
-    user_rating: msg.user_rating ?? undefined,
-    rating_count: msg.rating_count ?? undefined,
     files,
     fileIds: files?.map((f) => f.id),
   };

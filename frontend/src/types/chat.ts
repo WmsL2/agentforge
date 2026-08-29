@@ -1,11 +1,4 @@
 export type MessageRole = "user" | "assistant" | "system";
-/** Rating values for message feedback. */
-export enum RatingValue {
-  LIKE = 1,
-  DISLIKE = -1,
-}
-
-export type UserRating = RatingValue.LIKE | RatingValue.DISLIKE | null;
 
 export interface ChatMessageFile {
   id: string;
@@ -32,10 +25,6 @@ export interface ChatMessage {
   conversationId?: string;
   /** True if message ID is a temporary nanoid, not yet replaced by server ID */
   isTemporaryId?: boolean;
-  /** Current user's rating */
-  user_rating?: UserRating;
-  /** Aggregate rating counts */
-  rating_count?: { likes: number; dislikes: number } | null;
   /** Reasoning trace from extended-thinking models. Rendered dimmed +
    *  collapsible above the final response. */
   thinking?: string;
@@ -43,7 +32,7 @@ export interface ChatMessage {
    *  calls in the exact order they occurred. Rendered in sequence so a
    *  multi-step turn (think → tools → text → think → tools → text) shows
    *  correctly. ``content``/``thinking``/``toolCalls`` are kept in sync as
-   *  flat aggregates for copy/persist/rating. */
+   *  flat aggregates for copy/persist. */
   parts?: MessagePart[];
 }
 

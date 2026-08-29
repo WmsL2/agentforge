@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { List, MessageSquare, Plus, Star } from "lucide-react";
+import { List, MessageSquare, Plus } from "lucide-react";
 
 import { ActiveSessions } from "@/components/dashboard/active-sessions";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -138,13 +138,6 @@ export default function DashboardPage() {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <AdminTile
-              icon={Star}
-              label="Response ratings"
-              description="View and manage ratings"
-              href={ROUTES.ADMIN_RATINGS}
-            />
-
-            <AdminTile
               icon={List}
               label="All conversations"
               description="Inspect any user's chats"
@@ -163,7 +156,7 @@ function AdminTile({
   description,
   href,
 }: {
-  icon: typeof Star;
+  icon: typeof List;
   label: string;
   description: string;
   href: string;

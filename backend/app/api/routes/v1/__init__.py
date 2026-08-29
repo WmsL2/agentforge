@@ -5,7 +5,6 @@ from fastapi import APIRouter
 
 from app.api.routes.v1 import health
 from app.api.routes.v1 import admin_users, auth, users
-from app.api.routes.v1 import admin_ratings
 from app.api.routes.v1 import sessions
 from app.api.routes.v1 import conversations, public_demos
 from app.api.routes.v1 import admin_conversations
@@ -19,12 +18,6 @@ v1_router.include_router(health.router, tags=["health"])
 
 v1_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 v1_router.include_router(users.router, prefix="/users", tags=["users"])
-
-v1_router.include_router(
-    admin_ratings.router,
-    prefix="/admin/ratings",
-    tags=["admin:ratings"],
-)
 
 v1_router.include_router(
     sessions.router,

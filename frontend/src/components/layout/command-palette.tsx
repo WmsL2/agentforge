@@ -21,7 +21,6 @@ import {
   Search,
   Settings,
   Shield,
-  Star,
   UserCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -310,18 +309,6 @@ export function CommandPalette() {
 
         {isAppAdmin(user) && (
           <Group heading={t("admin")}>
-            <PaletteItem
-              icon={Star}
-              label={t(
-                "responseRatings",
-              )}
-              onSelect={() =>
-                go(
-                  ROUTES.ADMIN_RATINGS,
-                )
-              }
-            />
-
             <PaletteItem
               icon={Activity}
               label={t(

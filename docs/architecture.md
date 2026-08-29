@@ -24,24 +24,20 @@ services, which in turn delegate to repositories.
 | **`services/`** | **Business logic, orchestration** |
 | ↳ `user.py` | User CRUD, profile updates |
 | ↳ `conversation.py` | Conversation & message management |
-| ↳ `message_rating.py` | Message rating CRUD, statistics, export |
 | ↳ `file_upload.py` | Chat file upload handling |
 | ↳ `file_storage.py` | File storage abstraction (local / S3) |
 | **`repositories/`** | **Data access layer, database queries** |
 | ↳ `user.py` | User queries |
 | ↳ `conversation.py` | Conversation queries |
 | ↳ `chat_file.py` | Chat file queries |
-| ↳ `message_rating.py` | Message rating queries |
 | **`schemas/`** | **Pydantic request/response models** |
 | ↳ `user.py` | User schemas |
 | ↳ `conversation.py` | Conversation & message schemas |
 | ↳ `file.py` | File upload schemas |
-| ↳ `message_rating.py` | Message rating schemas |
 | **`db/models/`** | **SQLAlchemy 2.0 models** |
 | ↳ `user.py` | User model |
 | ↳ `conversation.py` | Conversation & message models |
 | ↳ `chat_file.py` | Chat file model |
-| ↳ `message_rating.py` | Message rating model |
 | ↳ `webhook.py` | Webhook model |
 | `core/config.py` | Settings via pydantic-settings |
 | `core/security.py` | JWT / API key utilities |

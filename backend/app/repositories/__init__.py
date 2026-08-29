@@ -10,7 +10,6 @@ from app.repositories import conversation as conversation_repo
 from app.repositories import chat_file as chat_file_repo
 
 from app.repositories import conversation_share as conversation_share_repo
-from app.repositories import message_rating as message_rating_repo
 
 __all__ = [
     "user_repo",
@@ -18,5 +17,4 @@ __all__ = [
     "conversation_repo",
     "chat_file_repo",
     "conversation_share_repo",
-    "message_rating_repo",
 ]

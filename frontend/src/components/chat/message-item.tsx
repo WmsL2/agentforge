@@ -5,8 +5,7 @@ import type { ChatMessage, ChatMessageFile } from "@/types";
 import { ToolCallCard } from "./tool-call-card";
 import { MarkdownContent } from "./markdown-content";
 import { CopyButton } from "./copy-button";
-import { RatingButtons } from "./rating-buttons";
-import { useChatStore, useFilePreviewStore } from "@/stores";
+import { useFilePreviewStore } from "@/stores";
 import { useSourcesPanelStore } from "@/stores/sources-panel-store";
 import { Bot, FileText, Globe, Paperclip, RefreshCw, User } from "lucide-react";
 import Image from "next/image";
@@ -112,7 +111,6 @@ interface MessageItemProps {
 
 export function MessageItem({ message, groupPosition, onRegenerate }: MessageItemProps) {
   const isUser = message.role === "user";
-  const updateMessage = useChatStore((state) => state.updateMessage);
   const openPreview = useFilePreviewStore((s) => s.open);
   const openSources = useSourcesPanelStore((s) => s.open);
   const { user: authUser, avatarVersion } = useAuthStore();
@@ -341,22 +339,6 @@ export function MessageItem({ message, groupPosition, onRegenerate }: MessageIte
                 <RefreshCw className="h-3 w-3" />
               </button>
             )}
-            {!isUser && (
-              <RatingButtons
-                messageId={message.id}
-                conversationId={message.conversationId ?? ""}
-                currentRating={message.user_rating ?? null}
-                ratingCount={message.rating_count ?? undefined}
-                isAssistant={!isUser}
-                onRatingChange={(updatedData) => {
-                  updateMessage(message.id, (msg) => ({
-                    ...msg,
-                    user_rating: updatedData.rating,
-                    rating_count: updatedData.rating_count,
-                  }));
-                }}
-              />
-            )}
           </div>
         )}
       </div>
@@ -407,6 +389,7 @@ function FileChip({
       <Paperclip className="text-foreground/40 h-3.5 w-3.5 shrink-0" />
     </>
   );
+
   if (onClick) {
     return (
       <button type="button" onClick={onClick} className={className} title={hint ?? filename}>
@@ -414,6 +397,7 @@ function FileChip({
       </button>
     );
   }
+
   return (
     <a
       href={href ?? "#"}

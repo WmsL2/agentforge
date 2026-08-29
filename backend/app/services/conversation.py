@@ -12,7 +12,6 @@ from app.repositories import (
     chat_file_repo,
     conversation_repo,
     conversation_share_repo,
-    message_rating_repo,
 )
 from app.schemas.conversation import (
     ConversationCreate,
@@ -52,7 +51,7 @@ class ConversationService:
     MESSAGE_EXPORT_LIMIT = 10000
 
     async def export_all(self) -> list[dict[str, Any]]:
-        """Export all conversations with messages and ratings for admin download.
+        """Export all conversations with messages for admin download.
 
         Uses keyset pagination on (created_at, id) to avoid skipping or
         duplicating conversations when data changes during export.
@@ -71,7 +70,6 @@ class ConversationService:
             if not items:
                 break
 
-            all_message_ids: list[UUID] = []
             conv_messages_map: dict[str, list[Message | MessageRead]] = {}
 
             for conv in items:
@@ -79,27 +77,6 @@ class ConversationService:
                     conv.id, skip=0, limit=self.MESSAGE_EXPORT_LIMIT, include_tool_calls=True
                 )
                 conv_messages_map[str(conv.id)] = messages
-                all_message_ids.extend([m.id for m in messages if m.id])
-            message_ratings_map: dict[str, list[dict[str, Any]]] = {}
-            ratings = await message_rating_repo.get_ratings_with_users_for_messages(
-                self.db, message_ids=all_message_ids
-            )
-            for rating, user in ratings:
-                msg_id = str(rating.message_id)
-                if msg_id not in message_ratings_map:
-                    message_ratings_map[msg_id] = []
-                message_ratings_map[msg_id].append(
-                    {
-                        "id": str(rating.id),
-                        "user_id": str(rating.user_id),
-                        "user_email": getattr(user, "email", None),
-                        "user_name": user.full_name if user else None,
-                        "rating": rating.rating,
-                        "comment": rating.comment,
-                        "created_at": rating.created_at.isoformat() if rating.created_at else None,
-                        "updated_at": rating.updated_at.isoformat() if rating.updated_at else None,
-                    }
-                )
 
             for conv in items:
                 messages = conv_messages_map.get(str(conv.id), [])
@@ -130,7 +107,6 @@ class ConversationService:
                                 ]
                                 if hasattr(m, "tool_calls") and m.tool_calls
                                 else [],
-                                "ratings": message_ratings_map.get(str(m.id), []),
                             }
                             for m in messages
                         ],
@@ -173,17 +149,6 @@ class ConversationService:
                     message="Conversation not found",
                     details={"conversation_id": str(conversation_id)},
                 )
-        if include_messages and user_id is not None and conversation.messages:
-            message_ids = [m.id for m in conversation.messages]
-            user_ratings = await message_rating_repo.get_user_ratings_for_messages(
-                self.db, message_ids=message_ids, user_id=user_id
-            )
-            rating_counts = await message_rating_repo.get_rating_counts_for_messages(
-                self.db, message_ids=message_ids
-            )
-            for msg in conversation.messages:
-                msg.user_rating = user_ratings.get(msg.id)  # ty: ignore[unresolved-attribute]
-                msg.rating_count = rating_counts.get(msg.id)  # ty: ignore[unresolved-attribute]
         return conversation
 
     async def list_conversations(
@@ -387,9 +352,7 @@ class ConversationService:
         skip: int = 0,
         limit: int = 100,
         include_tool_calls: bool = False,
-        user_id: UUID | None = None,
     ) -> tuple[list[Message | MessageRead], int]:
-        """When user_id is provided, messages are enriched with user_rating and rating_count."""
         await self.get_conversation(conversation_id)
         items = await conversation_repo.get_messages_by_conversation(
             self.db,
@@ -399,22 +362,6 @@ class ConversationService:
             include_tool_calls=include_tool_calls,
         )
         total = await conversation_repo.count_messages(self.db, conversation_id)
-        if user_id is not None and items:
-            message_ids = [msg.id for msg in items]
-            user_ratings = await message_rating_repo.get_user_ratings_for_messages(
-                self.db, message_ids=message_ids, user_id=user_id
-            )
-            rating_counts = await message_rating_repo.get_rating_counts_for_messages(
-                self.db, message_ids=message_ids
-            )
-
-            enriched: list[Message | MessageRead] = []
-            for msg in items:
-                msg_schema = MessageRead.model_validate(msg)
-                msg_schema.user_rating = user_ratings.get(msg.id)
-                msg_schema.rating_count = rating_counts.get(msg.id)
-                enriched.append(msg_schema)
-            return enriched, total
         return list(items), total
 
     async def add_message(

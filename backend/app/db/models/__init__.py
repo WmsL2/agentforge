@@ -5,7 +5,6 @@ from app.db.models.user import User
 from app.db.models.session import Session
 from app.db.models.conversation import Conversation, Message, ToolCall
 from app.db.models.chat_file import ChatFile
-from app.db.models.message_rating import MessageRating
 from app.db.models.conversation_share import ConversationShare
 
 __all__ = [
@@ -15,6 +14,5 @@ __all__ = [
     "Message",
     "ToolCall",
     "ChatFile",
-    "MessageRating",
     "ConversationShare",
 ]

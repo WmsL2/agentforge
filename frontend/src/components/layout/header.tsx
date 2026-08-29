@@ -13,7 +13,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  Star,
   Users,
   UserCircle,
   type LucideIcon,
@@ -98,11 +97,6 @@ const NAV: NavEntry[] = [
         labelKey: "conversations",
         href: ROUTES.ADMIN_CONVERSATIONS,
         icon: MessageSquare,
-      },
-      {
-        labelKey: "ratings",
-        href: ROUTES.ADMIN_RATINGS,
-        icon: Star,
       },
       {
         labelKey: "systemHealth",

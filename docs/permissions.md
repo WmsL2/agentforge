@@ -67,17 +67,6 @@ These are defined in `app/api/deps.py` and used throughout the route layer:
 | `/conversations/{id}/messages` | POST | Y | Y | Add message to own conversation |
 | `/conversations/export` | GET | Y | -- | Export all conversations (admin only) |
 
-### Message Ratings
-
-| Endpoint | Method | Admin | User | Notes |
-|----------|--------|-------|------|-------|
-| `/conversations/{id}/messages/{msg_id}/rate` | POST | Y | Y | Rate/update a message (like/dislike) |
-| `/conversations/{id}/messages/{msg_id}/rate` | DELETE | Y | Y | Remove own rating |
-| `/admin/ratings` | GET | Y | -- | List all ratings with filters (admin only) |
-| `/admin/ratings/summary` | GET | Y | -- | Aggregated statistics (admin only) |
-| `/admin/ratings/export` | GET | Y | -- | Export ratings JSON/CSV (admin only) |
-| `/admin/conversations` | GET | Y | -- | List all conversations (admin only) |
-
 ### Files
 
 | Endpoint | Method | Admin | User | Notes |
