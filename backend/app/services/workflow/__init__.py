@@ -6,6 +6,7 @@ from app.services.workflow.domain import (
     WorkflowNode,
     WorkflowNodeKind,
 )
+from app.services.workflow.facade import WorkflowService
 from app.services.workflow.serialization import deserialize_workflow_graph, serialize_workflow_graph
 from app.services.workflow.validator import (
     WorkflowValidationCode,
@@ -19,6 +20,7 @@ __all__ = [
     "WorkflowEdge",
     "WorkflowNode",
     "WorkflowNodeKind",
+    "WorkflowService",
     "WorkflowValidationCode",
     "WorkflowValidationIssue",
     "WorkflowValidationResult",
