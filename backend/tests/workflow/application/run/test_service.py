@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.services.workflow import (
     DeterministicNodeExecutor,
     WorkflowEngine,
@@ -14,6 +14,10 @@ from app.services.workflow import (
     WorkflowRunService,
 )
 from app.services.workflow.application.definition.service import WorkflowService
+from app.services.workflow.definition.validation.validator import (
+    WorkflowValidationResult,
+)
+from app.services.workflow.execution.engine import WorkflowExecutionValidationError
 
 
 def workflow_row(owner_id, workflow_id=None, revision=3):
@@ -156,3 +160,29 @@ async def test_list_checks_parent_ownership_before_run_repository():
         run_repo.list_workflow_runs_by_workflow = AsyncMock(return_value=[])
         run_repo.count_workflow_runs_by_workflow = AsyncMock(return_value=0)
         assert await service.list_workflow_runs(row.id, owner) == ([], 0)
+
+
+@pytest.mark.anyio
+async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
+    db = AsyncMock()
+    owner = uuid4()
+    row = workflow_row(owner)
+    engine = AsyncMock()
+    engine.execute.side_effect = WorkflowExecutionValidationError(
+        WorkflowValidationResult(issues=())
+    )
+    service = WorkflowRunService(db, WorkflowService(db), engine)
+    with (
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        run_repo.create_workflow_run = AsyncMock(return_value=SimpleNamespace())
+        run_repo.update_workflow_run_state = AsyncMock()
+        with pytest.raises(ValidationError):
+            await service.execute_workflow(row.id, owner, {})
+
+    run_repo.create_workflow_run.assert_awaited_once()
+    run_repo.update_workflow_run_state.assert_not_awaited()

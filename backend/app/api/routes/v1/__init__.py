@@ -35,7 +35,7 @@ v1_router.include_router(
 v1_router.include_router(agent.router, tags=["agent"])
 
 v1_router.include_router(files.router, tags=["files"])
-v1_router.include_router(workflow.router, prefix="/workflows", tags=["workflows"])
+v1_router.include_router(workflow.router, tags=["workflows"])
 
 v1_router.include_router(
     admin_conversations.router,
