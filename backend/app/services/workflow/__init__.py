@@ -1,11 +1,14 @@
 """Public workflow domain contracts."""
 
+from app.services.workflow.deterministic_executor import DeterministicNodeExecutor
 from app.services.workflow.domain import (
     WorkflowDefinition,
     WorkflowEdge,
     WorkflowNode,
     WorkflowNodeKind,
 )
+from app.services.workflow.engine import WorkflowEngine, WorkflowExecutionValidationError
+from app.services.workflow.executor import NodeExecutionContext, NodeExecutionResult, NodeExecutor
 from app.services.workflow.facade import WorkflowService
 from app.services.workflow.run_domain import (
     WorkflowRun,
@@ -22,8 +25,14 @@ from app.services.workflow.validator import (
 )
 
 __all__ = [
+    "DeterministicNodeExecutor",
+    "NodeExecutionContext",
+    "NodeExecutionResult",
+    "NodeExecutor",
     "WorkflowDefinition",
     "WorkflowEdge",
+    "WorkflowEngine",
+    "WorkflowExecutionValidationError",
     "WorkflowNode",
     "WorkflowNodeKind",
     "WorkflowRun",
