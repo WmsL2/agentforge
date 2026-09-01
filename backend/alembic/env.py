@@ -14,6 +14,7 @@ from app.db.models.user import User  # noqa: F401
 from app.db.models.conversation import Conversation, Message, ToolCall  # noqa: F401
 from app.db.models.session import Session  # noqa: F401
 from app.db.models.chat_file import ChatFile  # noqa: F401
+from app.db.models.workflow import Workflow, WorkflowRun  # noqa: F401
 
 config = context.config
 

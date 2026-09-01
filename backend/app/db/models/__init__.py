@@ -5,7 +5,7 @@ from app.db.models.user import User
 from app.db.models.session import Session
 from app.db.models.conversation import Conversation, Message, ToolCall
 from app.db.models.chat_file import ChatFile
-from app.db.models.workflow import Workflow
+from app.db.models.workflow import Workflow, WorkflowRun
 
 __all__ = [
     "User",
@@ -15,4 +15,5 @@ __all__ = [
     "ToolCall",
     "ChatFile",
     "Workflow",
+    "WorkflowRun",
 ]

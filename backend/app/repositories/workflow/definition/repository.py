@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.workflow import Workflow
+from app.db.models.workflow.definition.model import Workflow
 
 
 async def get_workflow_by_id(db: AsyncSession, workflow_id: UUID) -> Workflow | None:
