@@ -7,8 +7,8 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.base import BaseSchema
-from app.services.workflow.domain import WorkflowNodeKind
-from app.services.workflow.validator import WorkflowValidationCode
+from app.services.workflow.definition.model.domain import WorkflowNodeKind
+from app.services.workflow.definition.validation.validator import WorkflowValidationCode
 
 
 class WorkflowNodeSchema(BaseSchema):

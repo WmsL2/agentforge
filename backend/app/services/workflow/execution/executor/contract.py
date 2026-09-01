@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.services.workflow.domain import WorkflowNode
+from app.services.workflow.definition.model.domain import WorkflowNode
 
 
 @dataclass(frozen=True)

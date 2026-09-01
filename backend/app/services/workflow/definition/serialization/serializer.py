@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
-from app.services.workflow.domain import (
+from app.services.workflow.definition.model.domain import (
     WorkflowDefinition,
     WorkflowEdge,
     WorkflowNode,

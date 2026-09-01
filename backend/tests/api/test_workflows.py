@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_current_user, get_workflow_service
 from app.main import app
-from app.services.workflow.facade import WorkflowService
+from app.services.workflow.application.definition.service import WorkflowService
 
 
 @pytest.mark.anyio

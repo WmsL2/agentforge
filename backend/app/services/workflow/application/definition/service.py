@@ -7,9 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError, ValidationError
 from app.repositories import workflow as workflow_repo
 from app.schemas.workflow import WorkflowCreate, WorkflowGraphSchema, WorkflowUpdate
-from app.services.workflow.domain import WorkflowDefinition, WorkflowEdge, WorkflowNode
-from app.services.workflow.serialization import serialize_workflow_graph
-from app.services.workflow.validator import WorkflowValidator
+from app.services.workflow.definition.model.domain import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNode,
+)
+from app.services.workflow.definition.serialization.serializer import serialize_workflow_graph
+from app.services.workflow.definition.validation.validator import WorkflowValidator
 
 
 class WorkflowService:

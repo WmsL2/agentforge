@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from app.services.workflow.domain import WorkflowDefinition, WorkflowNodeKind
-from app.services.workflow.executor import NodeExecutionContext, NodeExecutor
-from app.services.workflow.run_domain import WorkflowRun, WorkflowRunError
-from app.services.workflow.validator import WorkflowValidationResult, WorkflowValidator
+from app.services.workflow.definition.model.domain import WorkflowDefinition, WorkflowNodeKind
+from app.services.workflow.definition.validation.validator import (
+    WorkflowValidationResult,
+    WorkflowValidator,
+)
+from app.services.workflow.execution.executor.contract import NodeExecutionContext, NodeExecutor
+from app.services.workflow.execution.run.domain import WorkflowRun, WorkflowRunError
 
 
 class WorkflowExecutionValidationError(ValueError):

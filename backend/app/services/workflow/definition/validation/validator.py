@@ -6,7 +6,11 @@ from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 
-from app.services.workflow.domain import WorkflowDefinition, WorkflowEdge, WorkflowNodeKind
+from app.services.workflow.definition.model.domain import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNodeKind,
+)
 
 
 class WorkflowValidationCode(str, Enum):  # noqa: UP042

@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.schemas.workflow import WorkflowCreate, WorkflowGraphSchema, WorkflowUpdate
-from app.services.workflow.facade import WorkflowService
+from app.services.workflow.application.definition.service import WorkflowService
 
 
 def graph(nodes=None, edges=None):
@@ -29,7 +29,7 @@ def graph(nodes=None, edges=None):
 async def test_create_valid_and_invalid_blocks_repository():
     service = WorkflowService(AsyncMock())
     user_id = uuid4()
-    with patch("app.services.workflow.facade.workflow_repo") as repo:
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
         repo.create_workflow = AsyncMock(return_value=SimpleNamespace())
         await service.create_workflow(user_id, WorkflowCreate(name="Valid", definition=graph()))
         assert repo.create_workflow.await_args.kwargs["user_id"] == user_id
@@ -54,7 +54,7 @@ async def test_ownership_update_and_empty_patch_rules():
         revision=1,
     )
     service = WorkflowService(AsyncMock())
-    with patch("app.services.workflow.facade.workflow_repo") as repo:
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
         repo.get_workflow_by_id = AsyncMock(return_value=row)
         repo.update_workflow = AsyncMock(return_value=row)
         await service.update_workflow(workflow_id, owner, WorkflowUpdate(name="New"))
@@ -70,7 +70,7 @@ async def test_list_delete_and_standalone_validation_do_not_bypass_ownership():
     owner = uuid4()
     row = SimpleNamespace(id=uuid4(), user_id=owner)
     service = WorkflowService(AsyncMock())
-    with patch("app.services.workflow.facade.workflow_repo") as repo:
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
         repo.list_workflows_by_user = AsyncMock(return_value=[row])
         repo.count_workflows_by_user = AsyncMock(return_value=1)
         repo.get_workflow_by_id = AsyncMock(return_value=row)
@@ -84,7 +84,7 @@ async def test_list_delete_and_standalone_validation_do_not_bypass_ownership():
 @pytest.mark.anyio
 async def test_create_invalid_workflow_does_not_persist():
     service = WorkflowService(AsyncMock())
-    with patch("app.services.workflow.facade.workflow_repo") as repo:
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
         repo.create_workflow = AsyncMock()
         with pytest.raises(ValidationError):
             await service.create_workflow(
@@ -98,7 +98,7 @@ async def test_delete_cross_owner_returns_not_found():
     owner, other = uuid4(), uuid4()
     row = SimpleNamespace(id=uuid4(), user_id=owner)
     service = WorkflowService(AsyncMock())
-    with patch("app.services.workflow.facade.workflow_repo") as repo:
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
         repo.get_workflow_by_id = AsyncMock(return_value=row)
         repo.delete_workflow = AsyncMock()
         with pytest.raises(NotFoundError):

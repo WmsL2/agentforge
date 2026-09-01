@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from app.services.workflow.domain import WorkflowNode, WorkflowNodeKind
-from app.services.workflow.executor import NodeExecutionContext, NodeExecutionResult
+from app.services.workflow.definition.model.domain import WorkflowNode, WorkflowNodeKind
+from app.services.workflow.execution.executor.contract import (
+    NodeExecutionContext,
+    NodeExecutionResult,
+)
 
 
 class DeterministicNodeExecutor:
