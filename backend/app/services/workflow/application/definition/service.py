@@ -1,12 +1,14 @@
 """Workflow CRUD application service."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.repositories import workflow as workflow_repo
-from app.schemas.workflow import WorkflowCreate, WorkflowGraphSchema, WorkflowUpdate
 from app.services.workflow.definition.model.domain import (
     WorkflowDefinition,
     WorkflowEdge,
@@ -14,6 +16,9 @@ from app.services.workflow.definition.model.domain import (
 )
 from app.services.workflow.definition.serialization.serializer import serialize_workflow_graph
 from app.services.workflow.definition.validation.validator import WorkflowValidator
+
+if TYPE_CHECKING:
+    from app.schemas.workflow.definition import WorkflowCreate, WorkflowGraphSchema, WorkflowUpdate
 
 
 class WorkflowService:
@@ -98,7 +103,12 @@ class WorkflowService:
         supplied = data.model_fields_set
         if not supplied:
             return row
-        graph = data.definition or WorkflowGraphSchema.model_validate(row.definition)
+        if data.definition is not None:
+            graph = data.definition
+        else:
+            from app.schemas.workflow.definition import WorkflowGraphSchema
+
+            graph = WorkflowGraphSchema.model_validate(row.definition)
         definition = self._definition(
             graph,
             workflow_id=row.id,

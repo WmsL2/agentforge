@@ -1,6 +1,6 @@
 """Public AgentForge Workflow Core API."""
 
-from app.services.workflow.application import WorkflowService
+from app.services.workflow.application import WorkflowRunService, WorkflowService
 from app.services.workflow.definition import (
     WorkflowDefinition,
     WorkflowEdge,
@@ -39,6 +39,7 @@ __all__ = [
     "WorkflowNodeKind",
     "WorkflowRun",
     "WorkflowRunError",
+    "WorkflowRunService",
     "WorkflowRunStatus",
     "WorkflowRunTransitionError",
     "WorkflowService",

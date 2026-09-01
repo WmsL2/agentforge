@@ -35,7 +35,12 @@ Redis = Annotated[RedisClient, Depends(get_redis)]
 from app.services.user import UserService
 from app.services.session import SessionService
 from app.services.conversation import ConversationService
-from app.services.workflow import WorkflowService
+from app.services.workflow import (
+    DeterministicNodeExecutor,
+    WorkflowEngine,
+    WorkflowRunService,
+    WorkflowService,
+)
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -65,6 +70,24 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 
 
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
+
+
+def get_workflow_engine() -> WorkflowEngine:
+    return WorkflowEngine(DeterministicNodeExecutor())
+
+
+WorkflowEngineDep = Annotated[WorkflowEngine, Depends(get_workflow_engine)]
+
+
+def get_workflow_run_service(
+    db: DBSession,
+    workflow_service: WorkflowSvc,
+    engine: WorkflowEngineDep,
+) -> WorkflowRunService:
+    return WorkflowRunService(db=db, workflow_service=workflow_service, engine=engine)
+
+
+WorkflowRunSvc = Annotated[WorkflowRunService, Depends(get_workflow_run_service)]
 
 
 from app.services.file_upload import FileUploadService

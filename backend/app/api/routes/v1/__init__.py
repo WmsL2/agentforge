@@ -11,7 +11,7 @@ from app.api.routes.v1 import admin_conversations
 from app.api.routes.v1 import agent
 from app.api.routes.v1 import files
 from app.api.routes.v1 import admin_stats
-from app.api.routes.v1 import workflows
+from app.api.routes.v1 import workflow
 
 v1_router = APIRouter()
 
@@ -35,7 +35,7 @@ v1_router.include_router(
 v1_router.include_router(agent.router, tags=["agent"])
 
 v1_router.include_router(files.router, tags=["files"])
-v1_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
+v1_router.include_router(workflow.router, prefix="/workflows", tags=["workflows"])
 
 v1_router.include_router(
     admin_conversations.router,
