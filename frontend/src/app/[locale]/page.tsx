@@ -62,13 +62,7 @@ const FOUNDATION_CAPABILITIES = [
   },
 ] as const;
 
-const PLATFORM_CORE = [
-  {
-    title: "Workflow Engine",
-    description:
-      "Workflow definitions, validation, execution semantics, node transitions, and versioned workflow behavior.",
-    icon: Workflow,
-  },
+const PLATFORM_EXPANSION = [
   {
     title: "Agent Runtime",
     description:
@@ -105,16 +99,16 @@ const ROADMAP = [
   {
     version: "v0.1",
     title: "Foundation",
-    status: "Current",
+    status: "Completed",
     description:
       "Establish and validate the engineering foundation before building AgentForge-owned platform capabilities.",
   },
   {
     version: "v0.2",
     title: "Workflow Core",
-    status: "Next",
+    status: "Current",
     description:
-      "Begin the self-built workflow domain, validation model, execution engine, and runtime boundary.",
+      "Validated workflow definitions, DAG validation, deterministic execution, run lifecycle, persistence, and history.",
   },
   {
     version: "Later",
@@ -193,7 +187,7 @@ export default function HomePage() {
             <div>
               <div className="border-foreground/10 bg-foreground/[0.03] mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs">
                 <span className="bg-brand h-2 w-2 rounded-full" />
-                v0.1 · Foundation
+                v0.2 · Workflow Core
               </div>
 
               <h1 className="font-display max-w-4xl text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
@@ -202,10 +196,10 @@ export default function HomePage() {
               </h1>
 
               <p className="text-foreground/65 mt-7 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
-                {PRODUCT_NAME} is an Enterprise Agent Workflow Platform. The current v0.1 release
-                focuses on establishing a reliable full-stack engineering foundation before the
-                workflow engine, runtime, tool platform, durable execution, and enterprise resource
-                model are built.
+                {PRODUCT_NAME} is an Enterprise Agent Workflow Platform. v0.1 established the
+                reliable full-stack engineering foundation; v0.2 adds the AgentForge-owned Workflow
+                Core for definition, validation, persistence, deterministic execution, and run
+                lifecycle/history.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -229,8 +223,8 @@ export default function HomePage() {
               </div>
 
               <p className="text-foreground/45 mt-5 max-w-2xl text-sm leading-6">
-                v0.1 deliberately does not claim Workflow Engine, MCP, Checkpoint/HITL, enterprise
-                RBAC, or other later platform capabilities as completed features.
+                v0.2 implements the Workflow Core, not Agent Runtime, Tool/MCP execution,
+                checkpoints, HITL, durable execution, or enterprise RBAC.
               </p>
             </div>
 
@@ -241,7 +235,7 @@ export default function HomePage() {
                     Platform status
                   </p>
                   <h2 className="font-display mt-1 text-xl font-semibold">
-                    Foundation before orchestration
+                    Foundation plus Workflow Core
                   </h2>
                 </div>
                 <div className="bg-brand/15 flex h-11 w-11 items-center justify-center rounded-xl">
@@ -264,13 +258,13 @@ export default function HomePage() {
 
                 <div className="border-foreground/10 bg-background rounded-2xl border p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium">Agent Platform Core</span>
-                    <span className="border-foreground/15 text-foreground/55 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold uppercase">
-                      Planned
+                    <span className="font-medium">Workflow Core</span>
+                    <span className="bg-brand/15 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase">
+                      Current
                     </span>
                   </div>
                   <p className="text-foreground/55 mt-2 text-sm leading-6">
-                    Workflow, runtime, tools, durable execution, traces, and enterprise boundaries.
+                    Definition, DAG validation, deterministic execution, run persistence, and history.
                   </p>
                 </div>
               </div>
@@ -290,14 +284,14 @@ export default function HomePage() {
         <section id="foundation" className="mx-auto max-w-7xl px-5 py-20 sm:px-8 md:py-24">
           <div className="max-w-3xl">
             <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
-              v0.1 Foundation
+              v0.1 Foundation · completed
             </p>
             <h2 className="font-display mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
               What is implemented today
             </h2>
             <p className="text-foreground/60 mt-4 text-base leading-7">
               These capabilities belong to the engineering foundation. They make the platform
-              deployable, testable, and ready for the AgentForge-owned core that follows.
+              deployable, testable, and support the AgentForge-owned Workflow Core in v0.2.
             </p>
           </div>
 
@@ -401,7 +395,7 @@ export default function HomePage() {
 
                 <div className="text-foreground/65 mt-6 flex flex-wrap gap-2 text-sm">
                   {[
-                    "Workflow Engine",
+                    "Workflow Core",
                     "Agent Runtime",
                     "Tool / MCP",
                     "Checkpoint / HITL",
@@ -418,8 +412,8 @@ export default function HomePage() {
                 </div>
 
                 <p className="text-foreground/55 mt-6 text-sm leading-6">
-                  Status: planned beyond the v0.1 Foundation. These are not presented as completed
-                  capabilities on this page.
+                  Workflow Core is implemented in v0.2. Agent Runtime, Tool/MCP, checkpoints,
+                  observability, and workspace boundaries remain planned expansion work.
                 </p>
               </div>
             </div>
@@ -427,11 +421,11 @@ export default function HomePage() {
             <div className="mt-12">
               <div className="mb-6 flex items-center gap-3">
                 <GitBranch className="h-5 w-5" />
-                <h3 className="font-display text-xl font-semibold">Planned platform core</h3>
+                <h3 className="font-display text-xl font-semibold">Planned platform expansion</h3>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {PLATFORM_CORE.map((capability) => {
+                {PLATFORM_EXPANSION.map((capability) => {
                   const Icon = capability.icon;
 
                   return (
@@ -499,10 +493,10 @@ export default function HomePage() {
             <div className="border-foreground/10 bg-card grid gap-8 rounded-3xl border p-7 md:grid-cols-[1fr_auto] md:items-center md:p-10">
               <div>
                 <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
-                  AgentForge v0.1
+                  AgentForge v0.2
                 </p>
                 <h2 className="font-display mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-                  Foundation established. Platform core comes next.
+                  Foundation established. Workflow Core is current.
                 </h2>
                 <p className="text-foreground/60 mt-3 max-w-2xl text-sm leading-6 sm:text-base">
                   Inspect the repository, run the stack locally, or continue into the authenticated
@@ -538,7 +532,7 @@ export default function HomePage() {
           <p>
             {PRODUCT_NAME} · {APP_DESCRIPTION}
           </p>
-          <p>v0.1 Foundation</p>
+          <p>v0.2 Workflow Core</p>
         </div>
       </footer>
     </div>

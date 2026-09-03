@@ -80,6 +80,10 @@ def create_app() -> FastAPI:
             "name": "agent",
             "description": "AI agent WebSocket endpoint for real-time chat",
         },
+        {
+            "name": "workflows",
+            "description": "Workflow definitions, DAG validation, deterministic execution, and run history",
+        },
     ]
 
     setup_logging()
@@ -96,13 +100,14 @@ Enterprise Agent Workflow Platform
 - **Database**: Async database operations
 - **Redis**: Caching and session storage
 - **Rate Limiting**: Request rate limiting per client
+- **Workflow Core**: Workflow definitions, DAG validation, deterministic execution, and run persistence
 
 ## Documentation
 
 - [Swagger UI](/docs) - Interactive API documentation
 - [ReDoc](/redoc) - Alternative documentation view
         """.strip(),
-        version="0.1.0",
+        version="0.2.0",
         openapi_url=openapi_url,
         docs_url=docs_url,
         redoc_url=redoc_url,

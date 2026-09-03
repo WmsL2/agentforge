@@ -6,7 +6,7 @@ import type { Locale } from "@/i18n";
  * Transitional compatibility route for the removed template community page.
  *
  * The starter template advertised community channels and programs that are not
- * part of the current AgentForge v0.1 Foundation release.
+ * part of the AgentForge v0.1 Foundation release.
  *
  * Some remaining template navigation still references `/community`, so keep
  * this lightweight route temporarily and redirect visitors to the AgentForge

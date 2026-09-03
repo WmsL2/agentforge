@@ -20,20 +20,19 @@ export const SITE = {
   /**
    * Product identity used by title templates and Open Graph defaults.
    *
-   * Keep this aligned with the AgentForge ownership boundary:
-   * the current v0.1 release provides the validated engineering foundation,
-   * while the Agent Platform Core is developed in subsequent versions.
+   * Keep this aligned with the AgentForge ownership boundary: v0.1 established
+   * the engineering foundation, and v0.2 adds the self-built Workflow Core.
    */
   tagline: APP_DESCRIPTION,
 
   /**
    * Default public description.
    *
-   * This describes the project direction without presenting later platform-core
-   * capabilities as already completed in v0.1.
+   * This describes the implemented Workflow Core without presenting later
+   * runtime, tool, or durable-execution capabilities as complete.
    */
   description:
-    "AgentForge is an enterprise agent workflow platform built on a validated full-stack foundation, with its workflow and runtime core developed in later versions.",
+    "AgentForge is an enterprise agent workflow platform: v0.1 established the full-stack foundation, and v0.2 adds a self-built Workflow Core for validated DAG definitions, deterministic execution, and run history.",
 
   /** Canonical absolute origin. No trailing slash. */
   url:
@@ -53,7 +52,7 @@ export const SITE = {
    * Product and architecture keywords.
    *
    * These identify the domain AgentForge is being built for. They do not imply
-   * that every listed platform-core capability is complete in v0.1.
+   * that Agent Runtime, Tool/MCP, or durable-execution capabilities are complete.
    */
   keywords: [
     "AgentForge",

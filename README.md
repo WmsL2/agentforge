@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation，并在此基础上逐步建设自研的 Agent Platform Core。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.2 在此基础上交付自研 Workflow Core。
 
 ---
 
@@ -12,7 +12,7 @@ Enterprise Agent Workflow Platform
 
 AgentForge 的目标不是简单封装一个聊天机器人，而是构建面向企业场景的 Agent 工作流平台。
 
-当前 v0.1 主要建设稳定的工程基础，包括：
+v0.1 建设并验证了稳定的工程基础，包括：
 
 - FastAPI Backend
 - Next.js Frontend
@@ -25,10 +25,29 @@ AgentForge 的目标不是简单封装一个聊天机器人，而是构建面向
 - Docker
 - Test / CI 基础能力
 
-后续版本将在这一基础上逐步实现 AgentForge 自研的平台核心：
+当前 main 已进入 v0.2 Workflow Core：在上述工程基础之上，AgentForge 已实现 Workflow Definition、DAG Validation、Persistence、Run Lifecycle、Deterministic Execution、Run History API，以及真实 PostgreSQL E2E 验证。
+
+## v0.2 — Workflow Core
+
+v0.2 establishes the self-built Workflow Core on top of the v0.1 engineering foundation.
+
+- Workflow domain contracts and validated DAG definitions
+- Definition persistence and authenticated CRUD API
+- `WorkflowRun` lifecycle, immutable definition snapshot, and revision history
+- Deterministic sequential `WorkflowEngine` with a `NodeExecutor` boundary
+- `START`, `VALUE`, and `END` node execution; fan-out and fan-in scheduling
+- Run create, history, and detail API
+- Opt-in real PostgreSQL HTTP-to-persistence integration verification
+
+Detailed Workflow Core architecture: [docs/workflow-core.md](docs/workflow-core.md).
+
+## v0.2 当前边界 / Non-goals
+
+The current Workflow Core intentionally does not implement CONDITION execution, loops, AGENT nodes, TOOL nodes, MCP execution, checkpoints, pause/resume, cancel/retry, HITL, workflow Celery execution, durable intermediate RUNNING checkpoints, or Run Step / Trace observability. These are future platform directions, not completed v0.2 features.
+
+AgentForge 后续会在这一基础上逐步扩展平台能力：
 
 ```text
-Workflow Engine
 Agent Runtime
 Tool Registry
 MCP Integration
@@ -950,10 +969,16 @@ Repository / Service Layer
 Frontend Application Shell
 ```
 
-AgentForge 后续主要自研：
+AgentForge 已自研并交付：
 
 ```text
 Workflow Engine
+Workflow Definition / Run Persistence
+```
+
+后续将继续自研：
+
+```text
 Agent Runtime
 Tool / MCP Platform
 Checkpoint / HITL

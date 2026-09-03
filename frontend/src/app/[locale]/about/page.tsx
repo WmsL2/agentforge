@@ -7,7 +7,7 @@ import type { Locale } from "@/i18n";
  *
  * The starter template included generic SaaS company storytelling, team
  * profiles, product statistics, pricing links, and sales-oriented calls to
- * action that do not describe the current AgentForge v0.1 Foundation release.
+ * action that did not describe the AgentForge v0.1 Foundation release.
  *
  * Some remaining template navigation still references `/about`, so keep this
  * lightweight route temporarily and redirect visitors to the AgentForge

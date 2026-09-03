@@ -7,7 +7,7 @@ import type { Locale } from "@/i18n";
  *
  * The starter template included broad security, infrastructure, policy, and
  * vulnerability-reporting claims that do not represent a formally established
- * AgentForge security or compliance program in the current v0.1 Foundation
+ * AgentForge security or compliance program in the v0.1 Foundation
  * release.
  *
  * Some remaining template navigation and legal content still reference

@@ -56,7 +56,7 @@ export interface NavItem {
 }
 
 /**
- * Minimal public navigation for AgentForge v0.1.
+ * Minimal public navigation for AgentForge v0.2.
  *
  * The landing page is the canonical product surface. API documentation remains
  * available because the FastAPI backend is part of the validated foundation.

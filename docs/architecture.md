@@ -1,8 +1,9 @@
 # Architecture Guide
 
-This project follows a **Repository + Service** layered architecture.
-Every feature — users, conversations, files, RAG documents, sync sources — uses
-the same pattern: **Models → Schemas → Repositories → Services → Endpoints**.
+This project follows a **Repository + Service** layered architecture. Most features — users,
+conversations, files, RAG documents, and sync sources — use the same pattern:
+**Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
+explicit Domain, Validation, and Execution layers to that foundation.
 
 ## Request Flow
 
@@ -57,13 +58,13 @@ services, which in turn delegate to repositories.
 - Business logic and validation
 - Orchestrates one or more repository calls
 - Raises domain exceptions (`NotFoundError`, `AlreadyExistsError`, etc.)
-- Manages transaction boundaries
+- Orchestrates business operations inside the request-scoped transaction
 
 ### Repositories (`repositories/`)
 - Database operations only
 - No business logic
 - Uses `db.flush()` not `commit()` (the dependency-injected session manages transactions)
-- Returns domain models
+- Returns ORM rows or result objects needed by services
 
 ### Schemas (`schemas/`)
 - Separate `Create`, `Update`, and `Response` models per entity
@@ -72,6 +73,44 @@ services, which in turn delegate to repositories.
 ### Models (`db/models/`)
 - SQLAlchemy 2.0 model definitions
 - Relationships, indexes, and column defaults live here
+
+## Workflow Core
+
+The Workflow Core is not a conventional CRUD-only path. Its application services coordinate
+domain objects, validation, deterministic execution, and persistence. See the detailed
+[Workflow Core architecture](workflow-core.md).
+
+```
+HTTP request
+    |
+    | FastAPI parses JSON into a Workflow Pydantic schema and resolves current_user + AsyncSession
+    v
+Route function
+    |
+    | passes workflow_id, user_id, and request data to a Workflow application-service instance
+    v
+WorkflowService or WorkflowRunService instance
+    |
+    | constructs WorkflowDefinition / WorkflowRun domain objects and invokes validation or execution
+    v
+WorkflowValidator or WorkflowEngine instance
+    |
+    | validates the DAG, schedules ready nodes, and delegates node work through NodeExecutor
+    v
+Workflow repository function
+    |
+    | maps persistence data to SQLAlchemy Workflow / WorkflowRun ORM objects and calls flush()
+    v
+Request-scoped AsyncSession instance
+    |
+    | sends SQL through asyncpg
+    v
+PostgreSQL workflows / workflow_runs tables
+```
+
+`get_db_session` owns request-level transaction handling: it commits when the request succeeds
+and rolls back when an exception escapes. Services do not commit independently; repositories use
+`flush()` so generated identifiers and state are available within the same transaction.
 
 ## Key Files
 

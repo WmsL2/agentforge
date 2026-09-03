@@ -73,7 +73,7 @@ export default function AuthLayout({
                 aria-hidden
               />
 
-              AgentForge v0.1 · Foundation
+              AgentForge v0.2 · Workflow Core
             </span>
           </div>
 
@@ -83,9 +83,9 @@ export default function AuthLayout({
             </h2>
 
             <p className="text-foreground/65 max-w-md text-base leading-relaxed">
-              {APP_DESCRIPTION}. The current release establishes
-              the application foundation required before the
-              AgentForge-owned workflow and runtime core is built.
+              {APP_DESCRIPTION}. v0.1 established the application foundation;
+              v0.2 adds the AgentForge-owned Workflow Core. Agent Runtime and
+              richer platform capabilities remain future work.
             </p>
 
             <ul className="mt-10 space-y-3">
