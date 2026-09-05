@@ -2,7 +2,9 @@
 
 from app.services.workflow.execution.engine import WorkflowEngine, WorkflowExecutionValidationError
 from app.services.workflow.execution.executor import (
+    AgentNodeExecutor,
     DeterministicNodeExecutor,
+    DispatchingNodeExecutor,
     NodeExecutionContext,
     NodeExecutionResult,
     NodeExecutor,
@@ -15,7 +17,9 @@ from app.services.workflow.execution.run import (
 )
 
 __all__ = [
+    "AgentNodeExecutor",
     "DeterministicNodeExecutor",
+    "DispatchingNodeExecutor",
     "NodeExecutionContext",
     "NodeExecutionResult",
     "NodeExecutor",

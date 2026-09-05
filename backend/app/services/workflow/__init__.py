@@ -14,7 +14,9 @@ from app.services.workflow.definition import (
     serialize_workflow_graph,
 )
 from app.services.workflow.execution import (
+    AgentNodeExecutor,
     DeterministicNodeExecutor,
+    DispatchingNodeExecutor,
     NodeExecutionContext,
     NodeExecutionResult,
     NodeExecutor,
@@ -27,7 +29,9 @@ from app.services.workflow.execution import (
 )
 
 __all__ = [
+    "AgentNodeExecutor",
     "DeterministicNodeExecutor",
+    "DispatchingNodeExecutor",
     "NodeExecutionContext",
     "NodeExecutionResult",
     "NodeExecutor",
