@@ -1,4 +1,4 @@
-"""Tests for pure structural workflow validation."""
+"""Tests for workflow definition validation."""
 
 from uuid import uuid4
 
@@ -45,6 +45,17 @@ def linear_workflow() -> WorkflowDefinition:
     )
 
 
+def agent_workflow(config: dict[str, object]) -> WorkflowDefinition:
+    return workflow(
+        (
+            node("start", WorkflowNodeKind.START),
+            WorkflowNode(id="agent", kind=WorkflowNodeKind.AGENT, config=config),
+            node("end", WorkflowNodeKind.END),
+        ),
+        (edge("start-agent", "start", "agent"), edge("agent-end", "agent", "end")),
+    )
+
+
 def test_valid_linear_workflow():
     result = WorkflowValidator().validate(linear_workflow())
 
@@ -69,6 +80,156 @@ def test_valid_branching_dag():
     )
 
     assert WorkflowValidator().validate(definition).is_valid
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"runner": "langgraph", "instruction": "Analyze input."},
+        {
+            "runner": "langgraph",
+            "instruction": " Analyze input. ",
+            "model": "gpt-5-mini",
+        },
+    ],
+)
+def test_valid_agent_config(config: dict[str, object]):
+    assert WorkflowValidator().validate(agent_workflow(config)).is_valid
+
+
+@pytest.mark.parametrize(
+    ("config", "code"),
+    [
+        ({"instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_REQUIRED),
+        ({"runner": None, "instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_INVALID),
+        ({"runner": 123, "instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_INVALID),
+        ({"runner": "", "instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_INVALID),
+        ({"runner": "   ", "instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_INVALID),
+        ({"runner": "native", "instruction": "Run"}, WorkflowValidationCode.AGENT_RUNNER_INVALID),
+        (
+            {"runner": "LangGraph", "instruction": "Run"},
+            WorkflowValidationCode.AGENT_RUNNER_INVALID,
+        ),
+        (
+            {"runner": " langgraph ", "instruction": "Run"},
+            WorkflowValidationCode.AGENT_RUNNER_INVALID,
+        ),
+    ],
+)
+def test_agent_runner_validation(config: dict[str, object], code: WorkflowValidationCode):
+    issues = WorkflowValidator().validate(agent_workflow(config)).issues
+
+    assert any(issue.code is code and issue.node_id == "agent" for issue in issues)
+
+
+@pytest.mark.parametrize(
+    ("config", "code"),
+    [
+        ({"runner": "langgraph"}, WorkflowValidationCode.AGENT_INSTRUCTION_REQUIRED),
+        (
+            {"runner": "langgraph", "instruction": None},
+            WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+        ),
+        (
+            {"runner": "langgraph", "instruction": 123},
+            WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+        ),
+        (
+            {"runner": "langgraph", "instruction": ""},
+            WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+        ),
+        (
+            {"runner": "langgraph", "instruction": "   "},
+            WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+        ),
+    ],
+)
+def test_agent_instruction_validation(config: dict[str, object], code: WorkflowValidationCode):
+    issues = WorkflowValidator().validate(agent_workflow(config)).issues
+
+    assert any(issue.code is code and issue.node_id == "agent" for issue in issues)
+
+
+@pytest.mark.parametrize("model", [None, 123, "", "   "])
+def test_agent_model_validation(model: object):
+    issues = (
+        WorkflowValidator()
+        .validate(agent_workflow({"runner": "langgraph", "instruction": "Run", "model": model}))
+        .issues
+    )
+
+    assert any(
+        issue.code is WorkflowValidationCode.AGENT_MODEL_INVALID and issue.node_id == "agent"
+        for issue in issues
+    )
+
+
+def test_agent_config_aggregates_all_field_issues():
+    issues = (
+        WorkflowValidator()
+        .validate(
+            agent_workflow(
+                {
+                    "runner": "native",
+                    "instruction": "",
+                    "model": 123,
+                    "temperature": 0.5,
+                }
+            )
+        )
+        .issues
+    )
+    agent_issues = [issue for issue in issues if issue.node_id == "agent"]
+
+    assert [issue.code for issue in agent_issues] == [
+        WorkflowValidationCode.AGENT_RUNNER_INVALID,
+        WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+        WorkflowValidationCode.AGENT_MODEL_INVALID,
+        WorkflowValidationCode.AGENT_CONFIG_UNKNOWN_FIELD,
+    ]
+
+
+def test_agent_config_rejects_each_unknown_field_in_insertion_order():
+    issues = (
+        WorkflowValidator()
+        .validate(
+            agent_workflow(
+                {
+                    "runner": "langgraph",
+                    "instruction": "Run",
+                    "temperature": 0.5,
+                    "tools": [],
+                }
+            )
+        )
+        .issues
+    )
+    unknown_issues = [
+        issue for issue in issues if issue.code is WorkflowValidationCode.AGENT_CONFIG_UNKNOWN_FIELD
+    ]
+
+    assert [issue.message for issue in unknown_issues] == [
+        "AGENT config field 'temperature' is not supported.",
+        "AGENT config field 'tools' is not supported.",
+    ]
+    assert all(issue.node_id == "agent" for issue in unknown_issues)
+
+
+def test_agent_validation_does_not_apply_to_other_node_kinds():
+    definition = linear_workflow()
+    definition.nodes[1].config["temperature"] = 0.5
+
+    assert WorkflowValidator().validate(definition).is_valid
+
+
+def test_agent_validation_does_not_mutate_node_config():
+    definition = agent_workflow({"runner": "langgraph", "instruction": "Run"})
+    config = definition.nodes[1].config
+    before = config.copy()
+
+    WorkflowValidator().validate(definition)
+
+    assert config == before
 
 
 @pytest.mark.parametrize(

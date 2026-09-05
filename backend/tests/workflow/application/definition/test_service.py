@@ -94,6 +94,43 @@ async def test_create_invalid_workflow_does_not_persist():
 
 
 @pytest.mark.anyio
+async def test_create_rejects_invalid_agent_config_without_persisting():
+    service = WorkflowService(AsyncMock())
+    invalid_agent_graph = graph(
+        nodes=[
+            {"id": "start", "kind": "start"},
+            {
+                "id": "agent",
+                "kind": "agent",
+                "config": {"runner": "native", "instruction": "Run"},
+            },
+            {"id": "end", "kind": "end"},
+        ],
+        edges=[
+            {"id": "start-agent", "source": "start", "target": "agent"},
+            {"id": "agent-end", "source": "agent", "target": "end"},
+        ],
+    )
+    with patch("app.services.workflow.application.definition.service.workflow_repo") as repo:
+        repo.create_workflow = AsyncMock()
+
+        with pytest.raises(ValidationError) as error:
+            await service.create_workflow(
+                uuid4(), WorkflowCreate(name="Invalid agent", definition=invalid_agent_graph)
+            )
+
+        assert error.value.details["issues"] == [
+            {
+                "code": "agent_runner_invalid",
+                "message": "AGENT config field 'runner' must be exactly 'langgraph'.",
+                "node_id": "agent",
+                "edge_id": None,
+            }
+        ]
+        repo.create_workflow.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_delete_cross_owner_returns_not_found():
     owner, other = uuid4(), uuid4()
     row = SimpleNamespace(id=uuid4(), user_id=owner)

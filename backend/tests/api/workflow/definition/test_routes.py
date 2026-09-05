@@ -46,3 +46,75 @@ async def test_validate_valid_graph_returns_200_and_true(mock_db_session):
         assert response.json() == {"is_valid": True, "issues": []}
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_validate_route_accepts_valid_agent_graph(mock_db_session):
+    user = type("User", (), {"id": "00000000-0000-0000-0000-000000000001"})()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_service] = lambda: WorkflowService(mock_db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/workflows/validate",
+                json={
+                    "entry_node_id": "start",
+                    "nodes": [
+                        {"id": "start", "kind": "start"},
+                        {
+                            "id": "agent",
+                            "kind": "agent",
+                            "config": {"runner": "langgraph", "instruction": "Analyze input."},
+                        },
+                        {"id": "end", "kind": "end"},
+                    ],
+                    "edges": [
+                        {"id": "start-agent", "source": "start", "target": "agent"},
+                        {"id": "agent-end", "source": "agent", "target": "end"},
+                    ],
+                },
+            )
+        assert response.status_code == 200
+        assert response.json() == {"is_valid": True, "issues": []}
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_validate_route_reports_invalid_agent_config(mock_db_session):
+    user = type("User", (), {"id": "00000000-0000-0000-0000-000000000001"})()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_service] = lambda: WorkflowService(mock_db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/workflows/validate",
+                json={
+                    "entry_node_id": "start",
+                    "nodes": [
+                        {"id": "start", "kind": "start"},
+                        {
+                            "id": "agent",
+                            "kind": "agent",
+                            "config": {"runner": "native", "instruction": "Run"},
+                        },
+                        {"id": "end", "kind": "end"},
+                    ],
+                    "edges": [
+                        {"id": "start-agent", "source": "start", "target": "agent"},
+                        {"id": "agent-end", "source": "agent", "target": "end"},
+                    ],
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["is_valid"] is False
+        assert response.json()["issues"] == [
+            {
+                "code": "agent_runner_invalid",
+                "message": "AGENT config field 'runner' must be exactly 'langgraph'.",
+                "node_id": "agent",
+                "edge_id": None,
+            }
+        ]
+    finally:
+        app.dependency_overrides.clear()

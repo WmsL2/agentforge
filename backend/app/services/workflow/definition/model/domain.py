@@ -9,10 +9,11 @@ from uuid import UUID
 
 
 class WorkflowNodeKind(str, Enum):  # noqa: UP042
-    """The initial set of workflow node kinds."""
+    """The supported workflow node kinds."""
 
     START = "start"
     VALUE = "value"
+    AGENT = "agent"
     END = "end"
 
 

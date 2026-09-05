@@ -1,4 +1,4 @@
-"""Pure structural validation for AgentForge workflow definitions."""
+"""Pure validation for AgentForge workflow definitions."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from enum import Enum
 from app.services.workflow.definition.model.domain import (
     WorkflowDefinition,
     WorkflowEdge,
+    WorkflowNode,
     WorkflowNodeKind,
 )
 
@@ -37,6 +38,12 @@ class WorkflowValidationCode(str, Enum):  # noqa: UP042
     INVALID_TERMINAL_NODE = "invalid_terminal_node"
     NO_TERMINAL_PATH = "no_terminal_path"
     UNSUPPORTED_EDGE_CONDITION = "unsupported_edge_condition"
+    AGENT_RUNNER_REQUIRED = "agent_runner_required"
+    AGENT_RUNNER_INVALID = "agent_runner_invalid"
+    AGENT_INSTRUCTION_REQUIRED = "agent_instruction_required"
+    AGENT_INSTRUCTION_INVALID = "agent_instruction_invalid"
+    AGENT_MODEL_INVALID = "agent_model_invalid"
+    AGENT_CONFIG_UNKNOWN_FIELD = "agent_config_unknown_field"
 
 
 @dataclass(frozen=True)
@@ -60,8 +67,76 @@ class WorkflowValidationResult:
         return not self.issues
 
 
+_AGENT_CONFIG_FIELDS = frozenset({"runner", "instruction", "model"})
+
+
+def _validate_agent_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue, ...]:
+    """Return every minimal AGENT config issue without mutating ``node``."""
+    if node.kind is not WorkflowNodeKind.AGENT:
+        return ()
+
+    issues: list[WorkflowValidationIssue] = []
+
+    if "runner" not in node.config:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.AGENT_RUNNER_REQUIRED,
+                "AGENT config field 'runner' is required.",
+                node_id=node.id,
+            )
+        )
+    elif not isinstance(node.config["runner"], str) or node.config["runner"] != "langgraph":
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.AGENT_RUNNER_INVALID,
+                "AGENT config field 'runner' must be exactly 'langgraph'.",
+                node_id=node.id,
+            )
+        )
+
+    if "instruction" not in node.config:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.AGENT_INSTRUCTION_REQUIRED,
+                "AGENT config field 'instruction' is required.",
+                node_id=node.id,
+            )
+        )
+    elif not isinstance(node.config["instruction"], str) or not node.config["instruction"].strip():
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.AGENT_INSTRUCTION_INVALID,
+                "AGENT config field 'instruction' must be a non-blank string.",
+                node_id=node.id,
+            )
+        )
+
+    if "model" in node.config and (
+        not isinstance(node.config["model"], str) or not node.config["model"].strip()
+    ):
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.AGENT_MODEL_INVALID,
+                "AGENT config field 'model' must be a non-blank string when provided.",
+                node_id=node.id,
+            )
+        )
+
+    for field in node.config:
+        if field not in _AGENT_CONFIG_FIELDS:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.AGENT_CONFIG_UNKNOWN_FIELD,
+                    f"AGENT config field {field!r} is not supported.",
+                    node_id=node.id,
+                )
+            )
+
+    return tuple(issues)
+
+
 class WorkflowValidator:
-    """Validate workflow structure without mutating its domain representation."""
+    """Validate workflow definitions without mutating their domain representation."""
 
     def validate(self, definition: WorkflowDefinition) -> WorkflowValidationResult:
         issues: list[WorkflowValidationIssue] = []
@@ -92,6 +167,9 @@ class WorkflowValidator:
             issue(
                 WorkflowValidationCode.EMPTY_WORKFLOW, "A workflow must contain at least one node."
             )
+
+        for node in definition.nodes:
+            issues.extend(_validate_agent_config(node))
 
         seen_edge_ids: set[str] = set()
         seen_unconditional_edges: set[tuple[str, str]] = set()

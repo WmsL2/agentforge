@@ -10,8 +10,19 @@ from app.services.workflow import (
 )
 
 
-def test_workflow_node_kinds_have_only_initial_semantic_values():
-    assert {kind.value for kind in WorkflowNodeKind} == {"start", "value", "end"}
+def test_workflow_node_kinds_have_supported_semantic_values():
+    assert {kind.value for kind in WorkflowNodeKind} == {"start", "value", "agent", "end"}
+
+
+def test_workflow_node_can_represent_an_agent_config():
+    node = WorkflowNode(
+        id="agent",
+        kind=WorkflowNodeKind.AGENT,
+        config={"runner": "langgraph", "instruction": "Analyze input."},
+    )
+
+    assert node.kind is WorkflowNodeKind.AGENT
+    assert node.config == {"runner": "langgraph", "instruction": "Analyze input."}
 
 
 def test_workflow_node_mutable_defaults_are_isolated():

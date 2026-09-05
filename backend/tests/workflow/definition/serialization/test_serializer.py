@@ -75,6 +75,32 @@ def test_deserialization_round_trips_domain_data_and_resource_columns():
     assert restored.nodes[0].kind is WorkflowNodeKind.START
 
 
+def test_agent_node_round_trips_without_serializer_changes():
+    source = definition()
+    agent = WorkflowNode(
+        "agent",
+        WorkflowNodeKind.AGENT,
+        {"runner": "langgraph", "instruction": "Analyze input.", "model": "gpt-5-mini"},
+        {"label": "Agent"},
+    )
+    source.nodes = (source.nodes[0], agent, source.nodes[1], source.nodes[2])
+    source.edges = (
+        WorkflowEdge("first", "start", "agent"),
+        WorkflowEdge("agent-value", "agent", "value"),
+        source.edges[1],
+    )
+
+    restored = deserialize_workflow_graph(
+        serialize_workflow_graph(source),
+        workflow_id=source.id,
+        name=source.name,
+        description=source.description,
+        revision=source.revision,
+    )
+
+    assert restored == source
+
+
 def test_persisted_resource_columns_and_json_payload_reconstruct_definition():
     source = definition()
     persisted_row = type(
@@ -102,7 +128,7 @@ def test_persisted_resource_columns_and_json_payload_reconstruct_definition():
 
 def test_deserialization_rejects_invalid_kind_and_malformed_structure():
     payload = serialize_workflow_graph(definition())
-    payload["nodes"][0]["kind"] = "agent"
+    payload["nodes"][0]["kind"] = "unsupported"
     with pytest.raises(ValueError, match="Invalid workflow node kind"):
         deserialize_workflow_graph(
             payload, workflow_id=uuid4(), name="Graph", description=None, revision=1
