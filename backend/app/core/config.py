@@ -127,7 +127,11 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Legacy template-chat compatibility. Platform Runtime uses LLM_* settings below.
     OPENAI_API_KEY: str = ""
+    LLM_PROVIDER: str = "openai"
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str | None = None
     AI_MODEL: str = "gpt-5.5"
     AI_TEMPERATURE: float = 0.7
     AI_THINKING_ENABLED: bool = False
@@ -145,7 +149,6 @@ class Settings(BaseSettings):
         "gpt-4.1",
     ]
     AI_FRAMEWORK: str = "langgraph"
-    LLM_PROVIDER: str = "openai"
 
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

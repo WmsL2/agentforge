@@ -13,6 +13,7 @@ from app.services.agent_runtime import (
     AgentRuntimeError,
 )
 from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
+from app.services.agent_runtime.runner.implementations import langgraph as langgraph_module
 
 
 class FakeChatModel:
@@ -46,6 +47,33 @@ def test_public_runtime_exports_remain_contract_only() -> None:
         "AgentRunner",
         "AgentRuntimeError",
     ]
+
+
+def test_default_model_factory_uses_generic_openai_compatible_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_chat_openai(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(langgraph_module, "ChatOpenAI", fake_chat_openai)
+    monkeypatch.setattr(settings, "AI_TEMPERATURE", 0.25)
+    monkeypatch.setattr(settings, "LLM_API_KEY", "runtime-key")
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "https://compatible.example/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "legacy-template-key")
+
+    model = LangGraphAgentRunner._create_model("compatible-model")
+
+    assert model is sentinel
+    assert captured == {
+        "model": "compatible-model",
+        "temperature": 0.25,
+        "api_key": "runtime-key",
+        "base_url": "https://compatible.example/v1",
+    }
 
 
 def run_request(

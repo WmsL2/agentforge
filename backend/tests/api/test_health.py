@@ -76,3 +76,41 @@ async def test_readiness_check_db_unhealthy(client: AsyncClient, mock_db_session
     data = response.json()
     assert data["status"] == "not_ready"
     assert data["checks"]["database"]["status"] == "unhealthy"
+
+
+@pytest.mark.anyio
+async def test_readiness_uses_generic_llm_api_key_for_custom_provider(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "custom-provider")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "runtime-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+
+    response = await client.get(f"{settings.API_V1_STR}/ready")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["llm"] == {
+        "status": "healthy",
+        "provider": "custom-provider",
+        "detail": "API key configured",
+    }
+
+
+@pytest.mark.anyio
+async def test_readiness_marks_llm_unhealthy_when_generic_key_is_missing(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "custom-provider")
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "legacy-template-key")
+
+    response = await client.get(f"{settings.API_V1_STR}/ready")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["llm"] == {
+        "status": "unhealthy",
+        "provider": "custom-provider",
+        "detail": "API key missing",
+    }

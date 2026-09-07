@@ -59,7 +59,8 @@ class LangGraphAgentRunner:
         return ChatOpenAI(
             model=model_name,
             temperature=settings.AI_TEMPERATURE,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL or None,
         )
 
     async def _model_node(self, state: _LangGraphAgentState) -> dict[str, Any]:
