@@ -71,7 +71,7 @@ conditional branches, loops, or parallel workflow execution.
 AgentForge 后续会在这一基础上逐步扩展平台能力：
 
 ```text
-Agent Runtime
+Agent Runtime Enhancements
 Tool Registry
 MCP Integration
 Checkpoint

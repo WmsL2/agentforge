@@ -17,9 +17,6 @@ pytest tests/api/test_health.py -v
 # Run specific test
 pytest tests/api/test_health.py::test_health_check -v
 
-# Run only unit tests
-pytest tests/unit/
-
 # Run workflow and Agent Runtime coverage
 uv run pytest tests/workflow tests/api/workflow tests/agent_runtime -q
 
@@ -114,7 +111,7 @@ bun test:e2e --headed
 
 ## Ordinary tests and opt-in integrations
 
-Tests don't hit a real database. The `client` fixture in `tests/conftest.py` overrides
+Ordinary tests don't hit a real database. The `client` fixture in `tests/conftest.py` overrides
 `get_db_session` with a mocked async session (`AsyncMock`) via FastAPI's
 `app.dependency_overrides`, so the suite runs fast and needs no Postgres container:
 
