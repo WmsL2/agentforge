@@ -38,8 +38,16 @@ group is for and which are required vs optional.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | **required** | — | From platform.openai.com |
-| `AI_MODEL` | optional | `gpt-5.5` | Default model used by agent (provider-specific) |
+| `LLM_PROVIDER` | optional | `openai` | Platform Runtime provider label / metadata only |
+| `LLM_API_KEY` | **required for Platform Runtime** | — | Credential for the configured OpenAI-compatible endpoint |
+| `LLM_BASE_URL` | optional | — | OpenAI-compatible endpoint base URL; omit for the client default |
+| `AI_MODEL` | optional | `gpt-5.5` | Provider-specific default model identifier |
+| `AI_TEMPERATURE` | optional | `0.7` | Runtime model temperature |
+| `OPENAI_API_KEY` | legacy template chat only | — | Retained for the inherited template chat subsystem; Platform Runtime does not read it |
+
+`LLM_PROVIDER` identifies the configured provider but does not choose a
+provider-specific runner. The Platform Runtime uses the OpenAI-compatible
+protocol through `LLM_API_KEY` and optional `LLM_BASE_URL`.
 
 ## Redis
 

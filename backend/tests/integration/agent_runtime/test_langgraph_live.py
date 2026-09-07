@@ -15,7 +15,7 @@ _MARKER = "AGENTFORGE_LIVE_OK"
 
 @pytest.mark.anyio
 async def test_langgraph_agent_runner_live_smoke() -> None:
-    """Exercise the real LangGraph and OpenAI path only when explicitly enabled."""
+    """Exercise the real LangGraph and OpenAI-compatible provider path when enabled."""
     if os.getenv(_LIVE_SMOKE_ENV) != "1":
         pytest.skip(f"Set {_LIVE_SMOKE_ENV}=1 to run the live Agent Runtime smoke test.")
     if not settings.LLM_API_KEY:

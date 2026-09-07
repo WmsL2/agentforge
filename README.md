@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.2 在此基础上交付自研 Workflow Core。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.3 在此基础上交付 Workflow Core 与 Agent Runtime Integration。
 
 ---
 
@@ -25,25 +25,48 @@ v0.1 建设并验证了稳定的工程基础，包括：
 - Docker
 - Test / CI 基础能力
 
-当前 main 已进入 v0.2 Workflow Core：在上述工程基础之上，AgentForge 已实现 Workflow Definition、DAG Validation、Persistence、Run Lifecycle、Deterministic Execution、Run History API，以及真实 PostgreSQL E2E 验证。
+## Release boundaries
 
-## v0.2 — Workflow Core
+- **v0.1 — Foundation:** FastAPI, Next.js, PostgreSQL, Redis, authentication,
+  Docker, Celery, and the Repository + Service baseline.
+- **v0.2 — Workflow Core:** workflow definitions, DAG validation, persistence,
+  deterministic execution, run lifecycle, and run history API.
+- **v0.3 — Agent Runtime Integration:** `AGENT` nodes, Agent Runtime contracts,
+  dispatching, LangGraph runtime execution, generic OpenAI-compatible runtime
+  configuration, production DI, PostgreSQL E2E, and opt-in live smoke coverage.
 
-v0.2 establishes the self-built Workflow Core on top of the v0.1 engineering foundation.
+## v0.3 — Agent Runtime Integration
 
-- Workflow domain contracts and validated DAG definitions
-- Definition persistence and authenticated CRUD API
-- `WorkflowRun` lifecycle, immutable definition snapshot, and revision history
-- Deterministic sequential `WorkflowEngine` with a `NodeExecutor` boundary
-- `START`, `VALUE`, and `END` node execution; fan-out and fan-in scheduling
-- Run create, history, and detail API
-- Opt-in real PostgreSQL HTTP-to-persistence integration verification
+Current main builds on the self-built v0.2 Workflow Core with a deliberately
+small Agent Runtime integration.
 
-Detailed Workflow Core architecture: [docs/workflow-core.md](docs/workflow-core.md).
+- Framework-independent `AgentExecutionRequest`, `AgentExecutionResult`,
+  `AgentRuntimeError`, and `AgentRunner` contracts
+- Validated `AGENT` nodes with `runner`, `instruction`, and optional `model`
+- Kind-based execution: deterministic `START` / `VALUE` / `END` plus AGENT
+  dispatch through `AgentNodeExecutor`
+- Stateless `LangGraphAgentRunner` with `START -> model -> END`
+- OpenAI-compatible runtime configuration (`LLM_*`) and production DI
+- Opt-in PostgreSQL E2E with a fake external runner, plus opt-in live runtime
+  smoke coverage against the configured compatible provider
 
-## v0.2 当前边界 / Non-goals
+```text
+WorkflowEngine -> DispatchingNodeExecutor -> AgentNodeExecutor
+               -> AgentRunner -> LangGraphAgentRunner
+```
 
-The current Workflow Core intentionally does not implement CONDITION execution, loops, AGENT nodes, TOOL nodes, MCP execution, checkpoints, pause/resume, cancel/retry, HITL, workflow Celery execution, durable intermediate RUNNING checkpoints, or Run Step / Trace observability. These are future platform directions, not completed v0.2 features.
+LangGraph is **not** the AgentForge Workflow Engine; it is one Agent Runtime
+implementation behind the workflow execution boundary.
+
+Detailed documents: [Workflow Core](docs/workflow-core.md) and
+[Agent Runtime](docs/agent-runtime.md).
+
+## v0.3 当前边界 / Non-goals
+
+v0.3 intentionally does not implement Tool Nodes or tool calling, MCP, memory,
+checkpoints, pause/resume, HITL, retry, cancellation, streaming, token usage,
+Run Steps, traces, background workflow workers, multi-agent execution,
+conditional branches, loops, or parallel workflow execution.
 
 AgentForge 后续会在这一基础上逐步扩展平台能力：
 
@@ -59,9 +82,8 @@ Observability
 Workspace / RBAC
 ```
 
-LangGraph 当前属于模板继承能力及未来 Runtime Adapter 的参考实现。
-
-**LangGraph 不是 AgentForge 的 Workflow Engine。**
+Future model-construction extraction may be considered only if the current
+`LangGraphAgentRunner` model-factory seam gains broader responsibilities.
 
 ---
 

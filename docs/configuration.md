@@ -90,16 +90,22 @@ Computed properties:
 | `REDIS_PASSWORD` | (none) | Redis password (optional) |
 | `REDIS_DB` | `0` | Redis database number |
 
-## AI Agent
+## Agent Runtime and legacy template chat
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENAI_API_KEY` | (empty) | OpenAI API key |
-| `AI_MODEL` | `gpt-5.5` | Default LLM model for chat |
+| `LLM_PROVIDER` | `openai` | Provider identity / metadata; it does not select provider-specific code |
+| `LLM_API_KEY` | (empty) | Credential used by AgentForge Platform Runtime |
+| `LLM_BASE_URL` | (empty) | Optional OpenAI-compatible endpoint base URL; empty uses the client default |
+| `AI_MODEL` | `gpt-5.5` | Provider-specific default model identifier for the runtime |
 | `AI_TEMPERATURE` | `0.7` | LLM temperature (0.0 = deterministic, 1.0 = creative) |
 | `AI_AVAILABLE_MODELS` | (auto-configured) | JSON list of models shown in the UI model selector |
 | `AI_FRAMEWORK` | `langgraph` | AI framework (informational) |
-| `LLM_PROVIDER` | `openai` | LLM provider (informational) |
+| `OPENAI_API_KEY` | (empty) | Legacy template-chat compatibility; not used by Platform Runtime |
+
+The Platform Runtime uses an OpenAI-compatible protocol, not a single provider
+identity. It does not branch on `LLM_PROVIDER`; configure a compatible base URL
+and credential when using a non-default endpoint.
 
 ### Customizing Available Models
 
@@ -155,4 +161,5 @@ Before deploying to production, ensure these variables are properly set:
 5. `POSTGRES_PASSWORD` -- Use a strong, unique password
 6. `CORS_ORIGINS` -- List only your actual frontend domain(s)
 7. `REDIS_PASSWORD` -- Set a strong password
-8. `OPENAI_API_KEY` -- Your production API key
+8. `LLM_API_KEY` -- Platform Runtime credential
+9. `LLM_PROVIDER`, `LLM_BASE_URL`, `AI_MODEL`, and `AI_TEMPERATURE` -- Match the configured compatible provider

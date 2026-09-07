@@ -3,7 +3,8 @@
 This project follows a **Repository + Service** layered architecture. Most features — users,
 conversations, files, RAG documents, and sync sources — use the same pattern:
 **Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
-explicit Domain, Validation, and Execution layers to that foundation.
+explicit Domain, Validation, and Execution layers to that foundation. v0.3
+adds Agent Runtime Integration without replacing the Repository + Service model.
 
 ## Request Flow
 
@@ -79,6 +80,24 @@ services, which in turn delegate to repositories.
 The Workflow Core is not a conventional CRUD-only path. Its application services coordinate
 domain objects, validation, deterministic execution, and persistence. See the detailed
 [Workflow Core architecture](workflow-core.md).
+
+## Agent Runtime Integration
+
+The current platform combines the v0.2 Workflow Core with v0.3 Agent Runtime
+Integration. Workflow execution is composed in `backend/app/api/deps.py`, the
+composition root that may know both the `AgentRunner` abstraction and the
+concrete `LangGraphAgentRunner`:
+
+```text
+HTTP -> WorkflowRunService -> WorkflowEngine -> DispatchingNodeExecutor
+     -> AgentNodeExecutor -> AgentRunner -> LangGraphAgentRunner
+```
+
+The engine schedules validated nodes; the dispatcher selects the executor by
+node kind. `START`, `VALUE`, and `END` remain deterministic, while `AGENT`
+uses the runtime adapter. LangGraph is an agent-runtime implementation, not
+the Workflow Engine. See [Agent Runtime architecture](agent-runtime.md) for
+the detailed contracts, configuration, and failure boundary.
 
 ```
 HTTP request

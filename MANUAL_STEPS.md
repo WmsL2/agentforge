@@ -27,11 +27,19 @@ These are used to sign JWTs and authenticate service-to-service calls. Rotate at
 - [ ] Set `DATABASE_URL` in `.env` to the **async** connection string: `postgresql+asyncpg://user:pass@host:5432/dbname`.
 - [ ] Run migrations: `cd backend && uv run alembic upgrade head`.
 
-## OpenAI
+## AgentForge Platform Runtime
 
-- [ ] Create API key at https://platform.openai.com/api-keys.
-- [ ] Set `OPENAI_API_KEY` in `.env`.
-- [ ] (Optional) Set spending limit on OpenAI dashboard to avoid surprise bills.
+Configure an OpenAI-compatible provider in `backend/.env`:
+
+- [ ] Set `LLM_PROVIDER` to an identity label such as `openai`, `deepseek`, or
+  `custom`. It is metadata only and does not select provider-specific code.
+- [ ] Set `LLM_API_KEY` to the provider credential.
+- [ ] Set `LLM_BASE_URL` when the provider requires a compatible custom endpoint;
+  leave it empty to use the client's default endpoint.
+- [ ] Set `AI_MODEL` and optionally `AI_TEMPERATURE` for the configured provider.
+
+`OPENAI_API_KEY` remains separate legacy configuration for the inherited
+template chat subsystem. It is not required by AgentForge Platform Runtime.
 
 ## Redis
 

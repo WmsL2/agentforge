@@ -5,8 +5,8 @@
 ```bash
 cd backend
 
-# Run all tests
-pytest
+# Run ordinary backend tests (no required PostgreSQL E2E or paid provider request)
+uv run pytest
 
 # Run with coverage
 pytest --cov=app --cov-report=term-missing
@@ -20,8 +20,8 @@ pytest tests/api/test_health.py::test_health_check -v
 # Run only unit tests
 pytest tests/unit/
 
-# Run only integration tests
-pytest tests/integration/
+# Run workflow and Agent Runtime coverage
+uv run pytest tests/workflow tests/api/workflow tests/agent_runtime -q
 
 # Run with verbose output
 pytest -v
@@ -38,10 +38,12 @@ tests/
 ├── api/                 # API endpoint tests
 │   ├── test_health.py
 │   └── test_auth.py
-├── unit/                # Unit tests (services, utils)
-│   └── test_services.py
-└── integration/         # Integration tests
-    └── test_db.py
+├── workflow/            # Workflow domain, validation, execution, and application tests
+├── agent_runtime/       # Agent Runtime contracts and offline LangGraph runner tests
+├── api/workflow/        # Workflow API tests using ordinary test overrides
+└── integration/
+    ├── workflow/        # Opt-in real PostgreSQL AGENT workflow E2E
+    └── agent_runtime/   # Strict opt-in live compatible-provider smoke test
 ```
 
 ## Key Fixtures (`conftest.py`)
@@ -110,7 +112,7 @@ bun test:e2e
 bun test:e2e --headed
 ```
 
-## Test Database
+## Ordinary tests and opt-in integrations
 
 Tests don't hit a real database. The `client` fixture in `tests/conftest.py` overrides
 `get_db_session` with a mocked async session (`AsyncMock`) via FastAPI's
@@ -120,5 +122,24 @@ Tests don't hit a real database. The `client` fixture in `tests/conftest.py` ove
 - Overrides are registered before each test and cleared afterwards
 - Assert against the mock's calls, or stub `execute(...)` return values for the path under test
 
-For tests that need to exercise real SQL, instantiate your own async engine/session
-inside the test rather than relying on a shared fixture.
+Ordinary API tests use mocked database dependencies where appropriate and do
+not require PostgreSQL or a provider request. The integration tests are
+explicitly opt-in:
+
+```powershell
+# Real PostgreSQL API -> service -> repository -> persistence E2E.
+$env:AGENTFORGE_RUN_POSTGRES_E2E = "1"
+uv run pytest tests/integration/workflow/test_agent_workflow_e2e.py -q
+Remove-Item Env:AGENTFORGE_RUN_POSTGRES_E2E
+
+# Real LangGraph -> configured OpenAI-compatible provider smoke test.
+$env:AGENTFORGE_RUN_LIVE_AGENT_SMOKE = "1"
+# Optional: $env:AGENTFORGE_LIVE_AGENT_MODEL = "<provider-model>"
+uv run pytest tests/integration/agent_runtime/test_langgraph_live.py -q
+Remove-Item Env:AGENTFORGE_RUN_LIVE_AGENT_SMOKE
+```
+
+The PostgreSQL E2E uses real PostgreSQL but replaces `AgentRunner` with a fake
+at the external boundary. The live runtime smoke uses the real configured
+provider and does not require PostgreSQL. Neither integration runs in the
+normal suite unless its environment variable is set.
