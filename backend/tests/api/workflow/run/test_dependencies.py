@@ -1,0 +1,103 @@
+"""Production workflow-engine dependency composition tests."""
+
+import asyncio
+from uuid import uuid4
+
+from app.api.deps import get_langgraph_agent_runner, get_workflow_engine
+from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
+from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
+from app.services.workflow import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNode,
+    WorkflowNodeKind,
+    WorkflowRun,
+    WorkflowRunStatus,
+)
+
+
+class FakeAgentRunner:
+    """Offline AgentRunner replacement that records requests."""
+
+    def __init__(self, output: object | None = None) -> None:
+        self.requests: list[AgentExecutionRequest] = []
+        self._output = {"answer": "analyzed"} if output is None else output
+
+    async def run(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+        self.requests.append(request)
+        return AgentExecutionResult(output=self._output)
+
+
+def _definition(
+    nodes: tuple[WorkflowNode, ...], edges: tuple[WorkflowEdge, ...]
+) -> WorkflowDefinition:
+    return WorkflowDefinition(
+        id=uuid4(),
+        name="Dependency composition",
+        entry_node_id="start",
+        nodes=nodes,
+        edges=edges,
+    )
+
+
+def _run(input: dict[str, object]) -> WorkflowRun:
+    return WorkflowRun(id=uuid4(), workflow_id=uuid4(), workflow_revision=1, input=input)
+
+
+def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
+    runner = get_langgraph_agent_runner()
+
+    assert isinstance(runner, LangGraphAgentRunner)
+
+
+def test_production_composition_executes_agent_node_with_injected_runner() -> None:
+    runner = FakeAgentRunner(output={"answer": "done"})
+    definition = _definition(
+        (
+            WorkflowNode("start", WorkflowNodeKind.START),
+            WorkflowNode(
+                "agent",
+                WorkflowNodeKind.AGENT,
+                {"runner": "langgraph", "instruction": "Analyze input."},
+            ),
+            WorkflowNode("end", WorkflowNodeKind.END),
+        ),
+        (
+            WorkflowEdge("start-agent", "start", "agent"),
+            WorkflowEdge("agent-end", "agent", "end"),
+        ),
+    )
+    workflow_run = _run({"question": "What is the answer?"})
+
+    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+
+    assert workflow_run.status is WorkflowRunStatus.COMPLETED
+    assert len(runner.requests) == 1
+    assert runner.requests[0].input == {"start": {"question": "What is the answer?"}}
+    assert workflow_run.node_outputs["agent"] == {"answer": "done"}
+    assert workflow_run.node_outputs["end"] == {"agent": {"answer": "done"}}
+    assert workflow_run.output == {"end": {"agent": {"answer": "done"}}}
+
+
+def test_production_composition_preserves_deterministic_execution() -> None:
+    runner = FakeAgentRunner()
+    definition = _definition(
+        (
+            WorkflowNode("start", WorkflowNodeKind.START),
+            WorkflowNode("value", WorkflowNodeKind.VALUE, {"value": 42}),
+            WorkflowNode("end", WorkflowNodeKind.END),
+        ),
+        (
+            WorkflowEdge("start-value", "start", "value"),
+            WorkflowEdge("value-end", "value", "end"),
+        ),
+    )
+    workflow_run = _run({"ignored": True})
+
+    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+
+    assert workflow_run.status is WorkflowRunStatus.COMPLETED
+    assert workflow_run.node_outputs["value"] == 42
+    assert workflow_run.node_outputs["end"] == {"value": 42}
+    assert workflow_run.output == {"end": {"value": 42}}
+    assert runner.requests == []

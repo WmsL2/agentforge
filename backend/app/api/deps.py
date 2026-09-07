@@ -36,11 +36,15 @@ from app.services.user import UserService
 from app.services.session import SessionService
 from app.services.conversation import ConversationService
 from app.services.workflow import (
+    AgentNodeExecutor,
     DeterministicNodeExecutor,
+    DispatchingNodeExecutor,
     WorkflowEngine,
     WorkflowRunService,
     WorkflowService,
 )
+from app.services.agent_runtime import AgentRunner
+from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -72,8 +76,23 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 
-def get_workflow_engine() -> WorkflowEngine:
-    return WorkflowEngine(DeterministicNodeExecutor())
+def get_langgraph_agent_runner() -> AgentRunner:
+    """Create the concrete LangGraph runner used by workflow AGENT nodes."""
+    return LangGraphAgentRunner()
+
+
+LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
+
+
+def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:
+    """Compose the production workflow engine and its node executors."""
+    deterministic_executor = DeterministicNodeExecutor()
+    agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner})
+    dispatching_executor = DispatchingNodeExecutor(
+        deterministic_executor=deterministic_executor,
+        agent_executor=agent_executor,
+    )
+    return WorkflowEngine(dispatching_executor)
 
 
 WorkflowEngineDep = Annotated[WorkflowEngine, Depends(get_workflow_engine)]
