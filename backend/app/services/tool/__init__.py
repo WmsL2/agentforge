@@ -5,6 +5,7 @@ from app.services.tool.execution import (
     ToolExecutionError,
     ToolExecutionRequest,
     ToolExecutionResult,
+    ToolExecutor,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "ToolExecutionError",
     "ToolExecutionRequest",
     "ToolExecutionResult",
+    "ToolExecutor",
 ]
