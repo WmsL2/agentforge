@@ -7,6 +7,12 @@ from app.services.tool.execution import (
     ToolExecutionResult,
     ToolExecutor,
 )
+from app.services.tool.registry import (
+    ToolRegistration,
+    ToolRegistry,
+    ToolRegistryError,
+    ToolRegistryErrorCode,
+)
 
 __all__ = [
     "ToolDefinition",
@@ -14,4 +20,8 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolExecutor",
+    "ToolRegistration",
+    "ToolRegistry",
+    "ToolRegistryError",
+    "ToolRegistryErrorCode",
 ]
