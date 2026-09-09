@@ -6,5 +6,12 @@ from app.services.tool.execution.domain import (
     ToolExecutionResult,
 )
 from app.services.tool.execution.executor import ToolExecutor
+from app.services.tool.execution.service import ToolExecutionService
 
-__all__ = ["ToolExecutionError", "ToolExecutionRequest", "ToolExecutionResult", "ToolExecutor"]
+__all__ = [
+    "ToolExecutionError",
+    "ToolExecutionRequest",
+    "ToolExecutionResult",
+    "ToolExecutionService",
+    "ToolExecutor",
+]
