@@ -44,7 +44,10 @@ from app.services.workflow import (
     WorkflowService,
 )
 from app.services.agent_runtime import AgentRunner
-from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
+from app.services.agent_runtime.runner.implementations import (
+    LangGraphAgentRunner,
+    LangGraphToolAdapter,
+)
 from app.agents.utils import get_current_datetime
 from app.services.tool import ToolDefinition, ToolExecutionService, ToolRegistry
 from app.services.tool.definition.validation import ToolSchemaValidator
@@ -80,14 +83,6 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 
-def get_langgraph_agent_runner() -> AgentRunner:
-    """Create the concrete LangGraph runner used by workflow AGENT nodes."""
-    return LangGraphAgentRunner()
-
-
-LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
-
-
 def get_tool_registry() -> ToolRegistry:
     """Compose the production registry for native Tool Platform tools."""
     registry = ToolRegistry()
@@ -116,6 +111,19 @@ ToolExecutionServiceDep = Annotated[
     ToolExecutionService,
     Depends(get_tool_execution_service),
 ]
+
+
+def get_langgraph_agent_runner(
+    registry: ToolRegistryDep,
+    tool_execution_service: ToolExecutionServiceDep,
+) -> AgentRunner:
+    """Create the production LangGraph runner with current Tool Platform tools."""
+    registration = registry.resolve("current_datetime")
+    tool = LangGraphToolAdapter(tool_execution_service).adapt(registration.definition)
+    return LangGraphAgentRunner(tools=(tool,))
+
+
+LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
 
 
 def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from typing import Any, Protocol
+from collections.abc import Callable, Sequence
+from typing import Annotated, Any, Protocol
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
 from typing_extensions import TypedDict
 
 from app.core.config import settings
@@ -19,17 +21,24 @@ from app.services.agent_runtime.execution.domain import (
 )
 
 
-class _AsyncChatModel(Protocol):
+class _BoundAsyncChatModel(Protocol):
     """The minimal model capability needed by the LangGraph model node."""
 
     async def ainvoke(self, input: list[BaseMessage]) -> AIMessage:
         """Return one model response for the supplied messages."""
 
 
+class _AsyncChatModel(_BoundAsyncChatModel, Protocol):
+    """A chat model that can bind LangChain tools before invocation."""
+
+    def bind_tools(self, tools: Sequence[BaseTool]) -> _BoundAsyncChatModel:
+        """Return a chat model configured with the supplied tools."""
+
+
 class _LangGraphAgentState(TypedDict):
     """The isolated state of one LangGraph Agent Runtime execution."""
 
-    messages: list[BaseMessage]
+    messages: Annotated[list[BaseMessage], add_messages]
     model_name: str
     output: Any
 
@@ -50,8 +59,13 @@ def _render_input(value: Any) -> str:
 class LangGraphAgentRunner:
     """Run a stateless single-model LangGraph execution for one request."""
 
-    def __init__(self, model_factory: ModelFactory | None = None) -> None:
+    def __init__(
+        self,
+        model_factory: ModelFactory | None = None,
+        tools: Sequence[BaseTool] | None = None,
+    ) -> None:
         self._model_factory = model_factory or self._create_model
+        self._tools = tuple(tools or ())
         self._graph = self._build_graph()
 
     @staticmethod
@@ -65,14 +79,25 @@ class LangGraphAgentRunner:
 
     async def _model_node(self, state: _LangGraphAgentState) -> dict[str, Any]:
         model = self._model_factory(state["model_name"])
+        if self._tools:
+            model = model.bind_tools(self._tools)
         response = await model.ainvoke(state["messages"])
-        return {"output": response.content}
+        return {"messages": [response], "output": response.content}
 
     def _build_graph(self):
         graph = StateGraph(_LangGraphAgentState)  # ty: ignore[invalid-argument-type]
         graph.add_node("model", self._model_node)
         graph.add_edge(START, "model")
-        graph.add_edge("model", END)
+        if self._tools:
+            graph.add_node("tools", ToolNode(self._tools, handle_tool_errors=False))
+            graph.add_conditional_edges(
+                "model",
+                tools_condition,
+                {"tools": "tools", "__end__": END},
+            )
+            graph.add_edge("tools", "model")
+        else:
+            graph.add_edge("model", END)
         return graph.compile()
 
     async def run(self, request: AgentExecutionRequest) -> AgentExecutionResult:

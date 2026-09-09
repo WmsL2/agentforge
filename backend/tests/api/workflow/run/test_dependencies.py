@@ -3,7 +3,14 @@
 import asyncio
 from uuid import uuid4
 
-from app.api.deps import get_langgraph_agent_runner, get_workflow_engine
+from langchain_core.messages import AIMessage
+
+from app.api.deps import (
+    get_langgraph_agent_runner,
+    get_tool_execution_service,
+    get_tool_registry,
+    get_workflow_engine,
+)
 from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
 from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
 from app.services.workflow import (
@@ -45,9 +52,58 @@ def _run(input: dict[str, object]) -> WorkflowRun:
 
 
 def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
-    runner = get_langgraph_agent_runner()
+    registry = get_tool_registry()
+    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
 
     assert isinstance(runner, LangGraphAgentRunner)
+
+
+def test_production_composition_executes_current_datetime_tool_loop(
+    monkeypatch,
+) -> None:
+    class FakeChatModel:
+        def __init__(self) -> None:
+            self.calls = []
+            self.responses = [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "current_datetime",
+                            "args": {},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="Current time retrieved."),
+            ]
+
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
+            return self.responses.pop(0)
+
+    model = FakeChatModel()
+    monkeypatch.setattr(
+        LangGraphAgentRunner,
+        "_create_model",
+        staticmethod(lambda _model_name: model),
+    )
+    registry = get_tool_registry()
+    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+
+    result = asyncio.run(
+        runner.run(AgentExecutionRequest(instruction="Get the time.", input="now"))
+    )
+
+    assert result.output == "Current time retrieved."
+    assert len(model.calls) == 2
+    tool_message = model.calls[1][-1]
+    assert tool_message.name == "current_datetime"
+    assert tool_message.tool_call_id == "call-1"
 
 
 def test_production_composition_executes_agent_node_with_injected_runner() -> None:
