@@ -39,18 +39,31 @@ AgentRunner Protocol
   | framework-independent execution boundary
   v
 LangGraphAgentRunner
-  | runs model directly or model -> tools -> model
+  | invokes the model
   v
-OpenAI-compatible model client and Tool Platform
-  | sends the configured request through the compatible protocol
+OpenAI-compatible model client
+  | sends a model request through the compatible protocol
   v
-Configured provider
-  | returns model content
+Configured LLM provider
+  | returns AIMessage
   v
-AgentExecutionResult
-  | becomes NodeExecutionResult
-  v
-WorkflowRun.node_outputs
+LangGraphAgentRunner
+  | AIMessage without tool_calls -> AgentExecutionResult
+  `-- AIMessage with tool_calls
+        v
+      ToolNode
+        v
+      LangGraphToolAdapter
+        | creates ToolExecutionRequest
+        v
+      ToolExecutionService
+        | Registry / Validator / Executor
+        v
+      ToolExecutionResult
+        v
+      ToolMessage
+        v
+      LangGraphAgentRunner
 ```
 
 `WorkflowEngine` decides **when** a node executes. `DispatchingNodeExecutor`
