@@ -107,7 +107,7 @@ Enterprise Agent Workflow Platform
 - [Swagger UI](/docs) - Interactive API documentation
 - [ReDoc](/redoc) - Alternative documentation view
         """.strip(),
-        version="0.3.0",
+        version="0.4.0",
         openapi_url=openapi_url,
         docs_url=docs_url,
         redoc_url=redoc_url,

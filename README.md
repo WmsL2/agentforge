@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.3 在此基础上交付 Workflow Core 与 Agent Runtime Integration。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.4 在此基础上交付 Workflow Core、Agent Runtime 与 Tool Platform。
 
 ---
 
@@ -34,45 +34,67 @@ v0.1 建设并验证了稳定的工程基础，包括：
 - **v0.3 — Agent Runtime Integration:** `AGENT` nodes, Agent Runtime contracts,
   dispatching, LangGraph runtime execution, generic OpenAI-compatible runtime
   configuration, production DI, PostgreSQL E2E, and opt-in live smoke coverage.
+- **v0.4 — Tool Platform:** framework-independent Tool contracts, JSON Schema
+  validation, `ToolExecutor` SPI, `ToolRegistry`, native callable execution,
+  `ToolExecutionService`, production composition, LangGraph adaptation, and
+  Agent tool calling.
 
-## v0.3 — Agent Runtime Integration
+## v0.4 — Tool Platform
 
-Current main builds on the self-built v0.2 Workflow Core with a deliberately
-small Agent Runtime integration.
+Current main builds on the self-built v0.2 Workflow Core and v0.3 Agent
+Runtime Integration with a framework-independent Tool Platform.
 
 - Framework-independent `AgentExecutionRequest`, `AgentExecutionResult`,
   `AgentRuntimeError`, and `AgentRunner` contracts
 - Validated `AGENT` nodes with `runner`, `instruction`, and optional `model`
 - Kind-based execution: deterministic `START` / `VALUE` / `END` plus AGENT
   dispatch through `AgentNodeExecutor`
-- Stateless `LangGraphAgentRunner` with `START -> model -> END`
+- `ToolDefinition`, execution contracts, Draft 2020-12 schema validation,
+  `ToolExecutor`, `ToolRegistry`, native callable execution, and one unified
+  `ToolExecutionService`
+- Production registration of `current_datetime` from
+  `app.agents.utils.get_current_datetime`
+- `LangGraphToolAdapter`, which converts `ToolDefinition` to `StructuredTool`
+  while routing every invocation through `ToolExecutionService`
+- Stateless `LangGraphAgentRunner` with tool-aware model → tools → model loops
 - OpenAI-compatible runtime configuration (`LLM_*`) and production DI
 - Opt-in PostgreSQL E2E with a fake external runner, plus opt-in live runtime
   smoke coverage against the configured compatible provider
 
 ```text
-WorkflowEngine -> DispatchingNodeExecutor -> AgentNodeExecutor
-               -> AgentRunner -> LangGraphAgentRunner
+LangGraphAgentRunner
+  | model.bind_tools()
+  v
+LLM -> tool_calls -> ToolNode -> LangGraphToolAdapter
+                              | ToolExecutionRequest
+                              v
+                    ToolExecutionService
+                      |-- ToolRegistry
+                      |-- ToolSchemaValidator
+                      `-- ToolExecutor -> ToolExecutionResult
 ```
 
-LangGraph is **not** the AgentForge Workflow Engine; it is one Agent Runtime
+LangGraph is **not** the AgentForge Workflow Engine, and the Tool Platform is
+not a LangChain Tool Registry alias; LangGraph remains one Agent Runtime
 implementation behind the workflow execution boundary.
 
-Detailed documents: [Workflow Core](docs/workflow-core.md) and
-[Agent Runtime](docs/agent-runtime.md).
+Detailed documents: [Workflow Core](docs/workflow-core.md),
+[Agent Runtime](docs/agent-runtime.md), and
+[Tool Platform](docs/tool-platform.md).
 
-## v0.3 当前边界 / Non-goals
+## v0.4 当前边界 / Non-goals
 
-v0.3 intentionally does not implement Tool Nodes or tool calling, MCP, memory,
-checkpoints, pause/resume, HITL, retry, cancellation, streaming, token usage,
-Run Steps, traces, background workflow workers, multi-agent execution,
-conditional branches, loops, or parallel workflow execution.
+v0.4 intentionally does not implement a Workflow TOOL Node, registry
+list/discover API, dynamic discovery, per-agent tool binding, permissions,
+policy, approval, timeout, retry, idempotency, HTTP tools, MCP or MCP discovery,
+persistent tool definitions, traces, usage metrics, agent max-steps,
+checkpoints, pause/resume, HITL, streaming, Run Steps, background workflow
+workers, conditional branches, loops, or parallel workflow execution.
 
 AgentForge 后续会在这一基础上逐步扩展平台能力：
 
 ```text
-Agent Runtime Enhancements
-Tool Registry
+Dynamic Tool discovery
 MCP Integration
 Checkpoint
 Pause / Resume

@@ -1,13 +1,11 @@
-# Agent Runtime — v0.3
+# Agent Runtime — v0.4
 
 ## Scope
 
-v0.3 integrates a small, stateless Agent Runtime into the existing Workflow
-Core. It adds contracts, the `AGENT` workflow node, node-kind dispatch, a
-LangGraph-backed runner, production dependency composition, PostgreSQL E2E
-coverage, and an opt-in live provider smoke test. It does not add tools, MCP,
-memory, checkpoints, streaming, retries, cancellation, traces, token usage,
-background execution, conditional branches, loops, or parallel execution.
+v0.3 introduced a small, stateless Agent Runtime into the Workflow Core. v0.4
+adds Tool Platform binding and the LangGraph tool-calling loop to that same
+runtime. The runtime remains stateless: it has no memory, checkpoints, thread
+state, or persistent conversation history.
 
 ## Runtime contracts
 
@@ -41,9 +39,9 @@ AgentRunner Protocol
   | framework-independent execution boundary
   v
 LangGraphAgentRunner
-  | runs START -> model -> END
+  | runs model directly or model -> tools -> model
   v
-OpenAI-compatible model client
+OpenAI-compatible model client and Tool Platform
   | sends the configured request through the compatible protocol
   v
 Configured provider
@@ -63,10 +61,20 @@ one node only. For AGENT nodes, `AgentNodeExecutor` maps `config.runner`,
 
 ## LangGraph runner
 
-`LangGraphAgentRunner` is stateless: it stores no history, checkpoints, thread
-state, or memory. It maps instruction to `SystemMessage`, rendered input to
-`HumanMessage`, and chooses `request.model` or `settings.AI_MODEL`. Its graph
-is exactly `START -> model -> END`.
+`LangGraphAgentRunner` maps instruction to `SystemMessage`, rendered input to
+`HumanMessage`, and chooses `request.model` or `settings.AI_MODEL`. Without
+tools, its graph is `START -> model -> END`. With tools, it binds
+`StructuredTool` instances and runs:
+
+```text
+START -> model -> tools_condition
+                  |-- no tool calls --> END
+                  `-- tool calls --> tools -> model
+```
+
+`add_messages` retains the message history within one graph invocation so a
+second model call sees the tool call and `ToolMessage`. It does not create
+memory beyond that invocation.
 
 The runner uses an OpenAI-compatible client, which is a protocol choice rather
 than a commitment to a particular provider. `LLM_PROVIDER` is identity and
@@ -81,15 +89,18 @@ for the legacy template chat subsystem.
 
 `backend/app/api/deps.py` is the composition root. It wires
 `WorkflowEngine -> DispatchingNodeExecutor -> AgentNodeExecutor -> AgentRunner
--> LangGraphAgentRunner`; concrete dependencies do not leak into runtime
+-> LangGraphAgentRunner`, plus the production Tool Platform and its
+`current_datetime` tool. Concrete dependencies do not leak into runtime
 contracts.
 
 ## Failure and verification boundaries
 
-Provider or LangGraph failures become `AgentRuntimeError`. During workflow
-execution, `WorkflowEngine` normalizes executor exceptions into the current
-`WorkflowRun` failure semantics: a failed run has `node_execution_failed` and
-the failing node id.
+Provider, LangGraph, and uncaught tool failures become `AgentRuntimeError`.
+`ToolNode(handle_tool_errors=False)` lets a `ToolExecutionError` reach the
+runner boundary as the exception cause. During workflow execution,
+`WorkflowEngine` normalizes executor exceptions into the current `WorkflowRun`
+failure semantics: a failed run has `node_execution_failed` and the failing
+node id.
 
 `tests/integration/workflow/` is opt-in PostgreSQL HTTP-to-persistence E2E. It
 uses a real platform stack but substitutes `FakeAgentRunner` at the external

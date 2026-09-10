@@ -4,7 +4,8 @@ This project follows a **Repository + Service** layered architecture. Most featu
 conversations, files, RAG documents, and sync sources — use the same pattern:
 **Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
 explicit Domain, Validation, and Execution layers to that foundation. v0.3
-adds Agent Runtime Integration without replacing the Repository + Service model.
+adds Agent Runtime Integration, and v0.4 adds the Tool Platform without
+replacing the Repository + Service model.
 
 ## Request Flow
 
@@ -83,21 +84,37 @@ domain objects, validation, deterministic execution, and persistence. See the de
 
 ## Agent Runtime Integration
 
-The current platform combines the v0.2 Workflow Core with v0.3 Agent Runtime
-Integration. Workflow execution is composed in `backend/app/api/deps.py`, the
-composition root that may know both the `AgentRunner` abstraction and the
-concrete `LangGraphAgentRunner`:
+The current platform combines the v0.2 Workflow Core, v0.3 Agent Runtime, and
+v0.4 Tool Platform. Workflow execution is composed in `backend/app/api/deps.py`,
+the composition root that may know the `AgentRunner`, concrete
+`LangGraphAgentRunner`, and production Tool Platform composition:
 
 ```text
 HTTP -> WorkflowRunService -> WorkflowEngine -> DispatchingNodeExecutor
      -> AgentNodeExecutor -> AgentRunner -> LangGraphAgentRunner
 ```
 
+For a tool-enabled Agent run, the runtime integration is:
+
+```text
+WorkflowEngine
+  -> AgentNodeExecutor
+  -> LangGraphAgentRunner
+  -> model.bind_tools(StructuredTool)
+  -> LLM AIMessage.tool_calls
+  -> ToolNode
+  -> LangGraphToolAdapter
+  -> ToolExecutionRequest
+  -> ToolExecutionService
+  -> ToolRegistry / ToolSchemaValidator / ToolExecutor
+```
+
 The engine schedules validated nodes; the dispatcher selects the executor by
 node kind. `START`, `VALUE`, and `END` remain deterministic, while `AGENT`
 uses the runtime adapter. LangGraph is an agent-runtime implementation, not
-the Workflow Engine. See [Agent Runtime architecture](agent-runtime.md) for
-the detailed contracts, configuration, and failure boundary.
+the Workflow Engine. The Tool Platform Core is also not a LangChain Tool
+Registry alias. See [Agent Runtime architecture](agent-runtime.md) and
+[Tool Platform](tool-platform.md) for the detailed boundaries.
 
 ```
 HTTP request

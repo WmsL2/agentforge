@@ -17,8 +17,15 @@ pytest tests/api/test_health.py -v
 # Run specific test
 pytest tests/api/test_health.py::test_health_check -v
 
-# Run workflow and Agent Runtime coverage
-uv run pytest tests/workflow tests/api/workflow tests/agent_runtime -q
+# Run Tool Platform coverage
+uv run pytest tests/tool -q
+uv run pytest tests/api/tool -q
+
+# Run Agent Runtime coverage
+uv run pytest tests/agent_runtime -q
+
+# Run Workflow, Agent Runtime, and Tool Platform coverage
+uv run pytest tests/workflow tests/agent_runtime tests/tool tests/api/tool -q
 
 # Run with verbose output
 pytest -v
@@ -37,7 +44,9 @@ tests/
 │   └── test_auth.py
 ├── workflow/            # Workflow domain, validation, execution, and application tests
 ├── agent_runtime/       # Agent Runtime contracts and offline LangGraph runner tests
+├── tool/                # Tool Platform contracts, validation, registry, and execution tests
 ├── api/workflow/        # Workflow API tests using ordinary test overrides
+├── api/tool/            # Production Tool Platform dependency composition tests
 └── integration/
     ├── workflow/        # Opt-in real PostgreSQL AGENT workflow E2E
     └── agent_runtime/   # Strict opt-in live compatible-provider smoke test

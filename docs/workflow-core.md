@@ -6,8 +6,10 @@ v0.2 delivers AgentForge's self-built Workflow Core on top of the v0.1 web-engin
 
 > **Historical release boundary:** this document describes v0.2. Current main
 > additionally includes v0.3 AGENT node execution, `AgentRunner`,
-> `AgentNodeExecutor`, `DispatchingNodeExecutor`, and `LangGraphAgentRunner`.
-> See [Agent Runtime](agent-runtime.md) for current runtime behavior.
+> `AgentNodeExecutor`, `DispatchingNodeExecutor`, and `LangGraphAgentRunner`,
+> plus the v0.4 Tool Platform and Agent Tool Calling. See
+> [Agent Runtime](agent-runtime.md) and [Tool Platform](tool-platform.md) for
+> current runtime behavior.
 
 It does not implement CONDITION execution, loops, AGENT or TOOL nodes, MCP execution, checkpoints, pause/resume, cancel/retry, Human-in-the-Loop controls, workflow Celery execution, durable intermediate RUNNING checkpoints, Run Step records, or Trace observability.
 
@@ -236,7 +238,8 @@ For the v0.2 release, `backend/tests/integration/workflow/test_postgres_roundtri
 was opt-in through `AGENTFORGE_RUN_POSTGRES_INTEGRATION=1` and used the
 disposable `agentforge_v02_verify` database. Current v0.3 AGENT workflow E2E
 coverage is documented in [Agent Runtime](agent-runtime.md) and uses
-`AGENTFORGE_RUN_POSTGRES_E2E=1`.
+`AGENTFORGE_RUN_POSTGRES_E2E=1`; v0.4 Tool Platform coverage is documented in
+[Tool Platform](tool-platform.md).
 
 The test proves the chain from HTTP request through FastAPI, application services, workflow domain objects, `WorkflowEngine`, `NodeExecutor`, repositories, `AsyncSession`, and PostgreSQL. Its deterministic graph asserts `START output == run_input`, `VALUE output == 42`, `END output == {"value": 42}`, and final output `== {"end": {"value": 42}}` from both the HTTP response and persisted ORM row.
 
@@ -261,6 +264,8 @@ AgentRunner protocol
 
 `AgentNodeExecutor`, `AgentRunner`, and `LangGraphAgentRunner` were future
 work relative to v0.2; they are implemented on current main as part of v0.3.
+Current main also includes the v0.4 Tool Platform and Agent Tool Calling, but
+does not add a Workflow TOOL Node.
 
 ## Known limitations
 
@@ -268,5 +273,5 @@ v0.2 deliberately excludes conditional branches, loops, parallel execution,
 Agent/Tool/MCP nodes, retries, timeouts, cancellation, checkpointing,
 pause/resume, HITL, durable running state, background execution, Run Steps,
 Traces, and enterprise workspace/RBAC boundaries. On current main, v0.3 has
-implemented the AGENT runtime portion only; the remaining items stay outside
-the current platform boundary.
+implemented the AGENT runtime and v0.4 adds Tool Platform-backed Agent Tool
+Calling only; the remaining items stay outside the current platform boundary.

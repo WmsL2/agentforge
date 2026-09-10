@@ -20,7 +20,7 @@ from app.services.user import UserService
 
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="agentforge")
+@click.version_option(version="0.4.0", prog_name="agentforge")
 def cli():
     """agentforge management CLI."""
     pass
