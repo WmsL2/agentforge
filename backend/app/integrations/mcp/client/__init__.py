@@ -6,10 +6,12 @@ from app.integrations.mcp.client.domain import (
     MCPToolCallResult,
     MCPToolDescriptor,
 )
+from app.integrations.mcp.client.implementations import MCPSDKClientAdapter
 
 __all__ = [
     "MCPClient",
     "MCPClientError",
+    "MCPSDKClientAdapter",
     "MCPToolCallResult",
     "MCPToolDescriptor",
 ]
