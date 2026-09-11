@@ -11,6 +11,7 @@ from app.integrations.mcp.discovery import (
     MCPToolDiscovery,
     MCPToolDiscoveryError,
 )
+from app.integrations.mcp.execution import MCPToolExecutor
 
 __all__ = [
     "MCPClient",
@@ -20,4 +21,5 @@ __all__ = [
     "MCPToolDescriptor",
     "MCPToolDiscovery",
     "MCPToolDiscoveryError",
+    "MCPToolExecutor",
 ]
