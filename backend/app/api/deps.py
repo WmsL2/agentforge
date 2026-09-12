@@ -104,10 +104,10 @@ def get_langgraph_agent_runner(
     registry: ToolRegistryDep,
     tool_execution_service: ToolExecutionServiceDep,
 ) -> AgentRunner:
-    """Create the production LangGraph runner with current Tool Platform tools."""
-    registration = registry.resolve("current_datetime")
-    tool = LangGraphToolAdapter(tool_execution_service).adapt(registration.definition)
-    return LangGraphAgentRunner(tools=(tool,))
+    """Create the production LangGraph runner with all registered tools."""
+    adapter = LangGraphToolAdapter(tool_execution_service)
+    tools = tuple(adapter.adapt(definition) for definition in registry.definitions())
+    return LangGraphAgentRunner(tools=tools)
 
 
 LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
