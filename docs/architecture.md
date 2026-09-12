@@ -4,8 +4,8 @@ This project follows a **Repository + Service** layered architecture. Most featu
 conversations, files, RAG documents, and sync sources — use the same pattern:
 **Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
 explicit Domain, Validation, and Execution layers to that foundation. v0.3
-adds Agent Runtime Integration, and v0.4 adds the Tool Platform without
-replacing the Repository + Service model.
+adds Agent Runtime Integration, v0.4 adds the Tool Platform, and v0.5 adds MCP
+Integration & Tool Discovery without replacing the Repository + Service model.
 
 ## Request Flow
 
@@ -84,10 +84,11 @@ domain objects, validation, deterministic execution, and persistence. See the de
 
 ## Agent Runtime Integration
 
-The current platform combines the v0.2 Workflow Core, v0.3 Agent Runtime, and
-v0.4 Tool Platform. Workflow execution is composed in `backend/app/api/deps.py`,
-the composition root that may know the `AgentRunner`, concrete
-`LangGraphAgentRunner`, and production Tool Platform composition:
+The current platform combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4
+Tool Platform, and v0.5 MCP Integration & Tool Discovery. Workflow execution
+uses the application-scoped registry created by `open_tool_platform()` in the
+FastAPI lifespan; request dependencies compose `AgentRunner` instances against
+that registry.
 
 ```text
 HTTP -> WorkflowRunService -> WorkflowEngine -> DispatchingNodeExecutor
@@ -107,6 +108,35 @@ WorkflowEngine
   -> ToolExecutionRequest
   -> ToolExecutionService
   -> ToolRegistry / ToolSchemaValidator / ToolExecutor
+```
+
+## MCP Integration
+
+MCP integration points toward the Tool Platform; the Tool Platform never
+depends on MCP. In particular, `app.services.tool` contains no official SDK
+types. The MCP boundary consists of framework-independent contracts,
+`MCPSDKClientAdapter` and stdio transport, discovery/discovered-tool mapping,
+`MCPToolExecutor`, registration/lifecycle services, and
+`open_tool_platform()` composition.
+
+At startup, `open_tool_platform()` creates `ToolRegistry`, registers native
+tools, opens configured stdio MCP servers, discovers their tools, creates MCP
+executors, and registers the resulting local definitions. FastAPI exposes the
+shared registry through `request.state.tool_registry`. The `AsyncExitStack`
+managed MCP clients remain alive while the app runs; shutdown closes them before
+the lifespan then closes Redis and the database.
+
+Agent binding is dynamic and remains directionally separate from MCP:
+
+```text
+registry.definitions()
+  -> LangGraphToolAdapter
+  -> StructuredTool[]
+  -> LangGraphAgentRunner
+  -> model.bind_tools()
+
+ToolNode -> adapter -> ToolExecutionService -> ToolRegistry -> MCPToolExecutor
+         -> MCPClient.call_tool() -> remote MCP server
 ```
 
 The engine schedules validated nodes; the dispatcher selects the executor by

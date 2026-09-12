@@ -115,6 +115,23 @@ Override `AI_AVAILABLE_MODELS` in `.env` to customize the model selector:
 AI_AVAILABLE_MODELS=["gpt-5.5","gpt-5.4","claude-opus-4-7"]
 ```
 
+## MCP stdio servers
+
+`MCP_STDIO_SERVERS` configures application-managed MCP servers. Its default is
+an empty JSON array (`[]`), so MCP is disabled until at least one server is
+configured. The value must be a JSON array of objects with required
+`namespace` and `command` fields, plus optional `args` and `env` fields.
+
+```bash
+MCP_STDIO_SERVERS=[{"namespace":"github","command":"npx","args":["-y","@example/github-mcp"],"env":{"GITHUB_TOKEN":"replace-with-your-local-secret"}}]
+```
+
+Each discovered remote tool is registered locally as
+`namespace__remote_name`. For example, remote `create_issue` from the
+`github` server becomes `github__create_issue` for the LLM; execution maps it
+back to `create_issue` for the MCP client. v0.5 supports stdio only—HTTP/SSE,
+OAuth, persisted connections, and frontend MCP management are not configured.
+
 ## Celery
 
 | Variable | Default | Description |

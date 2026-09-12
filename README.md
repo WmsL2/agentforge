@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.4 在此基础上交付 Workflow Core、Agent Runtime 与 Tool Platform。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.5 在此基础上交付 MCP Integration & Tool Discovery。
 
 ---
 
@@ -38,11 +38,14 @@ v0.1 建设并验证了稳定的工程基础，包括：
   validation, `ToolExecutor` SPI, `ToolRegistry`, native callable execution,
   `ToolExecutionService`, production composition, LangGraph adaptation, and
   Agent tool calling.
+- **v0.5 — MCP Integration & Tool Discovery:** framework-independent MCP
+  contracts, stdio discovery and registration, MCP execution, lifecycle
+  composition, registry read surface, and dynamic LangGraph tool binding.
 
-## v0.4 — Tool Platform
+## v0.5 — MCP Integration & Tool Discovery
 
-Current main builds on the self-built v0.2 Workflow Core and v0.3 Agent
-Runtime Integration with a framework-independent Tool Platform.
+Current main builds on the v0.2 Workflow Core, v0.3 Agent Runtime, and v0.4
+Tool Platform with a framework-independent MCP boundary.
 
 - Framework-independent `AgentExecutionRequest`, `AgentExecutionResult`,
   `AgentRuntimeError`, and `AgentRunner` contracts
@@ -52,26 +55,30 @@ Runtime Integration with a framework-independent Tool Platform.
 - `ToolDefinition`, execution contracts, Draft 2020-12 schema validation,
   `ToolExecutor`, `ToolRegistry`, native callable execution, and one unified
   `ToolExecutionService`
-- Production registration of `current_datetime` from
-  `app.agents.utils.get_current_datetime`
-- `LangGraphToolAdapter`, which converts `ToolDefinition` to `StructuredTool`
-  while routing every invocation through `ToolExecutionService`
-- Stateless `LangGraphAgentRunner` with tool-aware model → tools → model loops
-- OpenAI-compatible runtime configuration (`LLM_*`) and production DI
-- Opt-in PostgreSQL E2E with a fake external runner, plus opt-in live runtime
-  smoke coverage against the configured compatible provider
+- MCP descriptors, call results, and error contracts remain independent of the
+  official SDK and the Tool Platform core.
+- `MCPToolDiscovery` preserves remote tool order and maps configured server
+  namespace plus remote name to a local name such as `github__create_issue`.
+- `MCPToolExecutor` keeps the local registration separate from the remote call:
+  the LLM sees `github__create_issue`, while the executor calls
+  `create_issue` on the configured MCP client.
+- The official MCP SDK adapter and stdio transport are concrete integration
+  details; configured clients are discovered, registered, and kept alive for
+  the FastAPI application lifespan.
+- `ToolRegistry.definitions()` exposes an ordered descriptor snapshot without
+  exposing private executors. `LangGraphToolAdapter` dynamically converts that
+  snapshot to `StructuredTool` instances for each runner.
+- Real offline stdio integration tests cover discovery, mapping, execution,
+  lifecycle cleanup, and dynamic agent binding without a live provider.
 
 ```text
-LangGraphAgentRunner
-  | model.bind_tools()
-  v
-LLM -> tool_calls -> ToolNode -> LangGraphToolAdapter
-                              | ToolExecutionRequest
-                              v
-                    ToolExecutionService
-                      |-- ToolRegistry
-                      |-- ToolSchemaValidator
-                      `-- ToolExecutor -> ToolExecutionResult
+Configured stdio server
+  -> Official SDK Client -> Adapter -> Discovery -> Registration Service
+  -> ToolRegistry
+       | definitions() -> LangGraphToolAdapter -> StructuredTool -> Runner
+       |                                                   | model.bind_tools()
+       `-> ToolExecutionService -> MCPToolExecutor -> MCPClient.call_tool()
+                                                       -> remote MCP server
 ```
 
 LangGraph is **not** the AgentForge Workflow Engine, and the Tool Platform is
@@ -82,20 +89,18 @@ Detailed documents: [Workflow Core](docs/workflow-core.md),
 [Agent Runtime](docs/agent-runtime.md), and
 [Tool Platform](docs/tool-platform.md).
 
-## v0.4 当前边界 / Non-goals
+## v0.5 当前边界 / Non-goals
 
-v0.4 intentionally does not implement a Workflow TOOL Node, registry
-list/discover API, dynamic discovery, per-agent tool binding, permissions,
-policy, approval, timeout, retry, idempotency, HTTP tools, MCP or MCP discovery,
-persistent tool definitions, traces, usage metrics, agent max-steps,
-checkpoints, pause/resume, HITL, streaming, Run Steps, background workflow
-workers, conditional branches, loops, or parallel workflow execution.
+v0.5 intentionally does not implement HTTP/SSE MCP transport, OAuth,
+persisted connections, frontend MCP management, per-agent permissions, policy,
+approval, timeout, retry, idempotency, a Workflow TOOL Node, persistent tool
+definitions, traces, usage metrics, agent max-steps, checkpoints, pause/resume,
+HITL, streaming, Run Steps, background workflow workers, conditional branches,
+loops, or parallel workflow execution.
 
 AgentForge 后续会在这一基础上逐步扩展平台能力：
 
 ```text
-Dynamic Tool discovery
-MCP Integration
 Checkpoint
 Pause / Resume
 Human In The Loop

@@ -1,6 +1,6 @@
 [project]
 name = "agentforge"
-version = "0.4.0"
+version = "0.5.0"
 description = "Enterprise Agent Workflow Platform"
 requires-python = ">=3.12"
 license = { text = "MIT" }

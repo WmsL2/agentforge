@@ -1,11 +1,12 @@
-# Tool Platform — v0.4
+# Tool Platform & MCP Integration — v0.5
 
 ## Scope
 
-v0.4 establishes a framework-independent AgentForge Tool Platform. It defines
-what a tool is, validates its JSON Schema arguments, resolves registered tools,
-and provides one uniform execution boundary. LangGraph is an integration
-consumer of this platform, not its registry or executor implementation.
+v0.4 established the framework-independent AgentForge Tool Platform. v0.5
+adds MCP integration and discovery without moving MCP SDK types into the Tool
+Platform core. The core still defines a tool, validates JSON Schema arguments,
+resolves registrations, and provides one uniform execution boundary. LangGraph
+is an integration consumer, not the registry or executor implementation.
 
 ## Domain contracts
 
@@ -18,6 +19,10 @@ consumer of this platform, not its registry or executor implementation.
 `ToolSchemaValidator` interprets schemas as JSON Schema Draft 2020-12.
 `ToolExecutor` is the asynchronous execution SPI, and `ToolRegistration`
 combines a definition with its executor.
+
+`ToolRegistry.definitions()` returns an ordered snapshot of public
+`ToolDefinition` descriptors. It is the read surface for dynamic binding;
+executors remain private to registrations.
 
 ## Execution architecture
 
@@ -51,18 +56,28 @@ callables, asynchronous callables, and synchronous callables that return an
 awaitable. Synchronous calls run through `asyncio.to_thread` so they do not
 block the event loop.
 
-## Production composition
+## MCP discovery, registration, and lifecycle
 
-`backend/app/api/deps.py` is the composition root. v0.4 registers one
-production tool, `current_datetime`, sourced from
-`app.agents.utils.get_current_datetime` and executed by
-`NativeCallableToolExecutor`.
+MCP contracts define framework-independent descriptors, call results, and
+errors. `MCPSDKClientAdapter` and `open_stdio_mcp_client` isolate the official
+SDK and stdio transport in concrete integration modules.
+
+For each configured server, `MCPToolDiscovery` preserves the remote order and
+maps each remote name to `namespace__remote_name` for local registration. For
+example, remote `github/create_issue` is registered as
+`github__create_issue`; the LLM sees the local name while `MCPToolExecutor`
+calls `create_issue` on the GitHub MCP client.
+
+`MCPToolRegistrationService` creates `ToolDefinition` values and MCP-backed
+executors. `open_tool_platform()` creates the application-scoped registry,
+registers native `current_datetime`, then opens configured MCP registrations.
+It keeps stdio clients alive until the application lifespan exits.
 
 ## LangGraph adapter and agent loop
 
-`LangGraphToolAdapter.adapt()` converts a `ToolDefinition` into a
-`StructuredTool`, retaining the definition's JSON Schema as the source of
-truth:
+`LangGraphToolAdapter.adapt()` converts each `ToolDefinition` from the
+`definitions()` snapshot into a `StructuredTool`, retaining the definition's
+JSON Schema as the source of truth:
 
 ```text
 ToolDefinition -> LangGraphToolAdapter.adapt() -> StructuredTool
@@ -70,7 +85,8 @@ ToolDefinition -> LangGraphToolAdapter.adapt() -> StructuredTool
 
 At execution time the adapter creates a `ToolExecutionRequest` and calls only
 `ToolExecutionService`; it neither executes Python callables directly nor
-accesses `ToolExecutor` directly.
+accesses `ToolExecutor` directly. This lets both native and MCP tools share one
+execution path.
 
 `LangGraphAgentRunner` binds these structured tools and uses this graph for a
 tool-enabled run:
@@ -88,17 +104,22 @@ Its state uses `add_messages`, retaining `SystemMessage`, `HumanMessage`,
 `AIMessage(tool_call)`, `ToolMessage`, and subsequent AI messages for the
 single run. This is state merging, not persistent memory.
 
-## Failure boundary
+## Error boundaries and test coverage
 
 `ToolNode(handle_tool_errors=False)` lets `ToolExecutionError` escape. The
 outer `LangGraphAgentRunner.run()` boundary converts it to
 `AgentRuntimeError(code="langgraph_execution_failed")`, preserving the original
 tool error as the exception cause.
 
+MCP client and discovery failures are normalized at the MCP integration
+boundary before Tool Platform execution sees them. Full offline stdio tests use
+a real subprocess server and cover discovery, namespace mapping, executor
+calls, lifecycle cleanup, registry snapshots, and agent dynamic binding.
+
 ## Non-goals
 
-v0.4 does not implement a Workflow TOOL Node, registry list/discover API,
-dynamic discovery, per-agent tool binding, permissions, policy, approval,
-timeout, retry, idempotency, HTTP tools, MCP tools or discovery, persistent
-tool definitions, traces, usage metrics, agent max-steps or per-agent tool-call
-limits, checkpoints, pause/resume, or HITL.
+v0.5 does not implement HTTP/SSE MCP transport, OAuth, persisted MCP
+connections, frontend MCP management, per-agent permissions, policy, approval,
+timeout, retry, idempotency, a Workflow TOOL Node, persistent tool definitions,
+traces, usage metrics, agent max-steps or per-agent tool-call limits,
+checkpoints, pause/resume, or HITL.
