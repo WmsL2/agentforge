@@ -68,10 +68,13 @@ example, remote `github/create_issue` is registered as
 `github__create_issue`; the LLM sees the local name while `MCPToolExecutor`
 calls `create_issue` on the GitHub MCP client.
 
-`MCPToolRegistrationService` creates `ToolDefinition` values and MCP-backed
-executors. `open_tool_platform()` creates the application-scoped registry,
-registers native `current_datetime`, then opens configured MCP registrations.
-It keeps stdio clients alive until the application lifespan exits.
+`MCPToolDiscovery` maps remote descriptors into local `ToolDefinition` values
+and `MCPDiscoveredTool` records. `MCPToolRegistrationService` then creates the
+`MCPToolExecutor` bound to each remote name and registers the discovered
+definition/executor pair in `ToolRegistry`. `open_tool_platform()` creates the
+application-scoped registry, registers native `current_datetime`, then opens
+configured MCP registrations. It keeps stdio clients alive until the
+application lifespan exits.
 
 ## LangGraph adapter and agent loop
 
@@ -111,10 +114,14 @@ outer `LangGraphAgentRunner.run()` boundary converts it to
 `AgentRuntimeError(code="langgraph_execution_failed")`, preserving the original
 tool error as the exception cause.
 
-MCP client and discovery failures are normalized at the MCP integration
-boundary before Tool Platform execution sees them. Full offline stdio tests use
-a real subprocess server and cover discovery, namespace mapping, executor
-calls, lifecycle cleanup, registry snapshots, and agent dynamic binding.
+Discovery failures surface during startup/registration before the shared
+`ToolRegistry` is exposed. During tool execution, MCP client failures are
+translated by `MCPToolExecutor` into `ToolExecutionError`, while remote tool
+results with `is_error=True` become
+`ToolExecutionError(code="mcp_tool_execution_failed")`. Full offline stdio
+tests use a real subprocess server and cover discovery, namespace mapping,
+executor calls, lifecycle cleanup, registry snapshots, and agent dynamic
+binding.
 
 ## Non-goals
 
