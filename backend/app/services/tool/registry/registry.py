@@ -36,3 +36,7 @@ class ToolRegistry:
                 ToolRegistryErrorCode.TOOL_NOT_FOUND,
                 f"Tool '{tool_name}' was not found.",
             ) from None
+
+    def definitions(self) -> tuple[ToolDefinition, ...]:
+        """Return a snapshot of registered definitions in registration order."""
+        return tuple(registration.definition for registration in self._registrations.values())

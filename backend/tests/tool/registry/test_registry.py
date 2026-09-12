@@ -72,5 +72,53 @@ def test_different_tool_names_register_and_resolve_independently() -> None:
     assert registry.resolve("time_lookup") is time_registration
 
 
+def test_definitions_returns_an_empty_tuple_for_an_empty_registry() -> None:
+    definitions = ToolRegistry().definitions()
+
+    assert definitions == ()
+    assert isinstance(definitions, tuple)
+
+
+def test_definitions_returns_registered_definitions_in_registration_order() -> None:
+    registry = ToolRegistry()
+    alpha = _definition("alpha")
+    beta = _definition("beta")
+    gamma = _definition("gamma")
+    executor = FakeToolExecutor()
+    registry.register(alpha, executor)
+    registry.register(beta, executor)
+    registry.register(gamma, executor)
+
+    definitions = registry.definitions()
+
+    assert definitions == (alpha, beta, gamma)
+    assert all(isinstance(definition, ToolDefinition) for definition in definitions)
+
+
+def test_definitions_preserves_original_definition_identity() -> None:
+    registry = ToolRegistry()
+    definition = _definition("weather_lookup")
+    registry.register(definition, FakeToolExecutor())
+
+    definitions = registry.definitions()
+
+    assert definitions[0] is definition
+
+
+def test_definitions_returns_a_snapshot_that_does_not_change_after_registration() -> None:
+    registry = ToolRegistry()
+    first_definition = _definition("first")
+    second_definition = _definition("second")
+    registry.register(first_definition, FakeToolExecutor())
+
+    first_snapshot = registry.definitions()
+    registry.register(second_definition, FakeToolExecutor())
+    second_snapshot = registry.definitions()
+
+    assert first_snapshot == (first_definition,)
+    assert second_snapshot == (first_definition, second_definition)
+    assert first_snapshot is not second_snapshot
+
+
 def test_registry_is_exported_from_registry_and_root_packages() -> None:
     assert RegistryPackageToolRegistry is ToolRegistry
