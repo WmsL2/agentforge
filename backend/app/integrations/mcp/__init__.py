@@ -13,6 +13,8 @@ from app.integrations.mcp.discovery import (
     MCPToolDiscoveryError,
 )
 from app.integrations.mcp.execution import MCPToolExecutor
+from app.integrations.mcp.lifecycle import open_mcp_tool_registrations
+from app.integrations.mcp.registration import MCPToolRegistrationService
 from app.integrations.mcp.transport import open_stdio_mcp_client
 
 __all__ = [
@@ -25,5 +27,7 @@ __all__ = [
     "MCPToolDiscovery",
     "MCPToolDiscoveryError",
     "MCPToolExecutor",
+    "MCPToolRegistrationService",
+    "open_mcp_tool_registrations",
     "open_stdio_mcp_client",
 ]

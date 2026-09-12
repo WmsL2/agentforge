@@ -4,7 +4,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import computed_field, field_validator, ValidationInfo
+from pydantic import BaseModel, Field, computed_field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,15 @@ def find_env_file() -> Path | None:
         if env_file.exists():
             return env_file
     return None
+
+
+class MCPStdioServerSettings(BaseModel):
+    """Configuration for one application-managed stdio MCP server."""
+
+    namespace: str
+    command: str
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] | None = None
 
 
 class Settings(BaseSettings):
@@ -149,6 +158,7 @@ class Settings(BaseSettings):
         "gpt-4.1",
     ]
     AI_FRAMEWORK: str = "langgraph"
+    MCP_STDIO_SERVERS: list[MCPStdioServerSettings] = Field(default_factory=list)
 
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

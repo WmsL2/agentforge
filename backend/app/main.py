@@ -12,11 +12,13 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import register_exception_handlers
 from app.api.router import api_router
+from app.composition.tool_platform import open_tool_platform
 from app.core.config import settings
 from app.db.session import close_db
 from app.core.logging import setup_logging
 from app.core.middleware import RequestIDMiddleware
 from app.clients.redis import RedisClient
+from app.services.tool import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ class LifespanState(TypedDict, total=False):
     """Lifespan state - resources available via request.state."""
 
     redis: RedisClient
+    tool_registry: ToolRegistry
 
 
 @asynccontextmanager
@@ -36,13 +39,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
     """
     state: LifespanState = {}
     redis_client = RedisClient()
-    await redis_client.connect()
-    state["redis"] = redis_client
-    yield state
-    if "redis" in state:
-        await state["redis"].close()
-
-    await close_db()
+    try:
+        await redis_client.connect()
+        state["redis"] = redis_client
+        async with open_tool_platform(settings.MCP_STDIO_SERVERS) as tool_registry:
+            state["tool_registry"] = tool_registry
+            yield state
+    finally:
+        if "redis" in state:
+            await state["redis"].close()
+        await close_db()
 
 
 SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")

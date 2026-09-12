@@ -1,0 +1,1 @@
+"""MCP lifecycle tests."""

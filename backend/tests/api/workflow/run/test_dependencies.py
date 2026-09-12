@@ -1,6 +1,7 @@
 """Production workflow-engine dependency composition tests."""
 
 import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
@@ -11,6 +12,7 @@ from app.api.deps import (
     get_tool_registry,
     get_workflow_engine,
 )
+from app.composition.tool_platform import open_tool_platform
 from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
 from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
 from app.services.workflow import (
@@ -51,8 +53,20 @@ def _run(input: dict[str, object]) -> WorkflowRun:
     return WorkflowRun(id=uuid4(), workflow_id=uuid4(), workflow_revision=1, input=input)
 
 
+def _registry():
+    async def open_registry():
+        async with open_tool_platform(()) as registry:
+            return registry
+
+    return asyncio.run(open_registry())
+
+
+def _request_with_registry(registry):
+    return SimpleNamespace(state=SimpleNamespace(tool_registry=registry))
+
+
 def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
-    registry = get_tool_registry()
+    registry = get_tool_registry(_request_with_registry(_registry()))
     runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
 
     assert isinstance(runner, LangGraphAgentRunner)
@@ -92,7 +106,7 @@ def test_production_composition_executes_current_datetime_tool_loop(
         "_create_model",
         staticmethod(lambda _model_name: model),
     )
-    registry = get_tool_registry()
+    registry = get_tool_registry(_request_with_registry(_registry()))
     runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
 
     result = asyncio.run(

@@ -48,10 +48,8 @@ from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
     LangGraphToolAdapter,
 )
-from app.agents.utils import get_current_datetime
-from app.services.tool import ToolDefinition, ToolExecutionService, ToolRegistry
+from app.services.tool import ToolExecutionService, ToolRegistry
 from app.services.tool.definition.validation import ToolSchemaValidator
-from app.services.tool.execution.executor.implementations import NativeCallableToolExecutor
 
 
 def get_user_service(db: DBSession) -> UserService:
@@ -83,20 +81,9 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 
-def get_tool_registry() -> ToolRegistry:
-    """Compose the production registry for native Tool Platform tools."""
-    registry = ToolRegistry()
-    definition = ToolDefinition(
-        name="current_datetime",
-        description="Get the current UTC date and time.",
-        input_schema={
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-    )
-    registry.register(definition, NativeCallableToolExecutor(get_current_datetime))
-    return registry
+def get_tool_registry(request: Request) -> ToolRegistry:
+    """Get the application-scoped ToolRegistry from lifespan state."""
+    return request.state.tool_registry
 
 
 ToolRegistryDep = Annotated[ToolRegistry, Depends(get_tool_registry)]
