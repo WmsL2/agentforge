@@ -111,7 +111,7 @@ def test_invalid_status_and_malformed_error_payloads_are_rejected() -> None:
             run_id=uuid4(),
             workflow_id=uuid4(),
             workflow_revision=1,
-            status="paused",
+            status="unknown",
             input={},
             node_outputs={},
             output=None,

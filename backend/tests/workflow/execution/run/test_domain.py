@@ -30,8 +30,10 @@ def test_workflow_run_status_values_are_exact() -> None:
     assert [status.value for status in WorkflowRunStatus] == [
         "pending",
         "running",
+        "paused",
         "completed",
         "failed",
+        "cancelled",
     ]
 
 
@@ -89,8 +91,10 @@ def test_start_uses_timezone_aware_utc_timestamp_by_default() -> None:
     "status",
     [
         WorkflowRunStatus.RUNNING,
+        WorkflowRunStatus.PAUSED,
         WorkflowRunStatus.COMPLETED,
         WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
     ],
 )
 def test_start_rejects_non_pending_states(status: WorkflowRunStatus) -> None:
@@ -118,12 +122,122 @@ def test_complete_transitions_running_to_completed() -> None:
     assert run.node_outputs == {"planner": {"steps": ["write", "review"]}}
 
 
+def test_pause_transitions_running_to_paused_and_preserves_unfinished_state() -> None:
+    run = make_run(node_outputs={"planner": {"step": "draft"}})
+    run.start(at=STARTED_AT)
+
+    run.pause()
+
+    assert run.status is WorkflowRunStatus.PAUSED
+    assert run.started_at == STARTED_AT
+    assert run.finished_at is None
+    assert run.node_outputs == {"planner": {"step": "draft"}}
+    assert run.output is None
+    assert run.error is None
+
+
 @pytest.mark.parametrize(
     "status",
     [
         WorkflowRunStatus.PENDING,
+        WorkflowRunStatus.PAUSED,
         WorkflowRunStatus.COMPLETED,
         WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
+    ],
+)
+def test_pause_rejects_non_running_states(status: WorkflowRunStatus) -> None:
+    run = make_run(status=status)
+
+    with pytest.raises(WorkflowRunTransitionError) as exc_info:
+        run.pause()
+
+    assert exc_info.value.current is status
+    assert exc_info.value.attempted is WorkflowRunStatus.PAUSED
+
+
+def test_resume_transitions_paused_to_running_and_preserves_unfinished_state() -> None:
+    run = make_run(node_outputs={"planner": {"step": "draft"}})
+    run.start(at=STARTED_AT)
+    run.pause()
+
+    run.resume()
+
+    assert run.status is WorkflowRunStatus.RUNNING
+    assert run.started_at == STARTED_AT
+    assert run.finished_at is None
+    assert run.node_outputs == {"planner": {"step": "draft"}}
+    assert run.output is None
+    assert run.error is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        WorkflowRunStatus.PENDING,
+        WorkflowRunStatus.RUNNING,
+        WorkflowRunStatus.COMPLETED,
+        WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
+    ],
+)
+def test_resume_rejects_non_paused_states(status: WorkflowRunStatus) -> None:
+    run = make_run(status=status)
+
+    with pytest.raises(WorkflowRunTransitionError) as exc_info:
+        run.resume()
+
+    assert exc_info.value.current is status
+    assert exc_info.value.attempted is WorkflowRunStatus.RUNNING
+
+
+def test_cancel_transitions_paused_to_cancelled_and_clears_outcome() -> None:
+    run = make_run(
+        node_outputs={"planner": {"step": "draft"}},
+        output={"stale": "output"},
+        error=WorkflowRunError(code="stale", message="stale"),
+    )
+    run.start(at=STARTED_AT)
+    run.pause()
+
+    run.cancel(at=FINISHED_AT)
+
+    assert run.status is WorkflowRunStatus.CANCELLED
+    assert run.started_at == STARTED_AT
+    assert run.finished_at == FINISHED_AT
+    assert run.node_outputs == {"planner": {"step": "draft"}}
+    assert run.output is None
+    assert run.error is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        WorkflowRunStatus.PENDING,
+        WorkflowRunStatus.RUNNING,
+        WorkflowRunStatus.COMPLETED,
+        WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
+    ],
+)
+def test_cancel_rejects_non_paused_states(status: WorkflowRunStatus) -> None:
+    run = make_run(status=status)
+
+    with pytest.raises(WorkflowRunTransitionError) as exc_info:
+        run.cancel()
+
+    assert exc_info.value.current is status
+    assert exc_info.value.attempted is WorkflowRunStatus.CANCELLED
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        WorkflowRunStatus.PENDING,
+        WorkflowRunStatus.PAUSED,
+        WorkflowRunStatus.COMPLETED,
+        WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
     ],
 )
 def test_complete_rejects_invalid_source_states(status: WorkflowRunStatus) -> None:
@@ -160,8 +274,10 @@ def test_fail_transitions_running_to_failed_and_retains_node_outputs() -> None:
     "status",
     [
         WorkflowRunStatus.PENDING,
+        WorkflowRunStatus.PAUSED,
         WorkflowRunStatus.COMPLETED,
         WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
     ],
 )
 def test_fail_rejects_invalid_source_states(status: WorkflowRunStatus) -> None:
@@ -175,27 +291,42 @@ def test_fail_rejects_invalid_source_states(status: WorkflowRunStatus) -> None:
 
 
 @pytest.mark.parametrize(
-    ("status", "attempted"),
+    "status",
     [
-        (WorkflowRunStatus.COMPLETED, WorkflowRunStatus.RUNNING),
-        (WorkflowRunStatus.COMPLETED, WorkflowRunStatus.FAILED),
-        (WorkflowRunStatus.FAILED, WorkflowRunStatus.RUNNING),
-        (WorkflowRunStatus.FAILED, WorkflowRunStatus.COMPLETED),
+        WorkflowRunStatus.COMPLETED,
+        WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
     ],
 )
-def test_terminal_states_cannot_restart_or_switch_outcome(
-    status: WorkflowRunStatus,
-    attempted: WorkflowRunStatus,
+@pytest.mark.parametrize(
+    ("operation", "attempted"),
+    [
+        ("start", WorkflowRunStatus.RUNNING),
+        ("pause", WorkflowRunStatus.PAUSED),
+        ("resume", WorkflowRunStatus.RUNNING),
+        ("complete", WorkflowRunStatus.COMPLETED),
+        ("fail", WorkflowRunStatus.FAILED),
+        ("cancel", WorkflowRunStatus.CANCELLED),
+    ],
+)
+def test_terminal_states_reject_every_lifecycle_operation(
+    status: WorkflowRunStatus, operation: str, attempted: WorkflowRunStatus
 ) -> None:
     run = make_run(status=status)
 
     with pytest.raises(WorkflowRunTransitionError) as exc_info:
-        if attempted is WorkflowRunStatus.RUNNING:
+        if operation == "start":
             run.start()
-        elif attempted is WorkflowRunStatus.COMPLETED:
+        elif operation == "pause":
+            run.pause()
+        elif operation == "resume":
+            run.resume()
+        elif operation == "complete":
             run.complete({"answer": "done"})
-        else:
+        elif operation == "fail":
             run.fail(WorkflowRunError(code="failed", message="failed"))
+        else:
+            run.cancel()
 
     assert exc_info.value.current is status
     assert exc_info.value.attempted is attempted

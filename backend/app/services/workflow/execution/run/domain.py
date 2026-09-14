@@ -10,8 +10,10 @@ from uuid import UUID
 class WorkflowRunStatus(str, Enum):  # noqa: UP042
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -44,15 +46,28 @@ class WorkflowRun:
     def _go(self, target: WorkflowRunStatus):
         if (self.status, target) not in {
             (WorkflowRunStatus.PENDING, WorkflowRunStatus.RUNNING),
+            (WorkflowRunStatus.RUNNING, WorkflowRunStatus.PAUSED),
+            (WorkflowRunStatus.PAUSED, WorkflowRunStatus.RUNNING),
             (WorkflowRunStatus.RUNNING, WorkflowRunStatus.COMPLETED),
             (WorkflowRunStatus.RUNNING, WorkflowRunStatus.FAILED),
+            (WorkflowRunStatus.PAUSED, WorkflowRunStatus.CANCELLED),
         }:
             raise WorkflowRunTransitionError(self.status, target)
         self.status = target
 
     def start(self, at: datetime | None = None):
+        if self.status is not WorkflowRunStatus.PENDING:
+            raise WorkflowRunTransitionError(self.status, WorkflowRunStatus.RUNNING)
         self._go(WorkflowRunStatus.RUNNING)
         self.started_at = at or datetime.now(UTC)
+
+    def pause(self):
+        self._go(WorkflowRunStatus.PAUSED)
+
+    def resume(self):
+        if self.status is not WorkflowRunStatus.PAUSED:
+            raise WorkflowRunTransitionError(self.status, WorkflowRunStatus.RUNNING)
+        self._go(WorkflowRunStatus.RUNNING)
 
     def complete(self, output: dict[str, Any], at: datetime | None = None):
         self._go(WorkflowRunStatus.COMPLETED)
@@ -64,4 +79,10 @@ class WorkflowRun:
         self._go(WorkflowRunStatus.FAILED)
         self.error = error
         self.output = None
+        self.finished_at = at or datetime.now(UTC)
+
+    def cancel(self, at: datetime | None = None):
+        self._go(WorkflowRunStatus.CANCELLED)
+        self.output = None
+        self.error = None
         self.finished_at = at or datetime.now(UTC)

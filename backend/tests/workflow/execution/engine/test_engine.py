@@ -244,8 +244,10 @@ def test_executor_failure_fails_run_and_stops_scheduling() -> None:
     "status",
     [
         WorkflowRunStatus.RUNNING,
+        WorkflowRunStatus.PAUSED,
         WorkflowRunStatus.COMPLETED,
         WorkflowRunStatus.FAILED,
+        WorkflowRunStatus.CANCELLED,
     ],
 )
 def test_existing_run_lifecycle_protects_against_restart(status: WorkflowRunStatus) -> None:
