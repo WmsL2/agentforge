@@ -11,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
 from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 
 _POSTGRES_E2E_ENV = "AGENTFORGE_RUN_POSTGRES_E2E"
-_EXPECTED_ALEMBIC_REVISION = "0034_align_workflow_updated_at"
+_EXPECTED_ALEMBIC_REVISION = "0035_create_workflow_checkpoints"
 
 
 @pytest.fixture
@@ -64,6 +65,14 @@ async def postgres_session() -> AsyncGenerator[AsyncSession, None]:
                             select(func.count())
                             .select_from(Workflow)
                             .where(Workflow.id == workflow_id)
+                        )
+                        == 0
+                    )
+                    assert (
+                        await connection.scalar(
+                            select(func.count())
+                            .select_from(WorkflowCheckpoint)
+                            .where(WorkflowCheckpoint.run_id == run_id)
                         )
                         == 0
                     )
