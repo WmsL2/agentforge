@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from app.services.workflow.definition.model.domain import WorkflowDefinition, WorkflowNodeKind
+from app.services.workflow.definition.model.domain import (
+    WorkflowDefinition,
+    WorkflowNode,
+    WorkflowNodeKind,
+)
 from app.services.workflow.definition.validation.validator import (
     WorkflowValidationResult,
     WorkflowValidator,
 )
+from app.services.workflow.execution.checkpoint.domain import WorkflowCheckpoint
 from app.services.workflow.execution.executor.contract import NodeExecutionContext, NodeExecutor
-from app.services.workflow.execution.run.domain import WorkflowRun, WorkflowRunError
+from app.services.workflow.execution.run.domain import (
+    WorkflowRun,
+    WorkflowRunError,
+    WorkflowRunStatus,
+)
 
 
 class WorkflowExecutionValidationError(ValueError):
@@ -19,6 +28,14 @@ class WorkflowExecutionValidationError(ValueError):
         super().__init__("Workflow definition is invalid for execution.")
 
 
+class WorkflowResumeValidationError(ValueError):
+    """Raised when a checkpoint cannot safely resume a workflow run."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(f"Workflow checkpoint cannot resume this run: {code}.")
+
+
 class WorkflowEngine:
     """Run validated DAGs in declaration order through a node executor."""
 
@@ -26,27 +43,92 @@ class WorkflowEngine:
         self._executor = executor
 
     async def execute(self, definition: WorkflowDefinition, run: WorkflowRun) -> WorkflowRun:
+        self._validate_definition(definition)
+        run.start()
+        return await self._run_from_state(definition, run, completed=set())
+
+    async def resume(
+        self,
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        checkpoint: WorkflowCheckpoint,
+    ) -> WorkflowRun:
+        """Resume a paused run from one validated immutable checkpoint."""
+        self._validate_definition(definition)
+        if run.status is not WorkflowRunStatus.PAUSED:
+            run.resume()
+        predecessors = self._build_predecessors(definition)
+        self._validate_resume_state(definition, run, checkpoint, predecessors)
+
+        run.node_outputs = dict(checkpoint.node_outputs)
+        run.resume()
+        return await self._run_from_state(
+            definition,
+            run,
+            completed=set(checkpoint.completed_node_ids),
+            first_node_id=checkpoint.pending_node_id,
+            predecessors=predecessors,
+        )
+
+    def _validate_definition(self, definition: WorkflowDefinition) -> None:
         validation_result = WorkflowValidator().validate(definition)
         if not validation_result.is_valid:
             raise WorkflowExecutionValidationError(validation_result)
 
-        run.start()
-        workflow_input = dict(run.input)
+    @staticmethod
+    def _build_predecessors(definition: WorkflowDefinition) -> dict[str, list[str]]:
         predecessors = {node.id: [] for node in definition.nodes}
         for edge in definition.edges:
             predecessors[edge.target].append(edge.source)
+        return predecessors
 
-        completed: set[str] = set()
+    @staticmethod
+    def _validate_resume_state(
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        checkpoint: WorkflowCheckpoint,
+        predecessors: dict[str, list[str]],
+    ) -> None:
+        if checkpoint.run_id != run.id:
+            raise WorkflowResumeValidationError("checkpoint_run_mismatch")
+        if checkpoint.workflow_revision != run.workflow_revision:
+            raise WorkflowResumeValidationError("checkpoint_revision_mismatch")
+
+        node_ids = {node.id for node in definition.nodes}
+        completed = set(checkpoint.completed_node_ids)
+        if not completed <= node_ids:
+            raise WorkflowResumeValidationError("checkpoint_unknown_completed_node")
+        if set(checkpoint.node_outputs) != completed:
+            raise WorkflowResumeValidationError("checkpoint_output_mismatch")
+        if any(not set(predecessors[node_id]) <= completed for node_id in completed):
+            raise WorkflowResumeValidationError("checkpoint_dependency_incomplete")
+
+        pending_node_id = checkpoint.pending_node_id
+        if pending_node_id is not None:
+            if pending_node_id not in node_ids:
+                raise WorkflowResumeValidationError("checkpoint_unknown_pending_node")
+            if not set(predecessors[pending_node_id]) <= completed:
+                raise WorkflowResumeValidationError("checkpoint_pending_not_ready")
+
+    async def _run_from_state(
+        self,
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        *,
+        completed: set[str],
+        first_node_id: str | None = None,
+        predecessors: dict[str, list[str]] | None = None,
+    ) -> WorkflowRun:
+        workflow_input = dict(run.input)
+        predecessors = predecessors or self._build_predecessors(definition)
         while len(completed) < len(definition.nodes):
-            ready_node = next(
-                (
-                    node
-                    for node in definition.nodes
-                    if node.id not in completed
-                    and all(source in completed for source in predecessors[node.id])
-                ),
-                None,
+            ready_node = self._next_ready_node(
+                definition,
+                completed,
+                predecessors,
+                first_node_id,
             )
+            first_node_id = None
             if ready_node is None:
                 raise RuntimeError("Validated workflow execution made no scheduling progress.")
 
@@ -82,3 +164,31 @@ class WorkflowEngine:
         }
         run.complete(final_output)
         return run
+
+    @staticmethod
+    def _next_ready_node(
+        definition: WorkflowDefinition,
+        completed: set[str],
+        predecessors: dict[str, list[str]],
+        first_node_id: str | None,
+    ) -> WorkflowNode | None:
+        if first_node_id is not None:
+            return next(
+                (
+                    node
+                    for node in definition.nodes
+                    if node.id == first_node_id
+                    and node.id not in completed
+                    and all(source in completed for source in predecessors[node.id])
+                ),
+                None,
+            )
+        return next(
+            (
+                node
+                for node in definition.nodes
+                if node.id not in completed
+                and all(source in completed for source in predecessors[node.id])
+            ),
+            None,
+        )

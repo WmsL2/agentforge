@@ -1,7 +1,11 @@
 """Workflow execution package."""
 
 from app.services.workflow.execution.checkpoint import WorkflowCheckpoint
-from app.services.workflow.execution.engine import WorkflowEngine, WorkflowExecutionValidationError
+from app.services.workflow.execution.engine import (
+    WorkflowEngine,
+    WorkflowExecutionValidationError,
+    WorkflowResumeValidationError,
+)
 from app.services.workflow.execution.executor import (
     AgentNodeExecutor,
     DeterministicNodeExecutor,
@@ -27,6 +31,7 @@ __all__ = [
     "WorkflowCheckpoint",
     "WorkflowEngine",
     "WorkflowExecutionValidationError",
+    "WorkflowResumeValidationError",
     "WorkflowRun",
     "WorkflowRunError",
     "WorkflowRunStatus",
