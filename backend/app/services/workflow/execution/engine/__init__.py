@@ -5,5 +5,11 @@ from app.services.workflow.execution.engine.engine import (
     WorkflowExecutionValidationError,
     WorkflowResumeValidationError,
 )
+from app.services.workflow.execution.engine.persistence import WorkflowExecutionPersistence
 
-__all__ = ["WorkflowEngine", "WorkflowExecutionValidationError", "WorkflowResumeValidationError"]
+__all__ = [
+    "WorkflowEngine",
+    "WorkflowExecutionPersistence",
+    "WorkflowExecutionValidationError",
+    "WorkflowResumeValidationError",
+]

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, get_langgraph_agent_runner
 from app.db.models.user import User, UserRole
+from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
 from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 from app.main import app
@@ -125,6 +126,24 @@ async def test_agent_workflow_executes_and_persists_through_postgres(
             )
             assert snapshot_agent["kind"] == "agent"
             assert snapshot_agent["config"]["runner"] == "langgraph"
+
+            checkpoints = list(
+                (
+                    await postgres_session.scalars(
+                        select(WorkflowCheckpoint)
+                        .where(WorkflowCheckpoint.run_id == run_id)
+                        .order_by(WorkflowCheckpoint.sequence)
+                    )
+                ).all()
+            )
+            assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 2, 3]
+            assert checkpoints[0].completed_node_ids == ["start"]
+            assert checkpoints[0].pending_node_id == "agent"
+            assert checkpoints[1].completed_node_ids == ["start", "agent"]
+            assert checkpoints[1].pending_node_id == "end"
+            assert checkpoints[2].completed_node_ids == ["start", "agent", "end"]
+            assert checkpoints[2].pending_node_id is None
+            assert checkpoints[2].node_outputs == workflow_run.node_outputs
 
             get_response = await client.get(f"/api/v1/workflows/{workflow_id}/runs/{run_id}")
             assert get_response.status_code == 200

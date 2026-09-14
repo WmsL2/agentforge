@@ -12,6 +12,7 @@ from app.services.workflow.definition.validation.validator import (
     WorkflowValidator,
 )
 from app.services.workflow.execution.checkpoint.domain import WorkflowCheckpoint
+from app.services.workflow.execution.engine.persistence import WorkflowExecutionPersistence
 from app.services.workflow.execution.executor.contract import NodeExecutionContext, NodeExecutor
 from app.services.workflow.execution.run.domain import (
     WorkflowRun,
@@ -42,19 +43,27 @@ class WorkflowEngine:
     def __init__(self, executor: NodeExecutor):
         self._executor = executor
 
-    async def execute(self, definition: WorkflowDefinition, run: WorkflowRun) -> WorkflowRun:
-        self._validate_definition(definition)
+    async def execute(
+        self,
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        *,
+        persistence: WorkflowExecutionPersistence | None = None,
+    ) -> WorkflowRun:
+        self.validate_definition(definition)
         run.start()
-        return await self._run_from_state(definition, run, completed=set())
+        return await self._run_from_state(definition, run, completed=set(), persistence=persistence)
 
     async def resume(
         self,
         definition: WorkflowDefinition,
         run: WorkflowRun,
         checkpoint: WorkflowCheckpoint,
+        *,
+        persistence: WorkflowExecutionPersistence | None = None,
     ) -> WorkflowRun:
         """Resume a paused run from one validated immutable checkpoint."""
-        self._validate_definition(definition)
+        self.validate_definition(definition)
         if run.status is not WorkflowRunStatus.PAUSED:
             run.resume()
         predecessors = self._build_predecessors(definition)
@@ -68,9 +77,11 @@ class WorkflowEngine:
             completed=set(checkpoint.completed_node_ids),
             first_node_id=checkpoint.pending_node_id,
             predecessors=predecessors,
+            persistence=persistence,
         )
 
-    def _validate_definition(self, definition: WorkflowDefinition) -> None:
+    def validate_definition(self, definition: WorkflowDefinition) -> None:
+        """Reject structurally invalid definitions before execution persistence begins."""
         validation_result = WorkflowValidator().validate(definition)
         if not validation_result.is_valid:
             raise WorkflowExecutionValidationError(validation_result)
@@ -118,9 +129,19 @@ class WorkflowEngine:
         completed: set[str],
         first_node_id: str | None = None,
         predecessors: dict[str, list[str]] | None = None,
+        persistence: WorkflowExecutionPersistence | None = None,
     ) -> WorkflowRun:
         workflow_input = dict(run.input)
         predecessors = predecessors or self._build_predecessors(definition)
+        if len(completed) == len(definition.nodes):
+            run.complete(
+                {
+                    node.id: run.node_outputs[node.id]
+                    for node in definition.nodes
+                    if node.kind is WorkflowNodeKind.END
+                }
+            )
+            return run
         while len(completed) < len(definition.nodes):
             ready_node = self._next_ready_node(
                 definition,
@@ -156,14 +177,33 @@ class WorkflowEngine:
 
             run.node_outputs[ready_node.id] = result.output
             completed.add(ready_node.id)
+            if len(completed) == len(definition.nodes):
+                final_output = {
+                    node.id: run.node_outputs[node.id]
+                    for node in definition.nodes
+                    if node.kind is WorkflowNodeKind.END
+                }
+                run.complete(final_output)
+                pending_node_id = None
+            else:
+                pending_node = self._next_ready_node(definition, completed, predecessors, None)
+                if pending_node is None:
+                    raise RuntimeError("Validated workflow execution made no scheduling progress.")
+                pending_node_id = pending_node.id
 
-        final_output = {
-            node.id: run.node_outputs[node.id]
-            for node in definition.nodes
-            if node.kind is WorkflowNodeKind.END
-        }
-        run.complete(final_output)
-        return run
+            if persistence is not None:
+                await persistence.persist_node_completion(
+                    run,
+                    completed_node_ids=tuple(
+                        node.id for node in definition.nodes if node.id in completed
+                    ),
+                    pending_node_id=pending_node_id,
+                )
+
+            if len(completed) == len(definition.nodes):
+                return run
+
+        raise RuntimeError("Validated workflow execution made no scheduling progress.")
 
     @staticmethod
     def _next_ready_node(

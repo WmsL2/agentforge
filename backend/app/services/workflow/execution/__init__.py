@@ -3,6 +3,7 @@
 from app.services.workflow.execution.checkpoint import WorkflowCheckpoint
 from app.services.workflow.execution.engine import (
     WorkflowEngine,
+    WorkflowExecutionPersistence,
     WorkflowExecutionValidationError,
     WorkflowResumeValidationError,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "NodeExecutor",
     "WorkflowCheckpoint",
     "WorkflowEngine",
+    "WorkflowExecutionPersistence",
     "WorkflowExecutionValidationError",
     "WorkflowResumeValidationError",
     "WorkflowRun",

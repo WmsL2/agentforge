@@ -50,7 +50,11 @@ async def postgres_session() -> AsyncGenerator[AsyncSession, None]:
 
             await connection.rollback()
             transaction = await connection.begin()
-            session = AsyncSession(bind=connection, expire_on_commit=False)
+            session = AsyncSession(
+                bind=connection,
+                expire_on_commit=False,
+                join_transaction_mode="create_savepoint",
+            )
             try:
                 yield session
             finally:

@@ -84,6 +84,30 @@ class FailingExecutor(RecordingExecutor):
         return await self._delegate.execute(workflow_node, context)
 
 
+class RecordingPersistence:
+    def __init__(self, fail_on_call: int | None = None):
+        self.calls: list[dict[str, object]] = []
+        self._fail_on_call = fail_on_call
+
+    async def persist_node_completion(
+        self,
+        run: WorkflowRun,
+        *,
+        completed_node_ids: tuple[str, ...],
+        pending_node_id: str | None,
+    ) -> None:
+        self.calls.append(
+            {
+                "status": run.status,
+                "output": None if run.output is None else dict(run.output),
+                "completed_node_ids": completed_node_ids,
+                "pending_node_id": pending_node_id,
+            }
+        )
+        if self._fail_on_call == len(self.calls):
+            raise RuntimeError("durability failed")
+
+
 def execute(workflow: WorkflowDefinition, workflow_run: WorkflowRun, executor: RecordingExecutor):
     return asyncio.run(WorkflowEngine(executor).execute(workflow, workflow_run))
 
@@ -502,3 +526,59 @@ def test_resume_invalid_definition_does_not_mutate_paused_run() -> None:
     assert workflow_run.status is WorkflowRunStatus.PAUSED
     assert workflow_run.node_outputs == {"stale": "value"}
     assert executor.calls == []
+
+
+def test_execute_persists_every_successful_node_in_declaration_order() -> None:
+    executor = RecordingExecutor()
+    persistence = RecordingPersistence()
+
+    execute_result = asyncio.run(
+        WorkflowEngine(executor).execute(linear_definition(), run(), persistence=persistence)
+    )
+
+    assert execute_result.status is WorkflowRunStatus.COMPLETED
+    assert [call["completed_node_ids"] for call in persistence.calls] == [
+        ("start",),
+        ("start", "value"),
+        ("start", "value", "end"),
+    ]
+    assert [call["pending_node_id"] for call in persistence.calls] == ["value", "end", None]
+    assert persistence.calls[-1]["status"] is WorkflowRunStatus.COMPLETED
+    assert persistence.calls[-1]["output"] == {"end": {"value": 100}}
+
+
+def test_persistence_failure_stops_before_next_node_and_is_not_node_failure() -> None:
+    executor = RecordingExecutor()
+    persistence = RecordingPersistence(fail_on_call=2)
+    workflow_run = run()
+
+    with pytest.raises(RuntimeError, match="durability failed"):
+        asyncio.run(
+            WorkflowEngine(executor).execute(
+                linear_definition(), workflow_run, persistence=persistence
+            )
+        )
+
+    assert executor.calls == ["start", "value"]
+    assert workflow_run.status is WorkflowRunStatus.RUNNING
+    assert workflow_run.error is None
+
+
+def test_resume_persists_each_newly_completed_node() -> None:
+    executor = RecordingExecutor()
+    persistence = RecordingPersistence()
+    workflow_run = paused_run()
+    saved = checkpoint(
+        workflow_run,
+        completed_node_ids=("start",),
+        node_outputs={"start": {}},
+        pending_node_id="value",
+    )
+
+    asyncio.run(WorkflowEngine(executor).resume(linear_definition(), workflow_run, saved, persistence=persistence))
+
+    assert executor.calls == ["value", "end"]
+    assert [call["completed_node_ids"] for call in persistence.calls] == [
+        ("start", "value"),
+        ("start", "value", "end"),
+    ]

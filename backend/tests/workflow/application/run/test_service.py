@@ -1,7 +1,7 @@
 """Workflow-run application orchestration tests."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -58,15 +58,36 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
         db, definition_service, WorkflowEngine(DeterministicNodeExecutor())
     )
     db_run = SimpleNamespace()
+    persistence = MagicMock()
+    persistence.persist_node_completion = AsyncMock()
+    events: list[str] = []
+
+    async def create_run(*args, **kwargs):
+        events.append("create")
+        return db_run
+
+    async def commit():
+        events.append("commit")
+
+    async def execute_run(*args, **kwargs):
+        events.append("execute")
+        return await WorkflowEngine(DeterministicNodeExecutor()).execute(*args, **kwargs)
+
+    db.commit.side_effect = commit
     with (
         patch(
             "app.services.workflow.application.definition.service.workflow_repo"
         ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch(
+            "app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence",
+            return_value=persistence,
+        ) as durability,
     ):
         definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
-        run_repo.create_workflow_run = AsyncMock(return_value=db_run)
+        run_repo.create_workflow_run = AsyncMock(side_effect=create_run)
         run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
+        service.engine.execute = AsyncMock(side_effect=execute_run)
 
         result = await service.execute_workflow(row.id, owner, {"request": "hello"})
 
@@ -80,10 +101,10 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
     )
     assert snapshot == row.definition
     assert created_run.status.value == "completed"
-    assert run_repo.update_workflow_run_state.await_args.kwargs == {
-        "db_run": db_run,
-        "run": created_run,
-    }
+    assert events[:3] == ["create", "commit", "execute"]
+    durability.assert_called_once_with(db, db_run, next_sequence=1)
+    service.engine.execute.assert_awaited_once_with(row and service._definition_from_row(row), created_run, persistence=persistence)
+    run_repo.update_workflow_run_state.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -93,8 +114,9 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
     row = workflow_row(owner)
     definition_service = WorkflowService(db)
     engine = AsyncMock()
+    engine.validate_definition = MagicMock()
 
-    async def fail_run(_, run):
+    async def fail_run(_, run, *, persistence):
         run.start()
         run.fail(WorkflowRunError(code="node_execution_failed", message="boom", node_id="end"))
         return run
@@ -107,6 +129,7 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
             "app.services.workflow.application.definition.service.workflow_repo"
         ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence"),
     ):
         definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
         run_repo.create_workflow_run = AsyncMock(return_value=db_run)
@@ -117,6 +140,7 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
     persisted_run = run_repo.update_workflow_run_state.await_args.kwargs["run"]
     assert persisted_run.status.value == "failed"
     assert persisted_run.error.code == "node_execution_failed"
+    assert db.commit.await_count == 2
 
 
 @pytest.mark.anyio
@@ -168,9 +192,9 @@ async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
     owner = uuid4()
     row = workflow_row(owner)
     engine = AsyncMock()
-    engine.execute.side_effect = WorkflowExecutionValidationError(
+    engine.validate_definition = MagicMock(side_effect=WorkflowExecutionValidationError(
         WorkflowValidationResult(issues=())
-    )
+    ))
     service = WorkflowRunService(db, WorkflowService(db), engine)
     with (
         patch(
@@ -184,5 +208,34 @@ async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
         with pytest.raises(ValidationError):
             await service.execute_workflow(row.id, owner, {})
 
-    run_repo.create_workflow_run.assert_awaited_once()
+    run_repo.create_workflow_run.assert_not_awaited()
     run_repo.update_workflow_run_state.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_persistence_exception_propagates_without_terminal_failure_update():
+    db = AsyncMock()
+    owner = uuid4()
+    row = workflow_row(owner)
+    engine = AsyncMock()
+    engine.validate_definition = MagicMock()
+    engine.execute.side_effect = RuntimeError("durability failed")
+    service = WorkflowRunService(db, WorkflowService(db), engine)
+    db_run = SimpleNamespace()
+    with (
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence"),
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        run_repo.create_workflow_run = AsyncMock(return_value=db_run)
+        run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
+
+        with pytest.raises(RuntimeError, match="durability failed"):
+            await service.execute_workflow(row.id, owner, {})
+
+    run_repo.update_workflow_run_state.assert_not_awaited()
+    assert db.commit.await_count == 1
