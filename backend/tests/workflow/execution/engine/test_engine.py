@@ -542,6 +542,23 @@ def test_resume_rejects_invalid_checkpoint_without_mutating_run(
     assert executor.calls == []
 
 
+def test_validate_resume_is_pure_and_requires_a_paused_run() -> None:
+    executor = RecordingExecutor()
+    workflow_run = paused_run(node_outputs={"stale": "value"})
+    saved = checkpoint(
+        workflow_run,
+        completed_node_ids=("start",),
+        node_outputs={"start": {}},
+        pending_node_id="value",
+    )
+
+    WorkflowEngine(executor).validate_resume(linear_definition(), workflow_run, saved)
+
+    assert workflow_run.status is WorkflowRunStatus.PAUSED
+    assert workflow_run.node_outputs == {"stale": "value"}
+    assert executor.calls == []
+
+
 def test_resume_invalid_definition_does_not_mutate_paused_run() -> None:
     invalid = definition(
         (

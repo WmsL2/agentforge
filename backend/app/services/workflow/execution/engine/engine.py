@@ -22,6 +22,7 @@ from app.services.workflow.execution.run.domain import (
     WorkflowRun,
     WorkflowRunError,
     WorkflowRunStatus,
+    WorkflowRunTransitionError,
 )
 
 
@@ -67,11 +68,7 @@ class WorkflowEngine:
         persistence: WorkflowExecutionPersistence | None = None,
     ) -> WorkflowRun:
         """Resume a paused run from one validated immutable checkpoint."""
-        self.validate_definition(definition)
-        if run.status is not WorkflowRunStatus.PAUSED:
-            run.resume()
-        predecessors = self._build_predecessors(definition)
-        self._validate_resume_state(definition, run, checkpoint, predecessors)
+        predecessors = self.validate_resume(definition, run, checkpoint)
 
         run.node_outputs = dict(checkpoint.node_outputs)
         run.resume()
@@ -83,6 +80,20 @@ class WorkflowEngine:
             predecessors=predecessors,
             persistence=persistence,
         )
+
+    def validate_resume(
+        self,
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        checkpoint: WorkflowCheckpoint,
+    ) -> dict[str, list[str]]:
+        """Purely validate a paused run and checkpoint before resuming it."""
+        self.validate_definition(definition)
+        if run.status is not WorkflowRunStatus.PAUSED:
+            raise WorkflowRunTransitionError(run.status, WorkflowRunStatus.RUNNING)
+        predecessors = self._build_predecessors(definition)
+        self._validate_resume_state(definition, run, checkpoint, predecessors)
+        return predecessors
 
     def validate_definition(self, definition: WorkflowDefinition) -> None:
         """Reject structurally invalid definitions before execution persistence begins."""

@@ -83,15 +83,6 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 
-def get_workflow_approval_service(
-    db: DBSession, workflow_service: WorkflowSvc
-) -> WorkflowApprovalService:
-    return WorkflowApprovalService(db=db, workflow_service=workflow_service)
-
-
-WorkflowApprovalSvc = Annotated[WorkflowApprovalService, Depends(get_workflow_approval_service)]
-
-
 def get_tool_registry(request: Request) -> ToolRegistry:
     """Get the application-scoped ToolRegistry from lifespan state."""
     return request.state.tool_registry
@@ -138,6 +129,17 @@ def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:
 
 
 WorkflowEngineDep = Annotated[WorkflowEngine, Depends(get_workflow_engine)]
+
+
+def get_workflow_approval_service(
+    db: DBSession,
+    workflow_service: WorkflowSvc,
+    engine: WorkflowEngineDep,
+) -> WorkflowApprovalService:
+    return WorkflowApprovalService(db=db, workflow_service=workflow_service, engine=engine)
+
+
+WorkflowApprovalSvc = Annotated[WorkflowApprovalService, Depends(get_workflow_approval_service)]
 
 
 def get_workflow_run_service(
