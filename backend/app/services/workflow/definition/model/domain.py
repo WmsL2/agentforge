@@ -14,6 +14,7 @@ class WorkflowNodeKind(str, Enum):  # noqa: UP042
     START = "start"
     VALUE = "value"
     AGENT = "agent"
+    APPROVAL = "approval"
     END = "end"
 
 

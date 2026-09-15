@@ -44,6 +44,9 @@ class WorkflowValidationCode(str, Enum):  # noqa: UP042
     AGENT_INSTRUCTION_INVALID = "agent_instruction_invalid"
     AGENT_MODEL_INVALID = "agent_model_invalid"
     AGENT_CONFIG_UNKNOWN_FIELD = "agent_config_unknown_field"
+    APPROVAL_PROMPT_REQUIRED = "approval_prompt_required"
+    APPROVAL_PROMPT_INVALID = "approval_prompt_invalid"
+    APPROVAL_CONFIG_UNKNOWN_FIELD = "approval_config_unknown_field"
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class WorkflowValidationResult:
 
 
 _AGENT_CONFIG_FIELDS = frozenset({"runner", "instruction", "model"})
+_APPROVAL_CONFIG_FIELDS = frozenset({"prompt"})
 
 
 def _validate_agent_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue, ...]:
@@ -135,6 +139,41 @@ def _validate_agent_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue,
     return tuple(issues)
 
 
+def _validate_approval_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue, ...]:
+    """Return every minimal APPROVAL config issue without mutating ``node``."""
+    if node.kind is not WorkflowNodeKind.APPROVAL:
+        return ()
+
+    issues: list[WorkflowValidationIssue] = []
+    if "prompt" not in node.config:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.APPROVAL_PROMPT_REQUIRED,
+                "APPROVAL config field 'prompt' is required.",
+                node_id=node.id,
+            )
+        )
+    elif not isinstance(node.config["prompt"], str) or not node.config["prompt"].strip():
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.APPROVAL_PROMPT_INVALID,
+                "APPROVAL config field 'prompt' must be a non-blank string.",
+                node_id=node.id,
+            )
+        )
+
+    for field in node.config:
+        if field not in _APPROVAL_CONFIG_FIELDS:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.APPROVAL_CONFIG_UNKNOWN_FIELD,
+                    f"APPROVAL config field {field!r} is not supported.",
+                    node_id=node.id,
+                )
+            )
+    return tuple(issues)
+
+
 class WorkflowValidator:
     """Validate workflow definitions without mutating their domain representation."""
 
@@ -170,6 +209,7 @@ class WorkflowValidator:
 
         for node in definition.nodes:
             issues.extend(_validate_agent_config(node))
+            issues.extend(_validate_approval_config(node))
 
         seen_edge_ids: set[str] = set()
         seen_unconditional_edges: set[tuple[str, str]] = set()

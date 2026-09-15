@@ -8,6 +8,8 @@ import pytest
 
 from app.services.workflow import (
     NodeExecutionContext,
+    NodeExecutionInterrupt,
+    NodeExecutionOutcome,
     NodeExecutionResult,
     WorkflowNode,
     WorkflowNodeKind,
@@ -43,6 +45,37 @@ def test_node_execution_result_metadata_defaults_are_independent() -> None:
     first.metadata["attempt"] = 1
 
     assert second.metadata == {}
+
+
+def test_node_execution_result_defaults_to_completed() -> None:
+    assert NodeExecutionResult().outcome is NodeExecutionOutcome.COMPLETED
+
+
+def test_completed_result_rejects_an_interrupt() -> None:
+    with pytest.raises(ValueError):
+        NodeExecutionResult(interrupt=NodeExecutionInterrupt(type="approval_required", payload={}))
+
+
+def test_interrupted_result_requires_interrupt_without_output() -> None:
+    with pytest.raises(ValueError):
+        NodeExecutionResult(outcome=NodeExecutionOutcome.INTERRUPTED)
+    with pytest.raises(ValueError):
+        NodeExecutionResult(
+            output="unexpected",
+            outcome=NodeExecutionOutcome.INTERRUPTED,
+            interrupt=NodeExecutionInterrupt(type="approval_required", payload={}),
+        )
+
+
+def test_interrupted_result_and_interrupt_payload_are_valid_and_immutable() -> None:
+    payload = {"node_id": "approval"}
+    interrupt = NodeExecutionInterrupt(type="approval_required", payload=payload)
+    result = NodeExecutionResult(outcome=NodeExecutionOutcome.INTERRUPTED, interrupt=interrupt)
+    payload["node_id"] = "changed"
+
+    assert result.output is None
+    assert result.interrupt is interrupt
+    assert result.interrupt.payload == {"node_id": "approval"}
 
 
 def test_async_executor_contract_can_be_implemented() -> None:

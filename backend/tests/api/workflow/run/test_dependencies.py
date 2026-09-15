@@ -291,3 +291,26 @@ def test_production_composition_preserves_deterministic_execution() -> None:
     assert workflow_run.node_outputs["end"] == {"value": 42}
     assert workflow_run.output == {"end": {"value": 42}}
     assert runner.requests == []
+
+
+def test_production_composition_pauses_at_approval_node() -> None:
+    runner = FakeAgentRunner()
+    definition = _definition(
+        (
+            WorkflowNode("start", WorkflowNodeKind.START),
+            WorkflowNode("approval", WorkflowNodeKind.APPROVAL, {"prompt": "Continue?"}),
+            WorkflowNode("end", WorkflowNodeKind.END),
+        ),
+        (
+            WorkflowEdge("start-approval", "start", "approval"),
+            WorkflowEdge("approval-end", "approval", "end"),
+        ),
+    )
+    workflow_run = _run({})
+
+    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+
+    assert workflow_run.status is WorkflowRunStatus.PAUSED
+    assert workflow_run.node_outputs == {"start": {}}
+    assert workflow_run.output is None
+    assert runner.requests == []

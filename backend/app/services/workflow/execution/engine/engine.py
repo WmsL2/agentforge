@@ -13,7 +13,11 @@ from app.services.workflow.definition.validation.validator import (
 )
 from app.services.workflow.execution.checkpoint.domain import WorkflowCheckpoint
 from app.services.workflow.execution.engine.persistence import WorkflowExecutionPersistence
-from app.services.workflow.execution.executor.contract import NodeExecutionContext, NodeExecutor
+from app.services.workflow.execution.executor.contract import (
+    NodeExecutionContext,
+    NodeExecutionOutcome,
+    NodeExecutor,
+)
 from app.services.workflow.execution.run.domain import (
     WorkflowRun,
     WorkflowRunError,
@@ -173,6 +177,22 @@ class WorkflowEngine:
                         node_id=ready_node.id,
                     )
                 )
+                return run
+
+            if result.outcome is NodeExecutionOutcome.INTERRUPTED:
+                interrupt = result.interrupt
+                if interrupt is None:
+                    raise RuntimeError("Interrupted node execution result is missing interrupt data.")
+                run.pause()
+                if persistence is not None:
+                    await persistence.persist_interruption(
+                        run,
+                        completed_node_ids=tuple(
+                            node.id for node in definition.nodes if node.id in completed
+                        ),
+                        pending_node_id=ready_node.id,
+                        interrupt={"type": interrupt.type, "payload": dict(interrupt.payload)},
+                    )
                 return run
 
             run.node_outputs[ready_node.id] = result.output

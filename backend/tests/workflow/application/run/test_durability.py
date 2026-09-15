@@ -73,6 +73,45 @@ async def test_sequence_increments_only_after_successful_commit() -> None:
 
 
 @pytest.mark.anyio
+async def test_persist_interruption_updates_paused_run_and_records_interrupt() -> None:
+    db = AsyncMock()
+    run = make_run()
+    run.start()
+    run.pause()
+    db_run = MagicMock()
+    persistence = DurableWorkflowExecutionPersistence(db, db_run)
+    with (
+        patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
+        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+    ):
+        run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
+        checkpoint_repo.create_workflow_checkpoint = AsyncMock()
+
+        await persistence.persist_node_completion(
+            run, completed_node_ids=("start",), pending_node_id="approval"
+        )
+        await persistence.persist_interruption(
+            run,
+            completed_node_ids=("start",),
+            pending_node_id="approval",
+            interrupt={
+                "type": "approval_required",
+                "payload": {"node_id": "approval", "prompt": "Continue?"},
+            },
+        )
+
+    checkpoint = checkpoint_repo.create_workflow_checkpoint.await_args.kwargs["checkpoint"]
+    assert checkpoint.sequence == 2
+    assert checkpoint.completed_node_ids == ("start",)
+    assert checkpoint.pending_node_id == "approval"
+    assert checkpoint.interrupt == {
+        "type": "approval_required",
+        "payload": {"node_id": "approval", "prompt": "Continue?"},
+    }
+    assert db.commit.await_count == 2
+
+
+@pytest.mark.anyio
 async def test_commit_failure_propagates_without_advancing_sequence() -> None:
     db = AsyncMock()
     db.commit.side_effect = RuntimeError("commit failed")
@@ -97,6 +136,39 @@ async def test_commit_failure_propagates_without_advancing_sequence() -> None:
             run,
             completed_node_ids=("start",),
             pending_node_id="value",
+        )
+
+    checkpoints = [call.kwargs["checkpoint"] for call in checkpoint_repo.create_workflow_checkpoint.await_args_list]
+    assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 1]
+
+
+@pytest.mark.anyio
+async def test_interruption_commit_failure_propagates_without_advancing_sequence() -> None:
+    db = AsyncMock()
+    db.commit.side_effect = RuntimeError("commit failed")
+    run = make_run()
+    persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
+    with (
+        patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
+        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+    ):
+        run_repo.update_workflow_run_state = AsyncMock()
+        checkpoint_repo.create_workflow_checkpoint = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await persistence.persist_interruption(
+                run,
+                completed_node_ids=("start",),
+                pending_node_id="approval",
+                interrupt={"type": "approval_required", "payload": {}},
+            )
+
+        db.commit.side_effect = None
+        await persistence.persist_interruption(
+            run,
+            completed_node_ids=("start",),
+            pending_node_id="approval",
+            interrupt={"type": "approval_required", "payload": {}},
         )
 
     checkpoints = [call.kwargs["checkpoint"] for call in checkpoint_repo.create_workflow_checkpoint.await_args_list]

@@ -11,7 +11,13 @@ from app.services.workflow import (
 
 
 def test_workflow_node_kinds_have_supported_semantic_values():
-    assert {kind.value for kind in WorkflowNodeKind} == {"start", "value", "agent", "end"}
+    assert {kind.value for kind in WorkflowNodeKind} == {
+        "start",
+        "value",
+        "agent",
+        "approval",
+        "end",
+    }
 
 
 def test_workflow_node_can_represent_an_agent_config():

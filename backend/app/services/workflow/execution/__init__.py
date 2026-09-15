@@ -1,5 +1,10 @@
 """Workflow execution package."""
 
+from app.services.workflow.execution.approval import (
+    ApprovalRequest,
+    ApprovalRequestStatus,
+    ApprovalRequestTransitionError,
+)
 from app.services.workflow.execution.checkpoint import WorkflowCheckpoint
 from app.services.workflow.execution.engine import (
     WorkflowEngine,
@@ -9,9 +14,12 @@ from app.services.workflow.execution.engine import (
 )
 from app.services.workflow.execution.executor import (
     AgentNodeExecutor,
+    ApprovalNodeExecutor,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     NodeExecutionContext,
+    NodeExecutionInterrupt,
+    NodeExecutionOutcome,
     NodeExecutionResult,
     NodeExecutor,
 )
@@ -24,9 +32,15 @@ from app.services.workflow.execution.run import (
 
 __all__ = [
     "AgentNodeExecutor",
+    "ApprovalNodeExecutor",
+    "ApprovalRequest",
+    "ApprovalRequestStatus",
+    "ApprovalRequestTransitionError",
     "DeterministicNodeExecutor",
     "DispatchingNodeExecutor",
     "NodeExecutionContext",
+    "NodeExecutionInterrupt",
+    "NodeExecutionOutcome",
     "NodeExecutionResult",
     "NodeExecutor",
     "WorkflowCheckpoint",

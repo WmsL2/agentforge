@@ -101,6 +101,32 @@ def test_agent_node_round_trips_without_serializer_changes():
     assert restored == source
 
 
+def test_approval_node_round_trips_without_serializer_changes():
+    source = definition()
+    approval = WorkflowNode(
+        "approval", WorkflowNodeKind.APPROVAL, {"prompt": "Approve execution?"}
+    )
+    source.nodes = (source.nodes[0], approval, source.nodes[2])
+    source.edges = (
+        WorkflowEdge("start-approval", "start", "approval"),
+        WorkflowEdge("approval-end", "approval", "end"),
+    )
+
+    payload = serialize_workflow_graph(source)
+    restored = deserialize_workflow_graph(
+        payload,
+        workflow_id=source.id,
+        name=source.name,
+        description=source.description,
+        revision=source.revision,
+    )
+
+    assert payload["schema_version"] == 2
+    assert payload["nodes"][1]["kind"] == "approval"
+    assert restored == source
+    assert restored.nodes[1].kind is WorkflowNodeKind.APPROVAL
+
+
 def test_persisted_resource_columns_and_json_payload_reconstruct_definition():
     source = definition()
     persisted_row = type(

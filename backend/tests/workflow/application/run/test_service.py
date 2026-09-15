@@ -8,7 +8,9 @@ import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.services.workflow import (
+    ApprovalNodeExecutor,
     DeterministicNodeExecutor,
+    DispatchingNodeExecutor,
     WorkflowEngine,
     WorkflowRunError,
     WorkflowRunService,
@@ -141,6 +143,57 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
     assert persisted_run.status.value == "failed"
     assert persisted_run.error.code == "node_execution_failed"
     assert db.commit.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_paused_approval_run_is_durably_persisted_by_engine_without_terminal_update():
+    db = AsyncMock()
+    owner = uuid4()
+    row = workflow_row(owner)
+    row.definition["nodes"] = [
+        {"id": "start", "kind": "start", "config": {}, "metadata": {}},
+        {
+            "id": "approval",
+            "kind": "approval",
+            "config": {"prompt": "Continue?"},
+            "metadata": {},
+        },
+        {"id": "end", "kind": "end", "config": {}, "metadata": {}},
+    ]
+    row.definition["edges"] = [
+        {"id": "start-approval", "source": "start", "target": "approval", "condition": None, "metadata": {}},
+        {"id": "approval-end", "source": "approval", "target": "end", "condition": None, "metadata": {}},
+    ]
+    engine = WorkflowEngine(
+        DispatchingNodeExecutor(
+            deterministic_executor=DeterministicNodeExecutor(),
+            agent_executor=MagicMock(),
+            approval_executor=ApprovalNodeExecutor(),
+        )
+    )
+    service = WorkflowRunService(db, WorkflowService(db), engine)
+    db_run = SimpleNamespace()
+    persistence = MagicMock()
+    persistence.persist_node_completion = AsyncMock()
+    persistence.persist_interruption = AsyncMock()
+    with (
+        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch(
+            "app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence",
+            return_value=persistence,
+        ),
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        run_repo.create_workflow_run = AsyncMock(return_value=db_run)
+        run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
+
+        assert await service.execute_workflow(row.id, owner, {}) is db_run
+
+    persisted_run = persistence.persist_interruption.await_args.args[0]
+    assert persisted_run.status.value == "paused"
+    run_repo.update_workflow_run_state.assert_not_awaited()
+    assert db.commit.await_count == 1
 
 
 @pytest.mark.anyio

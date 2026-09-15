@@ -15,9 +15,15 @@ from app.services.workflow.definition import (
 )
 from app.services.workflow.execution import (
     AgentNodeExecutor,
+    ApprovalNodeExecutor,
+    ApprovalRequest,
+    ApprovalRequestStatus,
+    ApprovalRequestTransitionError,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     NodeExecutionContext,
+    NodeExecutionInterrupt,
+    NodeExecutionOutcome,
     NodeExecutionResult,
     NodeExecutor,
     WorkflowCheckpoint,
@@ -33,9 +39,15 @@ from app.services.workflow.execution import (
 
 __all__ = [
     "AgentNodeExecutor",
+    "ApprovalNodeExecutor",
+    "ApprovalRequest",
+    "ApprovalRequestStatus",
+    "ApprovalRequestTransitionError",
     "DeterministicNodeExecutor",
     "DispatchingNodeExecutor",
     "NodeExecutionContext",
+    "NodeExecutionInterrupt",
+    "NodeExecutionOutcome",
     "NodeExecutionResult",
     "NodeExecutor",
     "WorkflowCheckpoint",

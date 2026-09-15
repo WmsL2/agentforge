@@ -363,6 +363,47 @@ def test_reports_basic_structural_issues(
     assert code in codes(definition)
 
 
+@pytest.mark.parametrize(
+    ("config", "code"),
+    [
+        ({}, WorkflowValidationCode.APPROVAL_PROMPT_REQUIRED),
+        ({"prompt": ""}, WorkflowValidationCode.APPROVAL_PROMPT_INVALID),
+        ({"prompt": "   "}, WorkflowValidationCode.APPROVAL_PROMPT_INVALID),
+        ({"prompt": 123}, WorkflowValidationCode.APPROVAL_PROMPT_INVALID),
+        (
+            {"prompt": "Approve?", "role": "admin"},
+            WorkflowValidationCode.APPROVAL_CONFIG_UNKNOWN_FIELD,
+        ),
+    ],
+)
+def test_approval_config_validation(config: dict[str, object], code: WorkflowValidationCode):
+    definition = workflow(
+        (
+            node("start", WorkflowNodeKind.START),
+            WorkflowNode(id="approval", kind=WorkflowNodeKind.APPROVAL, config=config),
+            node("end", WorkflowNodeKind.END),
+        ),
+        (edge("start-approval", "start", "approval"), edge("approval-end", "approval", "end")),
+    )
+
+    assert code in codes(definition)
+
+
+def test_approval_config_accepts_only_a_non_blank_prompt():
+    definition = workflow(
+        (
+            node("start", WorkflowNodeKind.START),
+            WorkflowNode(
+                id="approval", kind=WorkflowNodeKind.APPROVAL, config={"prompt": "Approve?"}
+            ),
+            node("end", WorkflowNodeKind.END),
+        ),
+        (edge("start-approval", "start", "approval"), edge("approval-end", "approval", "end")),
+    )
+
+    assert WorkflowValidator().validate(definition).is_valid
+
+
 def test_reports_isolated_node_and_unreachable_connected_subgraph():
     definition = workflow(
         (

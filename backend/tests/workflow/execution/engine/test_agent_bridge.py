@@ -6,6 +6,7 @@ from uuid import uuid4
 from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
 from app.services.workflow import (
     AgentNodeExecutor,
+    ApprovalNodeExecutor,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     WorkflowDefinition,
@@ -50,6 +51,7 @@ def engine(runner: FakeAgentRunner) -> WorkflowEngine:
         DispatchingNodeExecutor(
             deterministic_executor=DeterministicNodeExecutor(),
             agent_executor=AgentNodeExecutor({"langgraph": runner}),
+            approval_executor=ApprovalNodeExecutor(),
         )
     )
 

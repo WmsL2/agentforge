@@ -43,7 +43,8 @@ def test_dispatches_deterministic_node_kinds_to_deterministic_executor(
 ) -> None:
     deterministic = SpyExecutor("deterministic")
     agent = SpyExecutor("agent")
-    executor = DispatchingNodeExecutor(deterministic, agent)
+    approval = SpyExecutor("approval")
+    executor = DispatchingNodeExecutor(deterministic, agent, approval)
     workflow_node = WorkflowNode(id=kind.value, kind=kind)
     execution_context = context()
 
@@ -52,12 +53,14 @@ def test_dispatches_deterministic_node_kinds_to_deterministic_executor(
     assert result.output == "deterministic"
     assert deterministic.calls == [(workflow_node, execution_context)]
     assert agent.calls == []
+    assert approval.calls == []
 
 
 def test_dispatches_agent_nodes_to_agent_executor() -> None:
     deterministic = SpyExecutor("deterministic")
     agent = SpyExecutor("agent")
-    executor = DispatchingNodeExecutor(deterministic, agent)
+    approval = SpyExecutor("approval")
+    executor = DispatchingNodeExecutor(deterministic, agent, approval)
     workflow_node = WorkflowNode(id="agent", kind=WorkflowNodeKind.AGENT)
     execution_context = context()
 
@@ -66,3 +69,20 @@ def test_dispatches_agent_nodes_to_agent_executor() -> None:
     assert result.output == "agent"
     assert deterministic.calls == []
     assert agent.calls == [(workflow_node, execution_context)]
+    assert approval.calls == []
+
+
+def test_dispatches_approval_nodes_to_approval_executor() -> None:
+    deterministic = SpyExecutor("deterministic")
+    agent = SpyExecutor("agent")
+    approval = SpyExecutor("approval")
+    executor = DispatchingNodeExecutor(deterministic, agent, approval)
+    workflow_node = WorkflowNode(id="approval", kind=WorkflowNodeKind.APPROVAL)
+    execution_context = context()
+
+    result = asyncio.run(executor.execute(workflow_node, execution_context))
+
+    assert result.output == "approval"
+    assert deterministic.calls == []
+    assert agent.calls == []
+    assert approval.calls == [(workflow_node, execution_context)]

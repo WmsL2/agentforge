@@ -1,5 +1,7 @@
 """Application-owned durable persistence for successful workflow nodes."""
 
+from collections.abc import Mapping
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,36 @@ class DurableWorkflowExecutionPersistence:
         completed_node_ids: tuple[str, ...],
         pending_node_id: str | None,
     ) -> None:
+        await self._persist_checkpoint(
+            run,
+            completed_node_ids=completed_node_ids,
+            pending_node_id=pending_node_id,
+            interrupt=None,
+        )
+
+    async def persist_interruption(
+        self,
+        run: WorkflowRun,
+        *,
+        completed_node_ids: tuple[str, ...],
+        pending_node_id: str,
+        interrupt: Mapping[str, Any],
+    ) -> None:
+        await self._persist_checkpoint(
+            run,
+            completed_node_ids=completed_node_ids,
+            pending_node_id=pending_node_id,
+            interrupt=interrupt,
+        )
+
+    async def _persist_checkpoint(
+        self,
+        run: WorkflowRun,
+        *,
+        completed_node_ids: tuple[str, ...],
+        pending_node_id: str | None,
+        interrupt: Mapping[str, Any] | None,
+    ) -> None:
         checkpoint = WorkflowCheckpoint(
             id=uuid4(),
             run_id=run.id,
@@ -34,7 +66,7 @@ class DurableWorkflowExecutionPersistence:
             completed_node_ids=completed_node_ids,
             node_outputs=run.node_outputs,
             pending_node_id=pending_node_id,
-            interrupt=None,
+            interrupt=interrupt,
         )
         await run_repo.update_workflow_run_state(self._db, db_run=self._db_run, run=run)
         await checkpoint_repo.create_workflow_checkpoint(self._db, checkpoint=checkpoint)

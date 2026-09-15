@@ -9,6 +9,8 @@ import pytest
 from app.services.workflow import (
     DeterministicNodeExecutor,
     NodeExecutionContext,
+    NodeExecutionInterrupt,
+    NodeExecutionOutcome,
     NodeExecutionResult,
     WorkflowCheckpoint,
     WorkflowDefinition,
@@ -84,6 +86,23 @@ class FailingExecutor(RecordingExecutor):
         return await self._delegate.execute(workflow_node, context)
 
 
+class ApprovalInterruptingExecutor(RecordingExecutor):
+    async def execute(
+        self, workflow_node: WorkflowNode, context: NodeExecutionContext
+    ) -> NodeExecutionResult:
+        self.calls.append(workflow_node.id)
+        self.contexts[workflow_node.id] = context
+        if workflow_node.kind is WorkflowNodeKind.APPROVAL:
+            return NodeExecutionResult(
+                outcome=NodeExecutionOutcome.INTERRUPTED,
+                interrupt=NodeExecutionInterrupt(
+                    type="approval_required",
+                    payload={"node_id": workflow_node.id, "prompt": workflow_node.config["prompt"]},
+                ),
+            )
+        return await self._delegate.execute(workflow_node, context)
+
+
 class RecordingPersistence:
     def __init__(self, fail_on_call: int | None = None):
         self.calls: list[dict[str, object]] = []
@@ -102,6 +121,25 @@ class RecordingPersistence:
                 "output": None if run.output is None else dict(run.output),
                 "completed_node_ids": completed_node_ids,
                 "pending_node_id": pending_node_id,
+            }
+        )
+        if self._fail_on_call == len(self.calls):
+            raise RuntimeError("durability failed")
+
+    async def persist_interruption(
+        self,
+        run: WorkflowRun,
+        *,
+        completed_node_ids: tuple[str, ...],
+        pending_node_id: str,
+        interrupt: Mapping[str, object],
+    ) -> None:
+        self.calls.append(
+            {
+                "status": run.status,
+                "completed_node_ids": completed_node_ids,
+                "pending_node_id": pending_node_id,
+                "interrupt": dict(interrupt),
             }
         )
         if self._fail_on_call == len(self.calls):
@@ -562,6 +600,67 @@ def test_persistence_failure_stops_before_next_node_and_is_not_node_failure() ->
     assert executor.calls == ["start", "value"]
     assert workflow_run.status is WorkflowRunStatus.RUNNING
     assert workflow_run.error is None
+
+
+def approval_definition() -> WorkflowDefinition:
+    return definition(
+        (
+            node("start", WorkflowNodeKind.START),
+            node("approval", WorkflowNodeKind.APPROVAL, config={"prompt": "Continue?"}),
+            node("end", WorkflowNodeKind.END),
+        ),
+        (
+            edge("start-approval", "start", "approval"),
+            edge("approval-end", "approval", "end"),
+        ),
+    )
+
+
+def test_approval_interruption_pauses_without_output_or_downstream_execution() -> None:
+    executor = ApprovalInterruptingExecutor()
+    workflow_run = run()
+
+    execute(approval_definition(), workflow_run, executor)
+
+    assert workflow_run.status is WorkflowRunStatus.PAUSED
+    assert executor.calls == ["start", "approval"]
+    assert workflow_run.node_outputs == {"start": {}}
+    assert workflow_run.output is None
+
+
+def test_approval_interruption_is_persisted_after_the_run_pauses() -> None:
+    executor = ApprovalInterruptingExecutor()
+    persistence = RecordingPersistence()
+    workflow_run = run()
+
+    asyncio.run(WorkflowEngine(executor).execute(approval_definition(), workflow_run, persistence=persistence))
+
+    assert len(persistence.calls) == 2
+    interrupt_call = persistence.calls[-1]
+    assert interrupt_call["status"] is WorkflowRunStatus.PAUSED
+    assert interrupt_call["completed_node_ids"] == ("start",)
+    assert interrupt_call["pending_node_id"] == "approval"
+    assert interrupt_call["interrupt"] == {
+        "type": "approval_required",
+        "payload": {"node_id": "approval", "prompt": "Continue?"},
+    }
+
+
+def test_approval_interruption_persistence_failure_propagates_without_failing_run() -> None:
+    executor = ApprovalInterruptingExecutor()
+    persistence = RecordingPersistence(fail_on_call=2)
+    workflow_run = run()
+
+    with pytest.raises(RuntimeError, match="durability failed"):
+        asyncio.run(
+            WorkflowEngine(executor).execute(
+                approval_definition(), workflow_run, persistence=persistence
+            )
+        )
+
+    assert workflow_run.status is WorkflowRunStatus.PAUSED
+    assert workflow_run.error is None
+    assert executor.calls == ["start", "approval"]
 
 
 def test_resume_persists_each_newly_completed_node() -> None:

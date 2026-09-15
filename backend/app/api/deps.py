@@ -37,6 +37,7 @@ from app.services.session import SessionService
 from app.services.conversation import ConversationService
 from app.services.workflow import (
     AgentNodeExecutor,
+    ApprovalNodeExecutor,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     WorkflowEngine,
@@ -117,9 +118,11 @@ def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:
     """Compose the production workflow engine and its node executors."""
     deterministic_executor = DeterministicNodeExecutor()
     agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner})
+    approval_executor = ApprovalNodeExecutor()
     dispatching_executor = DispatchingNodeExecutor(
         deterministic_executor=deterministic_executor,
         agent_executor=agent_executor,
+        approval_executor=approval_executor,
     )
     return WorkflowEngine(dispatching_executor)
 
