@@ -94,7 +94,9 @@ class WorkflowApprovalService:
                 message="Workflow run must be paused before deciding approval.",
                 code="WORKFLOW_RUN_NOT_PAUSED",
             )
-        db_approval = await approval_repo.get_approval_request_by_id(self.db, approval_id)
+        db_approval = await approval_repo.get_approval_request_by_id_for_update(
+            self.db, approval_id
+        )
         if db_approval is None or db_approval.run_id != run_id:
             raise NotFoundError(message="Approval request not found")
 

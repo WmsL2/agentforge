@@ -77,7 +77,7 @@ async def test_decision_updates_request_once_and_keeps_run_paused(method, status
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
-        approval_repo.get_approval_request_by_id = AsyncMock(return_value=approval)
+        approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
 
         async def update(_, *, db_approval, approval):
             db_approval.status = approval.status.value
@@ -95,6 +95,10 @@ async def test_decision_updates_request_once_and_keeps_run_paused(method, status
     assert result.decided_at is not None
     assert run.status == "paused"
     db.commit.assert_awaited_once()
+    approval_repo.get_approval_request_by_id_for_update.assert_awaited_once_with(
+        approval_service.db, approval_id
+    )
+    approval_repo.get_approval_request_by_id.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -108,7 +112,7 @@ async def test_decision_hides_approval_from_another_run() -> None:
         run_repo.get_workflow_run_by_id = AsyncMock(
             return_value=SimpleNamespace(workflow_id=workflow_id, status="paused")
         )
-        approval_repo.get_approval_request_by_id = AsyncMock(return_value=row(run_id=uuid4()))
+        approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=row(run_id=uuid4()))
         with pytest.raises(NotFoundError, match="Approval request not found"):
             await approval_service.approve(workflow_id, run_id, uuid4(), uuid4())
 
@@ -126,7 +130,7 @@ async def test_already_decided_request_is_conflict(approval_status) -> None:
         run_repo.get_workflow_run_by_id = AsyncMock(
             return_value=SimpleNamespace(workflow_id=workflow_id, status="paused")
         )
-        approval_repo.get_approval_request_by_id = AsyncMock(return_value=stored)
+        approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=stored)
         with pytest.raises(WorkflowApprovalConflictError) as exception:
             await approval_service.approve(workflow_id, run_id, stored.id, uuid4())
 

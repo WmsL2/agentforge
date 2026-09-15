@@ -33,6 +33,18 @@ async def get_approval_request_by_id(
     return await db.get(DBApprovalRequest, approval_id)
 
 
+async def get_approval_request_by_id_for_update(
+    db: AsyncSession, approval_id: UUID
+) -> DBApprovalRequest | None:
+    """Read one approval request while serializing its decision transaction."""
+    result = await db.execute(
+        select(DBApprovalRequest)
+        .where(DBApprovalRequest.id == approval_id)
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_pending_approval_by_run(
     db: AsyncSession, run_id: UUID
 ) -> DBApprovalRequest | None:
