@@ -1,0 +1,1 @@
+"""Approval application tests."""

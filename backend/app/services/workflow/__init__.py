@@ -1,6 +1,10 @@
 """Public AgentForge Workflow Core API."""
 
-from app.services.workflow.application import WorkflowRunService, WorkflowService
+from app.services.workflow.application import (
+    WorkflowApprovalService,
+    WorkflowRunService,
+    WorkflowService,
+)
 from app.services.workflow.definition import (
     WorkflowDefinition,
     WorkflowEdge,
@@ -50,6 +54,7 @@ __all__ = [
     "NodeExecutionOutcome",
     "NodeExecutionResult",
     "NodeExecutor",
+    "WorkflowApprovalService",
     "WorkflowCheckpoint",
     "WorkflowDefinition",
     "WorkflowEdge",

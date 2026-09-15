@@ -11,12 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+from app.db.models.workflow.approval.model import ApprovalRequest
 from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
 from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 
 _POSTGRES_E2E_ENV = "AGENTFORGE_RUN_POSTGRES_E2E"
-_EXPECTED_ALEMBIC_REVISION = "0035_create_workflow_checkpoints"
+_EXPECTED_ALEMBIC_REVISION = "0036_create_workflow_approval_requests"
 
 
 @pytest.fixture
@@ -64,6 +65,14 @@ async def postgres_session() -> AsyncGenerator[AsyncSession, None]:
                 await transaction.rollback()
 
                 if isinstance(workflow_id, UUID) and isinstance(run_id, UUID):
+                    assert (
+                        await connection.scalar(
+                            select(func.count())
+                            .select_from(ApprovalRequest)
+                            .where(ApprovalRequest.run_id == run_id)
+                        )
+                        == 0
+                    )
                     assert (
                         await connection.scalar(
                             select(func.count())

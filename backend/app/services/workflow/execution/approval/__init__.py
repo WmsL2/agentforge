@@ -5,5 +5,15 @@ from app.services.workflow.execution.approval.domain import (
     ApprovalRequestStatus,
     ApprovalRequestTransitionError,
 )
+from app.services.workflow.execution.approval.serialization import (
+    deserialize_approval_request,
+    serialize_approval_request,
+)
 
-__all__ = ["ApprovalRequest", "ApprovalRequestStatus", "ApprovalRequestTransitionError"]
+__all__ = [
+    "ApprovalRequest",
+    "ApprovalRequestStatus",
+    "ApprovalRequestTransitionError",
+    "deserialize_approval_request",
+    "serialize_approval_request",
+]

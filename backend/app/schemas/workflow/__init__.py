@@ -1,5 +1,6 @@
 """Workflow HTTP schema API."""
 
+from app.schemas.workflow.approval import ApprovalDecisionRequest, ApprovalRequestRead
 from app.schemas.workflow.definition import (
     WorkflowCreate,
     WorkflowEdgeSchema,
@@ -20,6 +21,8 @@ from app.schemas.workflow.run import (
 )
 
 __all__ = [
+    "ApprovalDecisionRequest",
+    "ApprovalRequestRead",
     "WorkflowCreate",
     "WorkflowEdgeSchema",
     "WorkflowGraphSchema",

@@ -41,6 +41,7 @@ from app.services.workflow import (
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     WorkflowEngine,
+    WorkflowApprovalService,
     WorkflowRunService,
     WorkflowService,
 )
@@ -80,6 +81,15 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 
 
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
+
+
+def get_workflow_approval_service(
+    db: DBSession, workflow_service: WorkflowSvc
+) -> WorkflowApprovalService:
+    return WorkflowApprovalService(db=db, workflow_service=workflow_service)
+
+
+WorkflowApprovalSvc = Annotated[WorkflowApprovalService, Depends(get_workflow_approval_service)]
 
 
 def get_tool_registry(request: Request) -> ToolRegistry:
