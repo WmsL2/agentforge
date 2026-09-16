@@ -8,10 +8,17 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_current_user, get_db_session, get_langgraph_agent_runner
 from app.db.models.user import User, UserRole
 from app.db.models.workflow import ApprovalRequest, Workflow, WorkflowCheckpoint, WorkflowRun
 from app.main import app
+
+
+class NoopAgentRunner:
+    """Fail if an approval-only workflow unexpectedly reaches an AGENT node."""
+
+    async def run(self, request):
+        raise AssertionError("Approval-only workflow must not execute an AGENT node.")
 
 
 @pytest.mark.anyio
@@ -27,6 +34,7 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_langgraph_agent_runner] = lambda: NoopAgentRunner()
     payload = {
         "name": "PostgreSQL approval workflow",
         "definition": {
@@ -114,6 +122,7 @@ async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_th
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_langgraph_agent_runner] = lambda: NoopAgentRunner()
     payload = {
         "name": "PostgreSQL rejection workflow",
         "definition": {

@@ -16,6 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=64),
+        existing_nullable=False,
+    )
     op.create_table(
         "approval_requests",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),

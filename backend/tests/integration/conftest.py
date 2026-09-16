@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
@@ -99,5 +99,31 @@ async def postgres_session() -> AsyncGenerator[AsyncSession, None]:
                     )
         finally:
             await connection.close()
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+async def postgres_restart_session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Yield independent sessions whose commits are visible across NullPool connections."""
+    if os.getenv(_POSTGRES_E2E_ENV) != "1":
+        pytest.skip(f"Set {_POSTGRES_E2E_ENV}=1 to run PostgreSQL integration tests.")
+
+    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    try:
+        try:
+            async with engine.connect() as connection:
+                revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
+        except (OSError, SQLAlchemyError) as exception:
+            pytest.skip(
+                "PostgreSQL is unavailable or migrations are missing; "
+                f"start PostgreSQL and run Alembic migrations first ({exception.__class__.__name__})."
+            )
+        if revision != _EXPECTED_ALEMBIC_REVISION:
+            pytest.skip(
+                "PostgreSQL migrations are not current; "
+                f"expected {_EXPECTED_ALEMBIC_REVISION!r}, found {revision!r}."
+            )
+        yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
         await engine.dispose()
