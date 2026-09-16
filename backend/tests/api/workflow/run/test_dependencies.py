@@ -232,7 +232,9 @@ def test_mcp_tool_completes_the_agent_tool_loop_with_remote_name(monkeypatch) ->
     )
     runner = _runner_with_model(monkeypatch, registry, model)
 
-    result = asyncio.run(runner.run(AgentExecutionRequest(instruction="Create issue.", input="Bug")))
+    result = asyncio.run(
+        runner.run(AgentExecutionRequest(instruction="Create issue.", input="Bug"))
+    )
 
     assert [tool.name for tool in model.bound_tools[0]] == ["github__create_issue"]
     assert client.received_tool_name == "create_issue"

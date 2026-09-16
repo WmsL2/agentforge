@@ -10,9 +10,7 @@ from app.schemas.workflow import ApprovalDecisionRequest, ApprovalRequestRead
 router = APIRouter()
 
 
-@router.get(
-    "/{workflow_id}/runs/{run_id}/approvals/pending", response_model=ApprovalRequestRead
-)
+@router.get("/{workflow_id}/runs/{run_id}/approvals/pending", response_model=ApprovalRequestRead)
 async def get_pending_approval(
     workflow_id: UUID,
     run_id: UUID,
@@ -23,7 +21,8 @@ async def get_pending_approval(
 
 
 @router.post(
-    "/{workflow_id}/runs/{run_id}/approvals/{approval_id}/approve", response_model=ApprovalRequestRead
+    "/{workflow_id}/runs/{run_id}/approvals/{approval_id}/approve",
+    response_model=ApprovalRequestRead,
 )
 async def approve(
     workflow_id: UUID,
@@ -39,7 +38,8 @@ async def approve(
 
 
 @router.post(
-    "/{workflow_id}/runs/{run_id}/approvals/{approval_id}/reject", response_model=ApprovalRequestRead
+    "/{workflow_id}/runs/{run_id}/approvals/{approval_id}/reject",
+    response_model=ApprovalRequestRead,
 )
 async def reject(
     workflow_id: UUID,

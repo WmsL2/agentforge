@@ -650,7 +650,11 @@ def test_approval_interruption_is_persisted_after_the_run_pauses() -> None:
     persistence = RecordingPersistence()
     workflow_run = run()
 
-    asyncio.run(WorkflowEngine(executor).execute(approval_definition(), workflow_run, persistence=persistence))
+    asyncio.run(
+        WorkflowEngine(executor).execute(
+            approval_definition(), workflow_run, persistence=persistence
+        )
+    )
 
     assert len(persistence.calls) == 2
     interrupt_call = persistence.calls[-1]
@@ -691,7 +695,11 @@ def test_resume_persists_each_newly_completed_node() -> None:
         pending_node_id="value",
     )
 
-    asyncio.run(WorkflowEngine(executor).resume(linear_definition(), workflow_run, saved, persistence=persistence))
+    asyncio.run(
+        WorkflowEngine(executor).resume(
+            linear_definition(), workflow_run, saved, persistence=persistence
+        )
+    )
 
     assert executor.calls == ["value", "end"]
     assert [call["completed_node_ids"] for call in persistence.calls] == [

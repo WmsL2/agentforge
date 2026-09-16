@@ -8,7 +8,9 @@ from app.services.tool.definition.validation import (
 
 
 def _definition(schema: dict[object, object]) -> ToolDefinition:
-    return ToolDefinition(name="weather_lookup", description="Look up the weather.", input_schema=schema)
+    return ToolDefinition(
+        name="weather_lookup", description="Look up the weather.", input_schema=schema
+    )
 
 
 def test_validate_schema_accepts_a_valid_draft_2020_12_object_schema() -> None:
@@ -116,7 +118,9 @@ def test_validate_arguments_collects_multiple_errors_in_deterministic_order() ->
     second_result = validator.validate_arguments(definition, arguments)
 
     assert len(first_result.issues) == 3
-    assert all(issue.code is ToolSchemaValidationCode.INVALID_ARGUMENTS for issue in first_result.issues)
+    assert all(
+        issue.code is ToolSchemaValidationCode.INVALID_ARGUMENTS for issue in first_result.issues
+    )
     assert [issue.path for issue in first_result.issues] == [(), ("city",), ("days",)]
     assert first_result.issues == second_result.issues
 

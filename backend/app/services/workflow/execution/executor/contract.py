@@ -63,7 +63,9 @@ class NodeExecutionResult:
         if self.outcome is NodeExecutionOutcome.INTERRUPTED and (
             self.interrupt is None or self.output is not None
         ):
-            raise ValueError("Interrupted node execution results require an interrupt and no output.")
+            raise ValueError(
+                "Interrupted node execution results require an interrupt and no output."
+            )
 
 
 class NodeExecutor(Protocol):

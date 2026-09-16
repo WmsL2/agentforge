@@ -70,9 +70,7 @@ async def test_execute_uses_bound_remote_name_and_forwards_only_arguments() -> N
 
 @pytest.mark.anyio
 async def test_execute_preserves_successful_result_metadata() -> None:
-    client = FakeMCPClient(
-        MCPToolCallResult(output={"issue": 42}, metadata={"request_id": "abc"})
-    )
+    client = FakeMCPClient(MCPToolCallResult(output={"issue": 42}, metadata={"request_id": "abc"}))
 
     result = await MCPToolExecutor(client, remote_name="create_issue").execute(
         ToolExecutionRequest(tool_name="github__create_issue")

@@ -21,7 +21,9 @@ class FakeToolExecutor:
 
 
 def _definition(name: str) -> ToolDefinition:
-    return ToolDefinition(name=name, description=f"{name} description", input_schema={"type": "object"})
+    return ToolDefinition(
+        name=name, description=f"{name} description", input_schema={"type": "object"}
+    )
 
 
 def test_register_and_resolve_preserve_original_definition_and_executor() -> None:

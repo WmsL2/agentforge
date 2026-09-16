@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.5 在此基础上交付 MCP Integration & Tool Discovery。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.6 在此基础上交付持久执行、Checkpoint、Pause/Resume 与人工审批。
 
 ---
 
@@ -41,72 +41,74 @@ v0.1 建设并验证了稳定的工程基础，包括：
 - **v0.5 — MCP Integration & Tool Discovery:** framework-independent MCP
   contracts, stdio discovery and registration, MCP execution, lifecycle
   composition, registry read surface, and dynamic LangGraph tool binding.
+- **v0.6 — Durable Execution & Human-in-the-Loop:** durable workflow runs,
+  append-only checkpoints, checkpoint-aware resume, immutable definition
+  snapshots, `APPROVAL` interruption and decision APIs, resolution checkpoints,
+  and real PostgreSQL restart recovery verification.
 
-## v0.5 — MCP Integration & Tool Discovery
+## v0.6 — Durable Execution & Human-in-the-Loop
 
-Current main builds on the v0.2 Workflow Core, v0.3 Agent Runtime, and v0.4
-Tool Platform with a framework-independent MCP boundary.
+Current main combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4 Tool
+Platform, v0.5 MCP integration, and v0.6 durable workflow execution.
 
-- Framework-independent `AgentExecutionRequest`, `AgentExecutionResult`,
-  `AgentRuntimeError`, and `AgentRunner` contracts
-- Validated `AGENT` nodes with `runner`, `instruction`, and optional `model`
-- Kind-based execution: deterministic `START` / `VALUE` / `END` plus AGENT
-  dispatch through `AgentNodeExecutor`
-- `ToolDefinition`, execution contracts, Draft 2020-12 schema validation,
-  `ToolExecutor`, `ToolRegistry`, native callable execution, and one unified
-  `ToolExecutionService`
-- MCP descriptors, call results, and error contracts remain independent of the
-  official SDK and the Tool Platform core.
-- `MCPToolDiscovery` preserves remote tool order and maps configured server
-  namespace plus remote name to a local name such as `github__create_issue`.
-- `MCPToolExecutor` keeps the local registration separate from the remote call:
-  the LLM sees `github__create_issue`, while the executor calls
-  `create_issue` on the configured MCP client.
-- The official MCP SDK adapter and stdio transport are concrete integration
-  details; configured clients are discovered, registered, and kept alive for
-  the FastAPI application lifespan.
-- `ToolRegistry.definitions()` exposes an ordered descriptor snapshot without
-  exposing private executors. `LangGraphToolAdapter` dynamically converts that
-  snapshot to `StructuredTool` instances for each runner.
-- Real offline stdio integration tests cover discovery, mapping, execution,
-  lifecycle cleanup, and dynamic agent binding without a live provider.
+- `WorkflowRun` has an explicit durable lifecycle, while an append-only
+  `WorkflowCheckpoint` records the completed-node set and exact resume point.
+- Every successful node persists run state plus a checkpoint and commits before
+  the engine schedules the next node. Checkpoint is the recovery source of truth.
+- `APPROVAL` interrupts execution: the run becomes PAUSED, an interruption
+  checkpoint and PENDING `ApprovalRequest` are durably committed, and the
+  approval node is not yet completed.
+- Approve writes APPROVED state and a resolution checkpoint before
+  `WorkflowEngine.resume()` continues downstream; reject cancels the paused run
+  without executing downstream work.
+- `definition_snapshot` preserves the exact workflow revision used by a run,
+  even if the current workflow definition is later edited.
 
 ```text
-Configured stdio server
-  -> Official SDK Client -> Adapter -> Discovery -> Registration Service
-  -> ToolRegistry
-       | definitions() -> LangGraphToolAdapter -> StructuredTool -> Runner
-       |                                                   | model.bind_tools()
-       `-> ToolExecutionService -> MCPToolExecutor -> MCPClient.call_tool()
-                                                       -> remote MCP server
+WorkflowDefinition
+  -> WorkflowEngine -> node execution -> successful node
+  -> Run state + Checkpoint -> COMMIT -> next node
 ```
 
-LangGraph is **not** the AgentForge Workflow Engine, and the Tool Platform is
-not a LangChain Tool Registry alias; LangGraph remains one Agent Runtime
-implementation behind the workflow execution boundary.
+```text
+APPROVAL node -> INTERRUPTED -> Run PAUSED -> interruption checkpoint
+  -> ApprovalRequest(PENDING) -> COMMIT
+
+Human Approve -> ApprovalRequest(APPROVED) -> resolution checkpoint -> COMMIT
+  -> Engine.resume() -> continue downstream
+```
 
 Detailed documents: [Workflow Core](docs/workflow-core.md),
 [Agent Runtime](docs/agent-runtime.md), and
-[Tool Platform](docs/tool-platform.md).
+[Tool Platform / MCP](docs/tool-platform.md), and
+[Durable Execution & Human-in-the-Loop](docs/durable-execution.md).
 
-## v0.5 当前边界 / Non-goals
+### Crash recovery
 
-v0.5 intentionally does not implement HTTP/SSE MCP transport, OAuth,
-persisted connections, frontend MCP management, per-agent permissions, policy,
-approval, timeout, retry, idempotency, a Workflow TOOL Node, persistent tool
-definitions, traces, usage metrics, agent max-steps, checkpoints, pause/resume,
-HITL, streaming, Run Steps, background workflow workers, conditional branches,
-loops, or parallel workflow execution.
+After a service process ends, Python objects disappear but PostgreSQL durable
+state remains. A new Session, Engine, and Service can deserialize the
+`WorkflowRun`, its `definition_snapshot`, and the latest `WorkflowCheckpoint`
+to resume without re-running completed nodes. v0.6 provides these recovery
+primitives and proves them with real PostgreSQL restart tests; it does not
+provide an automatic startup recovery scanner.
 
-AgentForge 后续会在这一基础上逐步扩展平台能力：
+### v0.6 Non-goals and future roadmap
+
+v0.6 does not implement automatic recovery scanning, a background workflow
+worker, retry or timeout frameworks, conditional/loop/parallel execution, a
+Workflow TOOL Node or tool-call approval, LangGraph internal durable-thread
+integration, RunStep/Trace/token accounting/observability dashboard,
+Workspace/RBAC, a frontend Workflow Editor, or MCP HTTP/OAuth.
 
 ```text
-Checkpoint
-Pause / Resume
-Human In The Loop
-Run / Step / Trace
-Observability
+Run Step / Trace / Observability
+Tool Policy and Workflow TOOL Node
+Retry / Timeout / Idempotency
+Condition / Loop / Parallel
+Background Workflow Worker
 Workspace / RBAC
+Frontend Workflow Editor
+MCP HTTP / OAuth
 ```
 
 Future model-construction extraction may be considered only if the current
@@ -1023,14 +1025,14 @@ AgentForge 已自研并交付：
 ```text
 Workflow Engine
 Workflow Definition / Run Persistence
+Agent Runtime
+Tool Platform / MCP Integration
+Durable Checkpoints / Pause / Resume / Human Approval
 ```
 
 后续将继续自研：
 
 ```text
-Agent Runtime
-Tool / MCP Platform
-Checkpoint / HITL
 Run / Step / Trace
 Observability
 Workspace / RBAC

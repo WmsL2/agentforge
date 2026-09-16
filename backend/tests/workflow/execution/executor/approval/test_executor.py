@@ -15,7 +15,9 @@ from app.services.workflow import (
 
 
 def context() -> NodeExecutionContext:
-    return NodeExecutionContext(run_id=uuid4(), workflow_input={}, upstream_outputs={}, node_outputs={})
+    return NodeExecutionContext(
+        run_id=uuid4(), workflow_input={}, upstream_outputs={}, node_outputs={}
+    )
 
 
 def test_approval_node_returns_approval_required_interruption() -> None:

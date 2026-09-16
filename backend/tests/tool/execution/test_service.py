@@ -32,7 +32,9 @@ class RecordingExecutor:
         return ToolExecutionResult(output=self.output)
 
 
-def _service(definition: ToolDefinition, executor: RecordingExecutor | NativeCallableToolExecutor) -> ToolExecutionService:
+def _service(
+    definition: ToolDefinition, executor: RecordingExecutor | NativeCallableToolExecutor
+) -> ToolExecutionService:
     registry = ToolRegistry()
     registry.register(definition, executor)
     return ToolExecutionService(registry, ToolSchemaValidator())
@@ -58,7 +60,9 @@ async def test_service_completes_full_atomic_1_to_6_execution_flow() -> None:
 
     service = _service(_add_definition(), NativeCallableToolExecutor(add))
 
-    result = await service.execute(ToolExecutionRequest(tool_name="add", arguments={"a": 1, "b": 2}))
+    result = await service.execute(
+        ToolExecutionRequest(tool_name="add", arguments={"a": 1, "b": 2})
+    )
 
     assert result.output == 3
 

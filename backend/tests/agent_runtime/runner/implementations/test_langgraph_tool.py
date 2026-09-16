@@ -101,8 +101,12 @@ async def test_adapter_preserves_tool_platform_validation_and_skips_executor() -
 
 @pytest.mark.anyio
 async def test_adapter_uses_service_for_unknown_registration() -> None:
-    definition = ToolDefinition(name="missing", description="Missing tool.", input_schema={"type": "object"})
-    tool = LangGraphToolAdapter(ToolExecutionService(ToolRegistry(), ToolSchemaValidator())).adapt(definition)
+    definition = ToolDefinition(
+        name="missing", description="Missing tool.", input_schema={"type": "object"}
+    )
+    tool = LangGraphToolAdapter(ToolExecutionService(ToolRegistry(), ToolSchemaValidator())).adapt(
+        definition
+    )
 
     with pytest.raises(ToolExecutionError) as error_info:
         await tool.ainvoke({})
@@ -114,7 +118,9 @@ async def test_adapter_uses_service_for_unknown_registration() -> None:
 async def test_adapter_preserves_structured_tool_output() -> None:
     definition = _add_definition()
     output = {"date": "2026-09-09", "time": "10:00:00"}
-    tool = LangGraphToolAdapter(_service(definition, RecordingExecutor(output=output))).adapt(definition)
+    tool = LangGraphToolAdapter(_service(definition, RecordingExecutor(output=output))).adapt(
+        definition
+    )
 
     result = await tool.ainvoke({"a": 1, "b": 2})
 
@@ -129,9 +135,9 @@ async def test_adapter_preserves_tool_execution_error_identity() -> None:
         message="provider unavailable",
         retryable=True,
     )
-    tool = LangGraphToolAdapter(_service(definition, RecordingExecutor(error=original_error))).adapt(
-        definition
-    )
+    tool = LangGraphToolAdapter(
+        _service(definition, RecordingExecutor(error=original_error))
+    ).adapt(definition)
 
     with pytest.raises(ToolExecutionError) as error_info:
         await tool.ainvoke({"a": 1, "b": 2})

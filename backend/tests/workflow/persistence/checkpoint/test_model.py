@@ -30,7 +30,8 @@ def test_workflow_checkpoint_table_has_the_expected_persistence_contract() -> No
     assert table.c.created_at.nullable is False
     assert next(iter(table.c.run_id.foreign_keys)).target_fullname == "workflow_runs.id"
     assert any(
-        isinstance(constraint, UniqueConstraint) and set(constraint.columns.keys()) == {"run_id", "sequence"}
+        isinstance(constraint, UniqueConstraint)
+        and set(constraint.columns.keys()) == {"run_id", "sequence"}
         for constraint in table.constraints
     )
     assert any(

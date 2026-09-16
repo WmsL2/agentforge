@@ -92,9 +92,7 @@ def test_discover_rejects_invalid_namespace(namespace: str) -> None:
 
 
 def test_discover_rejects_invalid_schema_with_remote_tool_name() -> None:
-    client = FakeMCPClient(
-        (_descriptor("create_issue", {"type": "not-a-real-json-schema-type"}),)
-    )
+    client = FakeMCPClient((_descriptor("create_issue", {"type": "not-a-real-json-schema-type"}),))
 
     with pytest.raises(MCPToolDiscoveryError) as error_info:
         asyncio.run(_discover(MCPToolDiscovery(), client, "github"))

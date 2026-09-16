@@ -193,7 +193,9 @@ class WorkflowEngine:
             if result.outcome is NodeExecutionOutcome.INTERRUPTED:
                 interrupt = result.interrupt
                 if interrupt is None:
-                    raise RuntimeError("Interrupted node execution result is missing interrupt data.")
+                    raise RuntimeError(
+                        "Interrupted node execution result is missing interrupt data."
+                    )
                 run.pause()
                 if persistence is not None:
                     await persistence.persist_interruption(

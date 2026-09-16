@@ -36,7 +36,9 @@ async def test_lifespan_exposes_shared_registry_and_closes_resources(
     close_database = AsyncMock()
 
     @asynccontextmanager
-    async def fake_tool_platform(servers: Sequence[MCPStdioServerSettings]) -> AsyncIterator[ToolRegistry]:
+    async def fake_tool_platform(
+        servers: Sequence[MCPStdioServerSettings],
+    ) -> AsyncIterator[ToolRegistry]:
         nonlocal entered, exited
         entered = True
         try:
@@ -66,7 +68,9 @@ async def test_lifespan_cleans_up_redis_when_tool_platform_startup_fails(
     close_database = AsyncMock()
 
     @asynccontextmanager
-    async def failing_tool_platform(servers: Sequence[MCPStdioServerSettings]) -> AsyncIterator[ToolRegistry]:
+    async def failing_tool_platform(
+        servers: Sequence[MCPStdioServerSettings],
+    ) -> AsyncIterator[ToolRegistry]:
         raise RuntimeError("MCP startup failed")
         yield ToolRegistry()
 

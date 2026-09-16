@@ -104,7 +104,9 @@ async def postgres_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest.fixture
-async def postgres_restart_session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+async def postgres_restart_session_factory() -> AsyncGenerator[
+    async_sessionmaker[AsyncSession], None
+]:
     """Yield independent sessions whose commits are visible across NullPool connections."""
     if os.getenv(_POSTGRES_E2E_ENV) != "1":
         pytest.skip(f"Set {_POSTGRES_E2E_ENV}=1 to run PostgreSQL integration tests.")

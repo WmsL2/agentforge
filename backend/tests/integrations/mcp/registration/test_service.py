@@ -69,7 +69,9 @@ async def test_registers_discovered_tools_in_order_with_bound_remote_names() -> 
 
 @pytest.mark.anyio
 async def test_register_returns_empty_tuple_for_empty_discovery() -> None:
-    registrations = await MCPToolRegistrationService().register(ToolRegistry(), FakeMCPClient(()), "github")
+    registrations = await MCPToolRegistrationService().register(
+        ToolRegistry(), FakeMCPClient(()), "github"
+    )
 
     assert registrations == ()
 

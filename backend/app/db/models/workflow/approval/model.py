@@ -27,9 +27,7 @@ class ApprovalRequest(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "node_id"),
         CheckConstraint("workflow_revision >= 1", name="workflow_revision_positive"),
-        CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')", name="status_valid"
-        ),
+        CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="status_valid"),
         Index("approval_requests_run_id_status_idx", "run_id", "status"),
     )
 

@@ -103,9 +103,7 @@ def test_agent_node_round_trips_without_serializer_changes():
 
 def test_approval_node_round_trips_without_serializer_changes():
     source = definition()
-    approval = WorkflowNode(
-        "approval", WorkflowNodeKind.APPROVAL, {"prompt": "Approve execution?"}
-    )
+    approval = WorkflowNode("approval", WorkflowNodeKind.APPROVAL, {"prompt": "Approve execution?"})
     source.nodes = (source.nodes[0], approval, source.nodes[2])
     source.edges = (
         WorkflowEdge("start-approval", "start", "approval"),

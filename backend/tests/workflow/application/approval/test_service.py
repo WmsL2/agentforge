@@ -16,15 +16,78 @@ from app.services.workflow.execution.run import WorkflowRunStatus
 
 
 def graph(value="old"):
-    return {"schema_version": 1, "entry_node_id": "start", "metadata": {}, "nodes": [{"id": "start", "kind": "start", "config": {}, "metadata": {}}, {"id": "approval", "kind": "approval", "config": {"prompt": "Continue?"}, "metadata": {}}, {"id": "value", "kind": "value", "config": {"value": value}, "metadata": {}}, {"id": "end", "kind": "end", "config": {}, "metadata": {}}], "edges": [{"id": "a", "source": "start", "target": "approval", "condition": None, "metadata": {}}, {"id": "b", "source": "approval", "target": "value", "condition": None, "metadata": {}}, {"id": "c", "source": "value", "target": "end", "condition": None, "metadata": {}}]}
+    return {
+        "schema_version": 1,
+        "entry_node_id": "start",
+        "metadata": {},
+        "nodes": [
+            {"id": "start", "kind": "start", "config": {}, "metadata": {}},
+            {
+                "id": "approval",
+                "kind": "approval",
+                "config": {"prompt": "Continue?"},
+                "metadata": {},
+            },
+            {"id": "value", "kind": "value", "config": {"value": value}, "metadata": {}},
+            {"id": "end", "kind": "end", "config": {}, "metadata": {}},
+        ],
+        "edges": [
+            {"id": "a", "source": "start", "target": "approval", "condition": None, "metadata": {}},
+            {"id": "b", "source": "approval", "target": "value", "condition": None, "metadata": {}},
+            {"id": "c", "source": "value", "target": "end", "condition": None, "metadata": {}},
+        ],
+    }
 
 
 def rows(status="pending"):
-    now, workflow_id, run_id, approval_id = datetime(2026, 9, 15, tzinfo=UTC), uuid4(), uuid4(), uuid4()
-    workflow = SimpleNamespace(id=workflow_id, name="Current", description=None, definition=graph("new"), revision=2)
-    run = SimpleNamespace(id=run_id, workflow_id=workflow_id, workflow_revision=1, definition_snapshot=graph("old"), status="paused", input={}, node_outputs={"stale": True}, output=None, error=None, started_at=now, finished_at=None)
-    approval = SimpleNamespace(id=approval_id, run_id=run_id, workflow_revision=1, node_id="approval", prompt="Continue?", status=status, created_at=now, decided_at=None, decided_by=None, decision_note=None)
-    checkpoint = SimpleNamespace(id=uuid4(), run_id=run_id, workflow_revision=1, sequence=2, completed_node_ids=["start"], node_outputs={"start": {}}, pending_node_id="approval", interrupt={"type": "approval_required", "payload": {"node_id": "approval", "prompt": "Continue?"}}, created_at=now)
+    now, workflow_id, run_id, approval_id = (
+        datetime(2026, 9, 15, tzinfo=UTC),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+    )
+    workflow = SimpleNamespace(
+        id=workflow_id, name="Current", description=None, definition=graph("new"), revision=2
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        workflow_revision=1,
+        definition_snapshot=graph("old"),
+        status="paused",
+        input={},
+        node_outputs={"stale": True},
+        output=None,
+        error=None,
+        started_at=now,
+        finished_at=None,
+    )
+    approval = SimpleNamespace(
+        id=approval_id,
+        run_id=run_id,
+        workflow_revision=1,
+        node_id="approval",
+        prompt="Continue?",
+        status=status,
+        created_at=now,
+        decided_at=None,
+        decided_by=None,
+        decision_note=None,
+    )
+    checkpoint = SimpleNamespace(
+        id=uuid4(),
+        run_id=run_id,
+        workflow_revision=1,
+        sequence=2,
+        completed_node_ids=["start"],
+        node_outputs={"start": {}},
+        pending_node_id="approval",
+        interrupt={
+            "type": "approval_required",
+            "payload": {"node_id": "approval", "prompt": "Continue?"},
+        },
+        created_at=now,
+    )
     return workflow, run, approval, checkpoint
 
 
@@ -39,7 +102,16 @@ def service():
 async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
     svc, db, workflow_service, engine = service()
     workflow, run, approval, checkpoint = rows()
-    resolved = SimpleNamespace(**{**checkpoint.__dict__, "sequence": 3, "completed_node_ids": ["start", "approval"], "node_outputs": {"start": {}, "approval": {"decision": "approved"}}, "pending_node_id": None, "interrupt": None})
+    resolved = SimpleNamespace(
+        **{
+            **checkpoint.__dict__,
+            "sequence": 3,
+            "completed_node_ids": ["start", "approval"],
+            "node_outputs": {"start": {}, "approval": {"decision": "approved"}},
+            "pending_node_id": None,
+            "interrupt": None,
+        }
+    )
     workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
     events = []
     decided = {}
@@ -47,18 +119,25 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
-        patch("app.services.workflow.application.approval.service.checkpoint_repo") as checkpoint_repo,
-        patch("app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence") as durability,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
+        ) as durability,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
+
         async def update_approval(*_args, **kwargs):
             decided["approval"] = kwargs["approval"]
             events.append("approval")
             return approval
 
         approval_repo.update_approval_request_state = AsyncMock(side_effect=update_approval)
-        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(side_effect=[checkpoint, resolved])
+        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(
+            side_effect=[checkpoint, resolved]
+        )
         persistence = MagicMock()
 
         async def persist_node_completion(decision_run, **kwargs):
@@ -100,7 +179,9 @@ async def test_reject_cancels_without_resume_or_checkpoint():
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
-        patch("app.services.workflow.application.approval.service.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         run_repo.update_workflow_run_state = AsyncMock()
@@ -143,7 +224,9 @@ async def test_invalid_checkpoint_is_resume_state_conflict():
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
-        patch("app.services.workflow.application.approval.service.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
@@ -225,7 +308,9 @@ async def test_missing_checkpoint_is_conflict_without_changes_or_resume():
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
-        patch("app.services.workflow.application.approval.service.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
@@ -242,13 +327,26 @@ async def test_missing_checkpoint_is_conflict_without_changes_or_resume():
 async def test_downstream_failure_is_durably_persisted_after_approval():
     svc, db, workflow_service, engine = service()
     workflow, run, approval, checkpoint = rows()
-    resolved = SimpleNamespace(**{**checkpoint.__dict__, "sequence": 3, "completed_node_ids": ["start", "approval"], "node_outputs": {"start": {}, "approval": {"decision": "approved"}}, "pending_node_id": None, "interrupt": None})
+    resolved = SimpleNamespace(
+        **{
+            **checkpoint.__dict__,
+            "sequence": 3,
+            "completed_node_ids": ["start", "approval"],
+            "node_outputs": {"start": {}, "approval": {"decision": "approved"}},
+            "pending_node_id": None,
+            "interrupt": None,
+        }
+    )
     workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
-        patch("app.services.workflow.application.approval.service.checkpoint_repo") as checkpoint_repo,
-        patch("app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence") as durability,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
+        ) as durability,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         run_repo.update_workflow_run_state = AsyncMock()
@@ -260,7 +358,9 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
             return approval
 
         approval_repo.update_approval_request_state = AsyncMock(side_effect=update_approval)
-        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(side_effect=[checkpoint, resolved])
+        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(
+            side_effect=[checkpoint, resolved]
+        )
         persistence = MagicMock()
         persistence.persist_node_completion = AsyncMock()
         durability.return_value = persistence
@@ -273,5 +373,8 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
 
     assert decided["approval"].status.value == "approved"
     run_repo.update_workflow_run_state.assert_awaited_once_with(db, db_run=run, run=ANY)
-    assert run_repo.update_workflow_run_state.await_args.kwargs["run"].status is WorkflowRunStatus.FAILED
+    assert (
+        run_repo.update_workflow_run_state.await_args.kwargs["run"].status
+        is WorkflowRunStatus.FAILED
+    )
     db.commit.assert_awaited_once()

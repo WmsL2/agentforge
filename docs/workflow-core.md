@@ -7,9 +7,10 @@ v0.2 delivers AgentForge's self-built Workflow Core on top of the v0.1 web-engin
 > **Historical release boundary:** this document describes v0.2. Current main
 > additionally includes v0.3 AGENT node execution, `AgentRunner`,
 > `AgentNodeExecutor`, `DispatchingNodeExecutor`, and `LangGraphAgentRunner`,
-> plus the v0.4 Tool Platform and Agent Tool Calling. See
-> [Agent Runtime](agent-runtime.md) and [Tool Platform](tool-platform.md) for
-> current runtime behavior.
+> plus the v0.4 Tool Platform, v0.5 MCP Integration, and v0.6 Durable
+> Execution & Human-in-the-Loop. See [Agent Runtime](agent-runtime.md),
+> [Tool Platform](tool-platform.md), and
+> [Durable Execution](durable-execution.md) for current runtime behavior.
 
 It does not implement CONDITION execution, loops, AGENT or TOOL nodes, MCP execution, checkpoints, pause/resume, cancel/retry, Human-in-the-Loop controls, workflow Celery execution, durable intermediate RUNNING checkpoints, Run Step records, or Trace observability.
 
@@ -187,7 +188,9 @@ workflow_runs table
 
 `workflows` stores `id`, `user_id`, `name`, `description`, `definition` JSONB, `revision`, `created_at`, and `updated_at`. `workflow_runs` stores `id`, `workflow_id`, `workflow_revision`, `definition_snapshot`, `status`, `input`, `node_outputs`, `output`, `error`, `started_at`, `finished_at`, `created_at`, and `updated_at`. `workflows.user_id → users.id` and `workflow_runs.workflow_id → workflows.id` both use `ON DELETE CASCADE`.
 
-The current Alembic head is `0034_align_workflow_updated_at`. It aligns `workflows.updated_at` with the ORM timestamp contract: nullable with no server default.
+The v0.2 release Alembic head was `0034_align_workflow_updated_at`. It aligned
+`workflows.updated_at` with the ORM timestamp contract: nullable with no server
+default.
 
 `definition_snapshot` and `workflow_revision` are recorded at run creation to preserve historical execution context even after a workflow definition is revised.
 

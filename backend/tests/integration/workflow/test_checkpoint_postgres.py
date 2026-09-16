@@ -79,9 +79,9 @@ async def test_checkpoint_round_trip_uses_real_postgresql(postgres_session: Asyn
 
     assert (
         await postgres_session.scalar(
-            select(func.count()).select_from(DBWorkflowCheckpoint).where(
-                DBWorkflowCheckpoint.run_id == run_id
-            )
+            select(func.count())
+            .select_from(DBWorkflowCheckpoint)
+            .where(DBWorkflowCheckpoint.run_id == run_id)
         )
         == 2
     )

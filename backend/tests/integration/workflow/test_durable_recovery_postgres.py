@@ -92,7 +92,9 @@ async def create_paused_run(
         )
         await session.commit()
         executor = RecordingExecutor()
-        run = await WorkflowRunService(session, workflow_service, WorkflowEngine(executor)).execute_workflow(
+        run = await WorkflowRunService(
+            session, workflow_service, WorkflowEngine(executor)
+        ).execute_workflow(
             workflow.id,
             user.id,
             {},
@@ -112,7 +114,9 @@ async def create_paused_run(
         assert checkpoint.sequence == 3
         assert checkpoint.completed_node_ids == ["start", "before"]
         assert checkpoint.pending_node_id == "approval"
-        assert checkpoint.interrupt is not None and checkpoint.interrupt["type"] == "approval_required"
+        assert (
+            checkpoint.interrupt is not None and checkpoint.interrupt["type"] == "approval_required"
+        )
         return user.id, workflow.id, run_id
 
 
@@ -138,12 +142,16 @@ async def checkpoints(session: AsyncSession, run_id: UUID) -> list[WorkflowCheck
     )
 
 
-async def revise_current_workflow(session_factory: async_sessionmaker[AsyncSession], workflow_id: UUID) -> None:
+async def revise_current_workflow(
+    session_factory: async_sessionmaker[AsyncSession], workflow_id: UUID
+) -> None:
     async with session_factory() as session:
         workflow = await session.get(Workflow, workflow_id)
         assert workflow is not None
         definition = deepcopy(workflow.definition)
-        next(node for node in definition["nodes"] if node["id"] == "after")["config"]["value"] = "after-v2"
+        next(node for node in definition["nodes"] if node["id"] == "after")["config"]["value"] = (
+            "after-v2"
+        )
         workflow.definition = definition
         workflow.revision += 1
         await session.commit()
@@ -153,9 +161,7 @@ async def revise_current_workflow(session_factory: async_sessionmaker[AsyncSessi
 async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workflow_id, run_id = await create_paused_run(
-        postgres_restart_session_factory
-    )
+    user_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
     try:
         await revise_current_workflow(postgres_restart_session_factory, workflow_id)
 
@@ -165,11 +171,15 @@ async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
                 session, WorkflowService(session), WorkflowEngine(guard)
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
-            await approval_service.approve(workflow_id, run_id, approval.id, user_id, note="approved")
+            await approval_service.approve(
+                workflow_id, run_id, approval.id, user_id, note="approved"
+            )
 
         async with postgres_restart_session_factory() as session:
             run = await session.get(WorkflowRun, run_id)
-            approval = await session.scalar(select(ApprovalRequest).where(ApprovalRequest.run_id == run_id))
+            approval = await session.scalar(
+                select(ApprovalRequest).where(ApprovalRequest.run_id == run_id)
+            )
             stored_checkpoints = await checkpoints(session, run_id)
             assert run is not None and run.status == "completed"
             assert approval is not None and approval.status == "approved"
@@ -211,7 +221,9 @@ async def test_recovery_after_crash_uses_committed_resolution_checkpoint(
         async with postgres_restart_session_factory() as session:
             db_run = await session.get(WorkflowRun, run_id)
             db_workflow = await session.get(Workflow, workflow_id)
-            db_approval = await session.scalar(select(ApprovalRequest).where(ApprovalRequest.run_id == run_id))
+            db_approval = await session.scalar(
+                select(ApprovalRequest).where(ApprovalRequest.run_id == run_id)
+            )
             stored_checkpoints = await checkpoints(session, run_id)
             assert db_run is not None and db_run.status == "paused"
             assert db_workflow is not None
@@ -278,11 +290,15 @@ async def test_approval_restart_reject_cancels_without_execution_or_checkpoint(
                 session, WorkflowService(session), WorkflowEngine(guard)
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
-            await approval_service.reject(workflow_id, run_id, approval.id, user_id, note="rejected")
+            await approval_service.reject(
+                workflow_id, run_id, approval.id, user_id, note="rejected"
+            )
 
         async with postgres_restart_session_factory() as session:
             run = await session.get(WorkflowRun, run_id)
-            approval = await session.scalar(select(ApprovalRequest).where(ApprovalRequest.run_id == run_id))
+            approval = await session.scalar(
+                select(ApprovalRequest).where(ApprovalRequest.run_id == run_id)
+            )
             stored_checkpoints = await checkpoints(session, run_id)
             assert run is not None and run.status == "cancelled" and run.finished_at is not None
             assert approval is not None and approval.status == "rejected"

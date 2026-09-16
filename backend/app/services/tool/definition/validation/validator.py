@@ -50,7 +50,9 @@ class ToolSchemaValidator:
 
         schema = dict(definition.input_schema)
         instance = dict(arguments)
-        errors = sorted(Draft202012Validator(schema).iter_errors(instance), key=self._error_sort_key)
+        errors = sorted(
+            Draft202012Validator(schema).iter_errors(instance), key=self._error_sort_key
+        )
         issues = tuple(
             ToolSchemaValidationIssue(
                 code=ToolSchemaValidationCode.INVALID_ARGUMENTS,

@@ -105,7 +105,9 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
     assert created_run.status.value == "completed"
     assert events[:3] == ["create", "commit", "execute"]
     durability.assert_called_once_with(db, db_run, next_sequence=1)
-    service.engine.execute.assert_awaited_once_with(row and service._definition_from_row(row), created_run, persistence=persistence)
+    service.engine.execute.assert_awaited_once_with(
+        row and service._definition_from_row(row), created_run, persistence=persistence
+    )
     run_repo.update_workflow_run_state.assert_not_awaited()
 
 
@@ -161,8 +163,20 @@ async def test_paused_approval_run_is_durably_persisted_by_engine_without_termin
         {"id": "end", "kind": "end", "config": {}, "metadata": {}},
     ]
     row.definition["edges"] = [
-        {"id": "start-approval", "source": "start", "target": "approval", "condition": None, "metadata": {}},
-        {"id": "approval-end", "source": "approval", "target": "end", "condition": None, "metadata": {}},
+        {
+            "id": "start-approval",
+            "source": "start",
+            "target": "approval",
+            "condition": None,
+            "metadata": {},
+        },
+        {
+            "id": "approval-end",
+            "source": "approval",
+            "target": "end",
+            "condition": None,
+            "metadata": {},
+        },
     ]
     engine = WorkflowEngine(
         DispatchingNodeExecutor(
@@ -177,7 +191,9 @@ async def test_paused_approval_run_is_durably_persisted_by_engine_without_termin
     persistence.persist_node_completion = AsyncMock()
     persistence.persist_interruption = AsyncMock()
     with (
-        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
         patch(
             "app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence",
@@ -245,9 +261,9 @@ async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
     owner = uuid4()
     row = workflow_row(owner)
     engine = AsyncMock()
-    engine.validate_definition = MagicMock(side_effect=WorkflowExecutionValidationError(
-        WorkflowValidationResult(issues=())
-    ))
+    engine.validate_definition = MagicMock(
+        side_effect=WorkflowExecutionValidationError(WorkflowValidationResult(issues=()))
+    )
     service = WorkflowRunService(db, WorkflowService(db), engine)
     with (
         patch(

@@ -48,7 +48,7 @@ tests/
 ├── api/workflow/        # Workflow API tests using ordinary test overrides
 ├── api/tool/            # Production Tool Platform dependency composition tests
 └── integration/
-    ├── workflow/        # Opt-in real PostgreSQL AGENT workflow E2E
+    ├── workflow/        # Opt-in real PostgreSQL workflow E2E and restart recovery
     └── agent_runtime/   # Strict opt-in live compatible-provider smoke test
 ```
 
@@ -135,7 +135,7 @@ explicitly opt-in:
 ```powershell
 # Real PostgreSQL API -> service -> repository -> persistence E2E.
 $env:AGENTFORGE_RUN_POSTGRES_E2E = "1"
-uv run pytest tests/integration/workflow/test_agent_workflow_e2e.py -q
+uv run pytest tests/integration/workflow -q
 Remove-Item Env:AGENTFORGE_RUN_POSTGRES_E2E
 
 # Real LangGraph -> configured OpenAI-compatible provider smoke test.
@@ -149,3 +149,16 @@ The PostgreSQL E2E uses real PostgreSQL but replaces `AgentRunner` with a fake
 at the external boundary. The live runtime smoke uses the real configured
 provider and does not require PostgreSQL. Neither integration runs in the
 normal suite unless its environment variable is set.
+
+Workflow PostgreSQL coverage includes `test_agent_workflow_e2e.py`,
+`test_approval_workflow_e2e.py`, `test_checkpoint_postgres.py`, and
+`test_durable_recovery_postgres.py`. The durable recovery tests use `NullPool`,
+new `AsyncSession` instances, and real commits to prove cross-session and
+cross-connection recovery rather than reusing ORM state from the paused phase.
+
+## Migration-cycle safety
+
+`tests/test_migrations.py` executes `upgrade head`, `downgrade base`, and
+`upgrade head`. Run migration-cycle tests only against a disposable local or
+test database; do not run them against a database containing data that must be
+preserved.

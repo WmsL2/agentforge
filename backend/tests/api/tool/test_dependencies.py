@@ -35,7 +35,9 @@ async def test_production_service_executes_current_datetime_through_full_chain()
     async with open_tool_platform(()) as registry:
         service = get_tool_execution_service(get_tool_registry(_request_with_registry(registry)))
 
-        result = await service.execute(ToolExecutionRequest(tool_name="current_datetime", arguments={}))
+        result = await service.execute(
+            ToolExecutionRequest(tool_name="current_datetime", arguments={})
+        )
 
         assert set(result.output) == {"date", "time", "datetime"}
         assert all(isinstance(value, str) for value in result.output.values())

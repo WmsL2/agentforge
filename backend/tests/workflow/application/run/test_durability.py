@@ -21,7 +21,9 @@ async def test_persist_node_completion_creates_sequence_one_and_commits_once() -
     persistence = DurableWorkflowExecutionPersistence(db, db_run)
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
@@ -53,7 +55,9 @@ async def test_sequence_increments_only_after_successful_commit() -> None:
     persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock()
         checkpoint_repo.create_workflow_checkpoint = AsyncMock()
@@ -69,7 +73,10 @@ async def test_sequence_increments_only_after_successful_commit() -> None:
             pending_node_id="end",
         )
 
-    checkpoints = [call.kwargs["checkpoint"] for call in checkpoint_repo.create_workflow_checkpoint.await_args_list]
+    checkpoints = [
+        call.kwargs["checkpoint"]
+        for call in checkpoint_repo.create_workflow_checkpoint.await_args_list
+    ]
     assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 2]
     assert db.commit.await_count == 2
 
@@ -84,7 +91,9 @@ async def test_persist_interruption_updates_paused_run_and_records_interrupt() -
     persistence = DurableWorkflowExecutionPersistence(db, db_run)
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
@@ -123,7 +132,9 @@ async def test_commit_failure_propagates_without_advancing_sequence() -> None:
     persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock()
         checkpoint_repo.create_workflow_checkpoint = AsyncMock()
@@ -142,7 +153,10 @@ async def test_commit_failure_propagates_without_advancing_sequence() -> None:
             pending_node_id="value",
         )
 
-    checkpoints = [call.kwargs["checkpoint"] for call in checkpoint_repo.create_workflow_checkpoint.await_args_list]
+    checkpoints = [
+        call.kwargs["checkpoint"]
+        for call in checkpoint_repo.create_workflow_checkpoint.await_args_list
+    ]
     assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 1]
 
 
@@ -154,7 +168,9 @@ async def test_interruption_commit_failure_propagates_without_advancing_sequence
     persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock()
@@ -183,7 +199,10 @@ async def test_interruption_commit_failure_propagates_without_advancing_sequence
             },
         )
 
-    checkpoints = [call.kwargs["checkpoint"] for call in checkpoint_repo.create_workflow_checkpoint.await_args_list]
+    checkpoints = [
+        call.kwargs["checkpoint"]
+        for call in checkpoint_repo.create_workflow_checkpoint.await_args_list
+    ]
     assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 1]
 
 
@@ -197,7 +216,9 @@ async def test_approval_interruption_persists_run_checkpoint_and_request_in_one_
     persistence = DurableWorkflowExecutionPersistence(db, db_run)
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock(return_value=db_run)
@@ -233,7 +254,9 @@ async def test_generic_interruption_creates_no_approval_request() -> None:
     persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
     ):
         run_repo.update_workflow_run_state = AsyncMock()
@@ -268,7 +291,9 @@ async def test_malformed_approval_interruption_fails_before_repository_writes(in
     persistence = DurableWorkflowExecutionPersistence(db, MagicMock())
     with (
         patch("app.services.workflow.application.run.durability.run_repo") as run_repo,
-        patch("app.services.workflow.application.run.durability.checkpoint_repo") as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.run.durability.checkpoint_repo"
+        ) as checkpoint_repo,
         patch("app.services.workflow.application.run.durability.approval_repo") as approval_repo,
         pytest.raises(ValueError),
     ):

@@ -16,7 +16,9 @@ async def test_open_tool_platform_registers_native_tool_and_enters_mcp_lifecycle
     received_servers: list[Sequence[MCPStdioServerSettings]] = []
 
     @asynccontextmanager
-    async def fake_mcp_lifecycle(registry, servers: Sequence[MCPStdioServerSettings]) -> AsyncIterator[None]:
+    async def fake_mcp_lifecycle(
+        registry, servers: Sequence[MCPStdioServerSettings]
+    ) -> AsyncIterator[None]:
         received_servers.append(servers)
         yield
 

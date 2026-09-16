@@ -55,7 +55,9 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
             created = await client.post("/api/v1/workflows", json=payload)
             assert created.status_code == 201
             workflow_id = UUID(created.json()["id"])
-            executed = await client.post(f"/api/v1/workflows/{workflow_id}/runs", json={"input": {}})
+            executed = await client.post(
+                f"/api/v1/workflows/{workflow_id}/runs", json={"input": {}}
+            )
             assert executed.status_code == 201
             run_id = UUID(executed.json()["id"])
             postgres_session.info["e2e_workflow_id"] = workflow_id
@@ -90,7 +92,11 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
         workflow = await postgres_session.scalar(select(Workflow).where(Workflow.id == workflow_id))
         assert workflow is not None
         assert run is not None and run.status == "completed"
-        assert approval is not None and approval.status == "approved" and approval.decision_note == "Looks good"
+        assert (
+            approval is not None
+            and approval.status == "approved"
+            and approval.decision_note == "Looks good"
+        )
         assert run.node_outputs["approval"]["decision"] == "approved"
         assert [checkpoint.sequence for checkpoint in checkpoints] == [1, 2, 3, 4]
         assert checkpoints[1].pending_node_id == "approval"
@@ -113,7 +119,9 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
 async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_through_postgres(
     postgres_session: AsyncSession,
 ) -> None:
-    user = User(id=uuid4(), email=f"approval-reject-e2e-{uuid4()}@example.test", role=UserRole.USER.value)
+    user = User(
+        id=uuid4(), email=f"approval-reject-e2e-{uuid4()}@example.test", role=UserRole.USER.value
+    )
     postgres_session.add(user)
     await postgres_session.flush()
 
@@ -143,11 +151,15 @@ async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_th
             created = await client.post("/api/v1/workflows", json=payload)
             assert created.status_code == 201
             workflow_id = UUID(created.json()["id"])
-            executed = await client.post(f"/api/v1/workflows/{workflow_id}/runs", json={"input": {}})
+            executed = await client.post(
+                f"/api/v1/workflows/{workflow_id}/runs", json={"input": {}}
+            )
             assert executed.status_code == 201
             run_id = UUID(executed.json()["id"])
             assert executed.json()["status"] == "paused"
-            pending = await client.get(f"/api/v1/workflows/{workflow_id}/runs/{run_id}/approvals/pending")
+            pending = await client.get(
+                f"/api/v1/workflows/{workflow_id}/runs/{run_id}/approvals/pending"
+            )
             assert pending.status_code == 200
             approval_id = UUID(pending.json()["id"])
             rejected = await client.post(
@@ -158,7 +170,9 @@ async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_th
             assert rejected.json()["status"] == "rejected"
 
         run = await postgres_session.scalar(select(WorkflowRun).where(WorkflowRun.id == run_id))
-        approval = await postgres_session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id))
+        approval = await postgres_session.scalar(
+            select(ApprovalRequest).where(ApprovalRequest.id == approval_id)
+        )
         checkpoints = list(
             (
                 await postgres_session.scalars(

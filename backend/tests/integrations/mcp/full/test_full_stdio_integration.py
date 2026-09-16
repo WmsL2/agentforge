@@ -70,7 +70,11 @@ async def test_real_stdio_sdk_client_lists_and_calls_fixture_tools() -> None:
             descriptors = await client.list_tools()
             result = await client.call_tool("multiply", {"left": 6, "right": 7})
 
-    assert {descriptor.name for descriptor in descriptors} >= {"multiply", "read_env", "always_fail"}
+    assert {descriptor.name for descriptor in descriptors} >= {
+        "multiply",
+        "read_env",
+        "always_fail",
+    }
     assert result.output == {"value": 42}
     assert result.is_error is False
 
@@ -112,7 +116,9 @@ async def test_real_tool_platform_discovers_executes_and_propagates_server_resul
 
 
 @pytest.mark.anyio
-async def test_real_mcp_tool_completes_the_dynamic_langgraph_agent_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_real_mcp_tool_completes_the_dynamic_langgraph_agent_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     model = FakeChatModel()
     monkeypatch.setattr(
         LangGraphAgentRunner,
@@ -133,9 +139,12 @@ async def test_real_mcp_tool_completes_the_dynamic_langgraph_agent_loop(monkeypa
 
     bound_names = [tool.name for tool in model.bound_tools[0]]
     tool_message = next(message for message in model.calls[1] if isinstance(message, ToolMessage))
-    assert {"current_datetime", "fixture__multiply", "fixture__read_env", "fixture__always_fail"} <= set(
-        bound_names
-    )
+    assert {
+        "current_datetime",
+        "fixture__multiply",
+        "fixture__read_env",
+        "fixture__always_fail",
+    } <= set(bound_names)
     assert tool_message.name == "fixture__multiply"
     assert tool_message.tool_call_id == "call-1"
     assert "42" in str(tool_message.content)

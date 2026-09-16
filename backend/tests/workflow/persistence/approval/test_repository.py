@@ -96,6 +96,10 @@ async def test_update_maps_decision_without_committing(status: ApprovalRequestSt
     )
 
     assert updated is row
-    assert (row.status, row.decided_by, row.decision_note) == (status.value, actor, request.decision_note)
+    assert (row.status, row.decided_by, row.decision_note) == (
+        status.value,
+        actor,
+        request.decision_note,
+    )
     assert row.decided_at is not None
     db.commit.assert_not_awaited()

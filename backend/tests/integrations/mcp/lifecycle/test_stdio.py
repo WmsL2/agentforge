@@ -46,7 +46,9 @@ async def test_lifecycle_registers_multiple_servers_and_closes_all_clients(
     events: list[tuple[str, str, list[str], dict[str, str] | None]] = []
 
     @asynccontextmanager
-    async def fake_open(command: str, args: list[str], env: dict[str, str] | None) -> AsyncIterator[FakeMCPClient]:
+    async def fake_open(
+        command: str, args: list[str], env: dict[str, str] | None
+    ) -> AsyncIterator[FakeMCPClient]:
         namespace = "github" if command == "github-server" else "linear"
         events.append(("open", command, args, env))
         try:
@@ -87,7 +89,9 @@ async def test_lifecycle_closes_prior_server_when_a_later_server_fails(
     events: list[str] = []
 
     @asynccontextmanager
-    async def fake_open(command: str, args: list[str], env: dict[str, str] | None) -> AsyncIterator[FakeMCPClient]:
+    async def fake_open(
+        command: str, args: list[str], env: dict[str, str] | None
+    ) -> AsyncIterator[FakeMCPClient]:
         if command == "broken-server":
             raise RuntimeError("second server failed")
         events.append("first-open")

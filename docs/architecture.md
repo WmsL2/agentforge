@@ -4,8 +4,9 @@ This project follows a **Repository + Service** layered architecture. Most featu
 conversations, files, RAG documents, and sync sources — use the same pattern:
 **Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
 explicit Domain, Validation, and Execution layers to that foundation. v0.3
-adds Agent Runtime Integration, v0.4 adds the Tool Platform, and v0.5 adds MCP
-Integration & Tool Discovery without replacing the Repository + Service model.
+adds Agent Runtime Integration, v0.4 adds the Tool Platform, v0.5 adds MCP
+Integration & Tool Discovery, and v0.6 adds Durable Execution & Human-in-the-
+Loop without replacing the Repository + Service model.
 
 ## Request Flow
 
@@ -65,7 +66,7 @@ services, which in turn delegate to repositories.
 ### Repositories (`repositories/`)
 - Database operations only
 - No business logic
-- Uses `db.flush()` not `commit()` (the dependency-injected session manages transactions)
+- Uses `db.flush()` and never owns `commit()`
 - Returns ORM rows or result objects needed by services
 
 ### Schemas (`schemas/`)
@@ -81,6 +82,28 @@ services, which in turn delegate to repositories.
 The Workflow Core is not a conventional CRUD-only path. Its application services coordinate
 domain objects, validation, deterministic execution, and persistence. See the detailed
 [Workflow Core architecture](workflow-core.md).
+
+## Durable Execution & Human-in-the-Loop
+
+v0.6 adds a durable `WorkflowRun` lifecycle and append-only
+`WorkflowCheckpoint` records. Each successful node persists the mutable run
+state and its checkpoint before the next node can be scheduled. `APPROVAL`
+interrupts execution into a PAUSED run, interruption checkpoint, and PENDING
+approval request. Approve records a resolution checkpoint before resume; reject
+cancels the paused run without downstream execution.
+
+`definition_snapshot` preserves the graph revision used by a run. Fresh
+PostgreSQL sessions can reconstruct a run from that snapshot and its latest
+checkpoint, skipping completed nodes. This is a recovery primitive, not an
+automatic startup scanner or background worker. See
+[Durable Execution & Human-in-the-Loop](durable-execution.md).
+
+```text
+HTTP / application action
+  -> WorkflowRunService / WorkflowApprovalService
+  -> WorkflowEngine -> NodeExecutor -> WorkflowExecutionPersistence
+  -> Run + Checkpoint -> PostgreSQL COMMIT
+```
 
 ## Agent Runtime Integration
 
@@ -174,9 +197,10 @@ Request-scoped AsyncSession instance
 PostgreSQL workflows / workflow_runs tables
 ```
 
-`get_db_session` owns request-level transaction handling: it commits when the request succeeds
-and rolls back when an exception escapes. Services do not commit independently; repositories use
-`flush()` so generated identifiers and state are available within the same transaction.
+Repositories never own commit and use `flush()` so generated identifiers and
+state are available inside a transaction. Ordinary request CRUD normally commits
+at the request boundary through `get_db_session`; durable workflow orchestration
+deliberately owns explicit commits at checkpoint and recovery boundaries.
 
 ## Key Files
 
