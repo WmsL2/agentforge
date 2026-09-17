@@ -11,6 +11,7 @@ from app.api.deps import (
     get_tool_execution_service,
     get_tool_registry,
     get_workflow_engine,
+    get_workflow_execution_observer,
 )
 from app.composition.tool_platform import open_tool_platform
 from app.integrations.mcp import MCPToolCallResult, MCPToolExecutor
@@ -19,6 +20,7 @@ from app.services.agent_runtime.runner.implementations import LangGraphAgentRunn
 from app.services.tool import ToolDefinition, ToolRegistry
 from app.services.tool.execution.executor.implementations import NativeCallableToolExecutor
 from app.services.workflow import (
+    NoOpWorkflowExecutionObserver,
     WorkflowDefinition,
     WorkflowEdge,
     WorkflowNode,
@@ -26,6 +28,7 @@ from app.services.workflow import (
     WorkflowRun,
     WorkflowRunStatus,
 )
+from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
 
 
 class FakeAgentRunner:
@@ -113,6 +116,10 @@ def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
     runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
 
     assert isinstance(runner, LangGraphAgentRunner)
+
+
+def test_get_workflow_execution_observer_returns_sqlalchemy_implementation() -> None:
+    assert isinstance(get_workflow_execution_observer(), SQLAlchemyWorkflowExecutionObserver)
 
 
 def test_production_composition_executes_current_datetime_tool_loop(
@@ -261,7 +268,9 @@ def test_production_composition_executes_agent_node_with_injected_runner() -> No
     )
     workflow_run = _run({"question": "What is the answer?"})
 
-    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+    asyncio.run(
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+    )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
     assert len(runner.requests) == 1
@@ -286,7 +295,9 @@ def test_production_composition_preserves_deterministic_execution() -> None:
     )
     workflow_run = _run({"ignored": True})
 
-    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+    asyncio.run(
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+    )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
     assert workflow_run.node_outputs["value"] == 42
@@ -310,7 +321,9 @@ def test_production_composition_pauses_at_approval_node() -> None:
     )
     workflow_run = _run({})
 
-    asyncio.run(get_workflow_engine(runner).execute(definition, workflow_run))
+    asyncio.run(
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+    )
 
     assert workflow_run.status is WorkflowRunStatus.PAUSED
     assert workflow_run.node_outputs == {"start": {}}

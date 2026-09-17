@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db_session
+from app.db.session import async_session_maker, get_db_session
 
 DBSession = Annotated[AsyncSession, Depends(get_db_session)]
 from uuid import UUID
@@ -41,10 +41,12 @@ from app.services.workflow import (
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
     WorkflowEngine,
+    WorkflowExecutionObserver,
     WorkflowApprovalService,
     WorkflowRunService,
     WorkflowService,
 )
+from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
 from app.services.agent_runtime import AgentRunner
 from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
@@ -115,7 +117,21 @@ def get_langgraph_agent_runner(
 LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
 
 
-def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:
+def get_workflow_execution_observer() -> WorkflowExecutionObserver:
+    """Create an observer with its own short-lived database sessions."""
+    return SQLAlchemyWorkflowExecutionObserver(async_session_maker)
+
+
+WorkflowExecutionObserverDep = Annotated[
+    WorkflowExecutionObserver,
+    Depends(get_workflow_execution_observer),
+]
+
+
+def get_workflow_engine(
+    langgraph_runner: LangGraphRunnerDep,
+    observer: WorkflowExecutionObserverDep,
+) -> WorkflowEngine:
     """Compose the production workflow engine and its node executors."""
     deterministic_executor = DeterministicNodeExecutor()
     agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner})
@@ -125,7 +141,7 @@ def get_workflow_engine(langgraph_runner: LangGraphRunnerDep) -> WorkflowEngine:
         agent_executor=agent_executor,
         approval_executor=approval_executor,
     )
-    return WorkflowEngine(dispatching_executor)
+    return WorkflowEngine(dispatching_executor, observer=observer)
 
 
 WorkflowEngineDep = Annotated[WorkflowEngine, Depends(get_workflow_engine)]
