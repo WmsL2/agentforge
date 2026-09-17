@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+from uuid import UUID
+
 from app.services.workflow.definition.model.domain import (
     WorkflowDefinition,
     WorkflowNode,
@@ -16,7 +19,16 @@ from app.services.workflow.execution.engine.persistence import WorkflowExecution
 from app.services.workflow.execution.executor.contract import (
     NodeExecutionContext,
     NodeExecutionOutcome,
+    NodeExecutionResult,
     NodeExecutor,
+)
+from app.services.workflow.execution.observability.domain import RunStepError
+from app.services.workflow.execution.observability.observer.contract import (
+    WorkflowExecutionObserver,
+    WorkflowObservationContext,
+)
+from app.services.workflow.execution.observability.observer.noop import (
+    NoOpWorkflowExecutionObserver,
 )
 from app.services.workflow.execution.run.domain import (
     WorkflowRun,
@@ -45,8 +57,14 @@ class WorkflowResumeValidationError(ValueError):
 class WorkflowEngine:
     """Run validated DAGs in declaration order through a node executor."""
 
-    def __init__(self, executor: NodeExecutor):
+    def __init__(
+        self,
+        executor: NodeExecutor,
+        *,
+        observer: WorkflowExecutionObserver | None = None,
+    ):
         self._executor = executor
+        self._observer = observer or NoOpWorkflowExecutionObserver()
 
     async def execute(
         self,
@@ -177,10 +195,15 @@ class WorkflowEngine:
                 upstream_outputs=upstream_outputs,
                 node_outputs=run.node_outputs,
             )
+            observation_context = await self._start_observation(run.id, ready_node, context)
             try:
                 result = await self._executor.execute(ready_node, context)
             except Exception as exception:
                 message = str(exception) or type(exception).__name__
+                await self._fail_observation(
+                    observation_context,
+                    RunStepError(code="node_execution_failed", message=message),
+                )
                 run.fail(
                     WorkflowRunError(
                         code="node_execution_failed",
@@ -196,6 +219,7 @@ class WorkflowEngine:
                     raise RuntimeError(
                         "Interrupted node execution result is missing interrupt data."
                     )
+                await self._interrupt_observation(observation_context, result)
                 run.pause()
                 if persistence is not None:
                     await persistence.persist_interruption(
@@ -208,6 +232,7 @@ class WorkflowEngine:
                     )
                 return run
 
+            await self._complete_observation(observation_context, result)
             run.node_outputs[ready_node.id] = result.output
             completed.add(ready_node.id)
             if len(completed) == len(definition.nodes):
@@ -237,6 +262,45 @@ class WorkflowEngine:
                 return run
 
         raise RuntimeError("Validated workflow execution made no scheduling progress.")
+
+    async def _start_observation(
+        self,
+        run_id: UUID,
+        node: WorkflowNode,
+        execution_context: NodeExecutionContext,
+    ) -> WorkflowObservationContext:
+        try:
+            return await self._observer.start_step(
+                run_id=run_id,
+                node=node,
+                execution_context=execution_context,
+            )
+        except Exception:
+            return WorkflowObservationContext(run_id=run_id)
+
+    async def _complete_observation(
+        self,
+        context: WorkflowObservationContext,
+        result: NodeExecutionResult,
+    ) -> None:
+        with suppress(Exception):
+            await self._observer.complete_step(context, result=result)
+
+    async def _fail_observation(
+        self,
+        context: WorkflowObservationContext,
+        error: RunStepError,
+    ) -> None:
+        with suppress(Exception):
+            await self._observer.fail_step(context, error=error, metadata={})
+
+    async def _interrupt_observation(
+        self,
+        context: WorkflowObservationContext,
+        result: NodeExecutionResult,
+    ) -> None:
+        with suppress(Exception):
+            await self._observer.interrupt_step(context, result=result)
 
     @staticmethod
     def _next_ready_node(
