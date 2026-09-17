@@ -7,12 +7,15 @@ from app.services.workflow.execution.approval import (
 )
 from app.services.workflow.execution.checkpoint import WorkflowCheckpoint
 from app.services.workflow.execution.observability import (
+    NoOpWorkflowExecutionObserver,
     RunStep,
     RunStepError,
     RunStepStatus,
     RunStepTransitionError,
     TraceEvent,
     TraceEventKind,
+    WorkflowExecutionObserver,
+    WorkflowObservationContext,
 )
 from app.services.workflow.execution.engine import (
     WorkflowEngine,
@@ -51,12 +54,15 @@ __all__ = [
     "NodeExecutionOutcome",
     "NodeExecutionResult",
     "NodeExecutor",
+    "NoOpWorkflowExecutionObserver",
     "RunStep",
     "RunStepError",
     "RunStepStatus",
     "RunStepTransitionError",
     "TraceEvent",
     "TraceEventKind",
+    "WorkflowExecutionObserver",
+    "WorkflowObservationContext",
     "WorkflowCheckpoint",
     "WorkflowEngine",
     "WorkflowExecutionPersistence",
