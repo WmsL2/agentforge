@@ -41,7 +41,11 @@ class Runner:
 
 def context(*, step_id=None) -> NodeExecutionContext:
     return NodeExecutionContext(
-        run_id=uuid4(), workflow_input={}, upstream_outputs={"start": {}}, node_outputs={}, step_id=step_id
+        run_id=uuid4(),
+        workflow_input={},
+        upstream_outputs={"start": {}},
+        node_outputs={},
+        step_id=step_id,
     )
 
 
@@ -56,7 +60,11 @@ def test_agent_events_and_request_share_the_current_run_step_identity() -> None:
     execution_context = context(step_id=step_id)
     observer, runner = Observer(), Runner()
 
-    asyncio.run(AgentNodeExecutor({"langgraph": runner}, observer=observer).execute(agent(), execution_context))
+    asyncio.run(
+        AgentNodeExecutor({"langgraph": runner}, observer=observer).execute(
+            agent(), execution_context
+        )
+    )
 
     assert runner.request.trace_run_id == execution_context.run_id
     assert runner.request.trace_step_id == step_id
@@ -87,9 +95,33 @@ def test_agent_failure_records_but_preserves_original_runtime_error() -> None:
     }
 
 
+def test_agent_generic_failure_is_recorded_and_preserves_original_error() -> None:
+    original = RuntimeError("boom")
+    observer = Observer()
+
+    with pytest.raises(RuntimeError) as error_info:
+        asyncio.run(
+            AgentNodeExecutor({"langgraph": Runner(original)}, observer=observer).execute(
+                agent(), context(step_id=uuid4())
+            )
+        )
+
+    assert error_info.value is original
+    assert observer.events[-1][1] is TraceEventKind.AGENT_FAILED
+    assert observer.events[-1][2]["error"] == {
+        "code": "agent_execution_failed",
+        "message": "boom",
+        "retryable": False,
+    }
+
+
 def test_agent_trace_is_optional_and_observer_errors_are_fail_open() -> None:
     no_step_observer, runner = Observer(), Runner()
-    asyncio.run(AgentNodeExecutor({"langgraph": runner}, observer=no_step_observer).execute(agent(), context()))
+    asyncio.run(
+        AgentNodeExecutor({"langgraph": runner}, observer=no_step_observer).execute(
+            agent(), context()
+        )
+    )
     assert no_step_observer.events == []
 
     failing_observer = Observer(RuntimeError("trace unavailable"))
@@ -118,4 +150,6 @@ def test_approval_requested_is_step_bound_and_fail_open() -> None:
         )
     ]
     assert observer.events[0][0].step_id == step_id
-    assert asyncio.run(ApprovalNodeExecutor(observer=Observer(RuntimeError())).execute(node, execution_context)).interrupt
+    assert asyncio.run(
+        ApprovalNodeExecutor(observer=Observer(RuntimeError())).execute(node, execution_context)
+    ).interrupt

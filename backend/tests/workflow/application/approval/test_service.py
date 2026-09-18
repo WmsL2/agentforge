@@ -12,6 +12,7 @@ from app.services.workflow.application.approval.service import (
     WorkflowApprovalConflictError,
     WorkflowApprovalService,
 )
+from app.services.workflow.execution.observability import TraceEventKind
 from app.services.workflow.execution.run import WorkflowRunStatus
 
 
@@ -91,16 +92,36 @@ def rows(status="pending"):
     return workflow, run, approval, checkpoint
 
 
-def service():
+class RecordingObserver:
+    def __init__(self, events, *, error: Exception | None = None) -> None:
+        self.events = events
+        self.error = error
+        self.recorded = []
+
+    async def record_event(self, context, *, kind, payload) -> None:
+        self.events.append(kind)
+        self.recorded.append((context, kind, payload))
+        if self.error is not None:
+            raise self.error
+
+
+def service(*, observer=None):
     db, workflow_service, engine = AsyncMock(), AsyncMock(), MagicMock()
     engine.validate_resume = MagicMock()
     engine.resume = AsyncMock()
-    return WorkflowApprovalService(db, workflow_service, engine), db, workflow_service, engine
+    return (
+        WorkflowApprovalService(db, workflow_service, engine, observer=observer),
+        db,
+        workflow_service,
+        engine,
+    )
 
 
 @pytest.mark.anyio
 async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
-    svc, db, workflow_service, engine = service()
+    events = []
+    observer = RecordingObserver(events)
+    svc, db, workflow_service, engine = service(observer=observer)
     workflow, run, approval, checkpoint = rows()
     resolved = SimpleNamespace(
         **{
@@ -113,7 +134,6 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
         }
     )
     workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
-    events = []
     decided = {}
     resolution_outputs = {}
     with (
@@ -131,7 +151,6 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
 
         async def update_approval(*_args, **kwargs):
             decided["approval"] = kwargs["approval"]
-            events.append("approval")
             return approval
 
         approval_repo.update_approval_request_state = AsyncMock(side_effect=update_approval)
@@ -147,21 +166,37 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
                 "pending_node_id": None,
             }
             resolution_outputs.update(decision_run.node_outputs)
-            events.append("checkpoint")
+            events.append("persist_node_completion")
 
         persistence.persist_node_completion = AsyncMock(side_effect=persist_node_completion)
         durability.return_value = persistence
-        engine.resume.side_effect = lambda *_, **__: events.append("resume")
-        result = await svc.approve(workflow.id, run.id, approval.id, uuid4(), note="ok")
+        engine.resume.side_effect = lambda *_, **__: events.append("engine.resume")
+        decided_by = uuid4()
+        result = await svc.approve(workflow.id, run.id, approval.id, decided_by, note="ok")
 
     assert result is approval
-    assert events == ["approval", "checkpoint", "resume"]
+    assert events == [
+        "persist_node_completion",
+        TraceEventKind.APPROVAL_APPROVED,
+        "engine.resume",
+    ]
+    decided_approval = decided["approval"]
+    observation_context, kind, payload = observer.recorded[0]
+    assert kind is TraceEventKind.APPROVAL_APPROVED
+    assert observation_context.run_id == run.id
+    assert observation_context.step_id is None
+    assert payload == {
+        "approval_id": str(approval.id),
+        "node_id": "approval",
+        "decided_by": str(decided_by),
+        "decided_at": decided_approval.decided_at.isoformat(),
+        "decision_note": "ok",
+    }
     approval_repo.get_approval_request_by_id_for_update.assert_awaited_once()
     durability.assert_called_once_with(db, run, next_sequence=3)
     definition = engine.resume.await_args.args[0]
     assert definition.nodes[2].config["value"] == "old"
     assert engine.resume.await_args.args[2].completed_node_ids == ("start", "approval")
-    decided_approval = decided["approval"]
     assert resolution_outputs["approval"] == {
         "decision": "approved",
         "approval_id": str(approval.id),
@@ -173,7 +208,9 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
 
 @pytest.mark.anyio
 async def test_reject_cancels_without_resume_or_checkpoint():
-    svc, db, workflow_service, engine = service()
+    events = []
+    observer = RecordingObserver(events)
+    svc, db, workflow_service, engine = service(observer=observer)
     workflow, run, approval, checkpoint = rows()
     workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
     with (
@@ -188,13 +225,101 @@ async def test_reject_cancels_without_resume_or_checkpoint():
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
         approval_repo.update_approval_request_state = AsyncMock(return_value=approval)
         checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(return_value=checkpoint)
-        await svc.reject(workflow.id, run.id, approval.id, uuid4())
+        db.commit.side_effect = lambda: events.append("db.commit")
+        result = await svc.reject(workflow.id, run.id, approval.id, uuid4(), note="stop")
 
     assert approval.status == "pending"
     persisted = run_repo.update_workflow_run_state.await_args.kwargs["run"]
     assert persisted.status.value == "cancelled" and persisted.finished_at is not None
     engine.resume.assert_not_awaited()
     db.commit.assert_awaited_once()
+    assert result is approval
+    assert events == ["db.commit", TraceEventKind.APPROVAL_REJECTED]
+    observation_context, kind, payload = observer.recorded[0]
+    assert kind is TraceEventKind.APPROVAL_REJECTED
+    assert observation_context.run_id == run.id
+    assert observation_context.step_id is None
+    assert payload["approval_id"] == str(approval.id)
+    assert payload["node_id"] == "approval"
+    assert payload["decision_note"] == "stop"
+
+
+@pytest.mark.anyio
+async def test_approve_observer_failure_does_not_prevent_engine_resume():
+    events = []
+    svc, _, workflow_service, engine = service(
+        observer=RecordingObserver(events, error=RuntimeError("trace unavailable"))
+    )
+    workflow, run, approval, checkpoint = rows()
+    resolved = SimpleNamespace(
+        **{
+            **checkpoint.__dict__,
+            "sequence": 3,
+            "completed_node_ids": ["start", "approval"],
+            "node_outputs": {"start": {}, "approval": {"decision": "approved"}},
+            "pending_node_id": None,
+            "interrupt": None,
+        }
+    )
+    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    with (
+        patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
+        patch(
+            "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
+        ) as durability,
+    ):
+        run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
+        approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
+        approval_repo.update_approval_request_state = AsyncMock(return_value=approval)
+        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(
+            side_effect=[checkpoint, resolved]
+        )
+        persistence = MagicMock()
+        persistence.persist_node_completion = AsyncMock(
+            side_effect=lambda *_args, **_kwargs: events.append("persist")
+        )
+        durability.return_value = persistence
+        engine.resume.side_effect = lambda *_args, **_kwargs: events.append("resume")
+
+        assert await svc.approve(workflow.id, run.id, approval.id, uuid4()) is approval
+
+    assert events == ["persist", TraceEventKind.APPROVAL_APPROVED, "resume"]
+    engine.resume.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_reject_observer_failure_keeps_run_cancelled_and_returns_resolution():
+    events = []
+    svc, db, workflow_service, _ = service(
+        observer=RecordingObserver(events, error=RuntimeError("trace unavailable"))
+    )
+    workflow, run, approval, checkpoint = rows()
+    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    with (
+        patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
+        patch(
+            "app.services.workflow.application.approval.service.checkpoint_repo"
+        ) as checkpoint_repo,
+    ):
+        run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
+        run_repo.update_workflow_run_state = AsyncMock()
+        approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
+        approval_repo.update_approval_request_state = AsyncMock(return_value=approval)
+        checkpoint_repo.get_latest_workflow_checkpoint = AsyncMock(return_value=checkpoint)
+        db.commit.side_effect = lambda: events.append("commit")
+
+        assert await svc.reject(workflow.id, run.id, approval.id, uuid4()) is approval
+
+    assert events == ["commit", TraceEventKind.APPROVAL_REJECTED]
+    assert (
+        run_repo.update_workflow_run_state.await_args.kwargs["run"].status
+        is WorkflowRunStatus.CANCELLED
+    )
 
 
 @pytest.mark.anyio
