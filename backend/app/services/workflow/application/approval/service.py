@@ -1,6 +1,7 @@
 """Approval decisions that safely continue or cancel paused workflow runs."""
 
 from collections.abc import Mapping
+from contextlib import suppress
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,12 @@ from app.services.workflow.definition.serialization import deserialize_workflow_
 from app.services.workflow.execution.approval import deserialize_approval_request
 from app.services.workflow.execution.checkpoint import deserialize_workflow_checkpoint
 from app.services.workflow.execution.engine import WorkflowEngine
+from app.services.workflow.execution.observability.domain import TraceEventKind
+from app.services.workflow.execution.observability.observer import (
+    NoOpWorkflowExecutionObserver,
+    WorkflowExecutionObserver,
+    WorkflowObservationContext,
+)
 from app.services.workflow.execution.run import WorkflowRunStatus, deserialize_workflow_run
 
 
@@ -25,8 +32,16 @@ class WorkflowApprovalConflictError(AppException):
 
 
 class WorkflowApprovalService:
-    def __init__(self, db: AsyncSession, workflow_service: WorkflowService, engine: WorkflowEngine):
+    def __init__(
+        self,
+        db: AsyncSession,
+        workflow_service: WorkflowService,
+        engine: WorkflowEngine,
+        *,
+        observer: WorkflowExecutionObserver | None = None,
+    ):
         self.db, self.workflow_service, self.engine = db, workflow_service, engine
+        self._observer = observer or NoOpWorkflowExecutionObserver()
 
     async def get_pending_approval(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
         await self._owned_run(workflow_id, run_id, user_id)
@@ -63,6 +78,7 @@ class WorkflowApprovalService:
         await persistence.persist_node_completion(
             run, completed_node_ids=resolved.completed_node_ids, pending_node_id=None
         )
+        await self._record_decision(TraceEventKind.APPROVAL_APPROVED, run.id, approval)
         latest = await checkpoint_repo.get_latest_workflow_checkpoint(self.db, run.id)
         if latest is None or latest.sequence < resolved.sequence:
             raise _invalid("Approval completion checkpoint was not persisted.")
@@ -91,7 +107,22 @@ class WorkflowApprovalService:
         )
         await run_repo.update_workflow_run_state(self.db, db_run=db_run, run=run)
         await self.db.commit()
+        await self._record_decision(TraceEventKind.APPROVAL_REJECTED, run.id, approval)
         return updated
+
+    async def _record_decision(self, kind: TraceEventKind, run_id: UUID, approval) -> None:
+        with suppress(Exception):
+            await self._observer.record_event(
+                WorkflowObservationContext(run_id=run_id),
+                kind=kind,
+                payload={
+                    "approval_id": str(approval.id),
+                    "node_id": approval.node_id,
+                    "decided_by": str(approval.decided_by),
+                    "decided_at": approval.decided_at.isoformat(),
+                    "decision_note": approval.decision_note,
+                },
+            )
 
     async def _owned_run(self, workflow_id, run_id, user_id):
         workflow = await self.workflow_service.get_owned_workflow(workflow_id, user_id)

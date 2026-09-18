@@ -1,6 +1,7 @@
 """Tests for the LangGraph Tool Platform adapter."""
 
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
@@ -8,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from typing_extensions import TypedDict
 
+from app.services.agent_runtime.execution.trace_context import bind_trace_context
 from app.services.agent_runtime.runner.implementations import LangGraphToolAdapter
 from app.services.tool import (
     ToolDefinition,
@@ -84,6 +86,21 @@ async def test_adapter_executes_only_through_tool_execution_service() -> None:
     assert executor.received_request is not None
     assert executor.received_request.tool_name == "add"
     assert executor.received_request.arguments == {"a": 1, "b": 2}
+
+
+@pytest.mark.anyio
+async def test_adapter_propagates_bound_agent_trace_identity_to_tool_request() -> None:
+    definition = _add_definition()
+    executor = RecordingExecutor(output=3)
+    tool = LangGraphToolAdapter(_service(definition, executor)).adapt(definition)
+    run_id, step_id = uuid4(), uuid4()
+
+    with bind_trace_context(run_id, step_id):
+        assert await tool.ainvoke({"a": 1, "b": 2}) == 3
+
+    assert executor.received_request is not None
+    assert executor.received_request.trace_run_id == run_id
+    assert executor.received_request.trace_step_id == step_id
 
 
 @pytest.mark.anyio

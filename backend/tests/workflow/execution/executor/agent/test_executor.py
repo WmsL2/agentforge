@@ -48,11 +48,12 @@ def agent_node(**config: object) -> WorkflowNode:
 def test_agent_node_executor_maps_request_and_result() -> None:
     runner = FakeAgentRunner(AgentExecutionResult(output={"answer": 42}, metadata={"tokens": 3}))
     executor = AgentNodeExecutor({"langgraph": runner})
+    execution_context = context({"value_a": "A", "value_b": "B"})
 
     result = asyncio.run(
         executor.execute(
             agent_node(model="gpt-5-mini"),
-            context({"value_a": "A", "value_b": "B"}),
+            execution_context,
         )
     )
 
@@ -61,6 +62,7 @@ def test_agent_node_executor_maps_request_and_result() -> None:
             instruction="Analyze input.",
             input={"value_a": "A", "value_b": "B"},
             model="gpt-5-mini",
+            trace_run_id=execution_context.run_id,
         )
     ]
     assert runner.requests[0].metadata == {}

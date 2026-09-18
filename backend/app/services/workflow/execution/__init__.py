@@ -6,17 +6,6 @@ from app.services.workflow.execution.approval import (
     ApprovalRequestTransitionError,
 )
 from app.services.workflow.execution.checkpoint import WorkflowCheckpoint
-from app.services.workflow.execution.observability import (
-    NoOpWorkflowExecutionObserver,
-    RunStep,
-    RunStepError,
-    RunStepStatus,
-    RunStepTransitionError,
-    TraceEvent,
-    TraceEventKind,
-    WorkflowExecutionObserver,
-    WorkflowObservationContext,
-)
 from app.services.workflow.execution.engine import (
     WorkflowEngine,
     WorkflowExecutionPersistence,
@@ -34,6 +23,17 @@ from app.services.workflow.execution.executor import (
     NodeExecutionResult,
     NodeExecutor,
 )
+from app.services.workflow.execution.observability import (
+    NoOpWorkflowExecutionObserver,
+    RunStep,
+    RunStepError,
+    RunStepStatus,
+    RunStepTransitionError,
+    TraceEvent,
+    TraceEventKind,
+    WorkflowExecutionObserver,
+    WorkflowObservationContext,
+)
 from app.services.workflow.execution.run import (
     WorkflowRun,
     WorkflowRunError,
@@ -49,24 +49,24 @@ __all__ = [
     "ApprovalRequestTransitionError",
     "DeterministicNodeExecutor",
     "DispatchingNodeExecutor",
+    "NoOpWorkflowExecutionObserver",
     "NodeExecutionContext",
     "NodeExecutionInterrupt",
     "NodeExecutionOutcome",
     "NodeExecutionResult",
     "NodeExecutor",
-    "NoOpWorkflowExecutionObserver",
     "RunStep",
     "RunStepError",
     "RunStepStatus",
     "RunStepTransitionError",
     "TraceEvent",
     "TraceEventKind",
-    "WorkflowExecutionObserver",
-    "WorkflowObservationContext",
     "WorkflowCheckpoint",
     "WorkflowEngine",
+    "WorkflowExecutionObserver",
     "WorkflowExecutionPersistence",
     "WorkflowExecutionValidationError",
+    "WorkflowObservationContext",
     "WorkflowResumeValidationError",
     "WorkflowRun",
     "WorkflowRunError",

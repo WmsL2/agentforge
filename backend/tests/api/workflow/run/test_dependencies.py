@@ -1,7 +1,9 @@
 """Production workflow-engine dependency composition tests."""
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
@@ -10,6 +12,7 @@ from app.api.deps import (
     get_langgraph_agent_runner,
     get_tool_execution_service,
     get_tool_registry,
+    get_workflow_approval_service,
     get_workflow_engine,
     get_workflow_execution_observer,
 )
@@ -17,7 +20,7 @@ from app.composition.tool_platform import open_tool_platform
 from app.integrations.mcp import MCPToolCallResult, MCPToolExecutor
 from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
 from app.services.agent_runtime.runner.implementations import LangGraphAgentRunner
-from app.services.tool import ToolDefinition, ToolRegistry
+from app.services.tool import ToolDefinition, ToolExecutionRequest, ToolRegistry
 from app.services.tool.execution.executor.implementations import NativeCallableToolExecutor
 from app.services.workflow import (
     NoOpWorkflowExecutionObserver,
@@ -29,6 +32,7 @@ from app.services.workflow import (
     WorkflowRunStatus,
 )
 from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
+from app.services.workflow.execution.observability import TraceEventKind, WorkflowObservationContext
 
 
 class FakeAgentRunner:
@@ -41,6 +45,28 @@ class FakeAgentRunner:
     async def run(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         self.requests.append(request)
         return AgentExecutionResult(output=self._output)
+
+
+class RecordingWorkflowObserver:
+    """Offline observer proving dependency factories keep one trace composition."""
+
+    def __init__(self) -> None:
+        self.events: list[TraceEventKind] = []
+
+    async def start_step(self, *, run_id, node, execution_context):
+        return WorkflowObservationContext(run_id=run_id, step_id=uuid4())
+
+    async def complete_step(self, context, *, result) -> None:
+        return None
+
+    async def fail_step(self, context, *, error, metadata) -> None:
+        return None
+
+    async def interrupt_step(self, context, *, result) -> None:
+        return None
+
+    async def record_event(self, context, *, kind, payload) -> None:
+        self.events.append(kind)
 
 
 def _definition(
@@ -108,12 +134,18 @@ def _runner_with_model(monkeypatch, registry: ToolRegistry, model: RecordingChat
         "_create_model",
         staticmethod(lambda _model_name: model),
     )
-    return get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    return get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
 
 def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
     registry = get_tool_registry(_request_with_registry(_registry()))
-    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    runner = get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
     assert isinstance(runner, LangGraphAgentRunner)
 
@@ -157,7 +189,10 @@ def test_production_composition_executes_current_datetime_tool_loop(
         staticmethod(lambda _model_name: model),
     )
     registry = get_tool_registry(_request_with_registry(_registry()))
-    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    runner = get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
     result = asyncio.run(
         runner.run(AgentExecutionRequest(instruction="Get the time.", input="now"))
@@ -269,7 +304,9 @@ def test_production_composition_executes_agent_node_with_injected_runner() -> No
     workflow_run = _run({"question": "What is the answer?"})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
+            definition, workflow_run
+        )
     )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
@@ -296,7 +333,9 @@ def test_production_composition_preserves_deterministic_execution() -> None:
     workflow_run = _run({"ignored": True})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
+            definition, workflow_run
+        )
     )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
@@ -322,10 +361,79 @@ def test_production_composition_pauses_at_approval_node() -> None:
     workflow_run = _run({})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
+        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
+            definition, workflow_run
+        )
     )
 
     assert workflow_run.status is WorkflowRunStatus.PAUSED
     assert workflow_run.node_outputs == {"start": {}}
     assert workflow_run.output is None
     assert runner.requests == []
+
+
+def test_production_dependency_factories_share_the_supplied_observability_composition() -> None:
+    observer = RecordingWorkflowObserver()
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition("echo", "Echo", {"type": "object"}),
+        NativeCallableToolExecutor(lambda: "ok"),
+    )
+    run_id, step_id = uuid4(), uuid4()
+
+    assert (
+        asyncio.run(
+            get_tool_execution_service(registry, observer).execute(
+                ToolExecutionRequest("echo", trace_run_id=run_id, trace_step_id=step_id)
+            )
+        ).output
+        == "ok"
+    )
+
+    runner = FakeAgentRunner()
+    engine = get_workflow_engine(runner, observer)
+    agent_definition = _definition(
+        (
+            WorkflowNode("start", WorkflowNodeKind.START),
+            WorkflowNode(
+                "agent", WorkflowNodeKind.AGENT, {"runner": "langgraph", "instruction": "Run."}
+            ),
+            WorkflowNode("end", WorkflowNodeKind.END),
+        ),
+        (WorkflowEdge("start-agent", "start", "agent"), WorkflowEdge("agent-end", "agent", "end")),
+    )
+    asyncio.run(engine.execute(agent_definition, _run({})))
+    approval_definition = _definition(
+        (
+            WorkflowNode("start", WorkflowNodeKind.START),
+            WorkflowNode("approval", WorkflowNodeKind.APPROVAL, {"prompt": "Continue?"}),
+            WorkflowNode("end", WorkflowNodeKind.END),
+        ),
+        (
+            WorkflowEdge("start-approval", "start", "approval"),
+            WorkflowEdge("approval-end", "approval", "end"),
+        ),
+    )
+    asyncio.run(engine.execute(approval_definition, _run({})))
+    approval_service = get_workflow_approval_service(
+        AsyncMock(), AsyncMock(), MagicMock(), observer
+    )
+    approval = MagicMock(
+        id=uuid4(),
+        node_id="approval",
+        decided_by=uuid4(),
+        decided_at=datetime.now(),
+        decision_note=None,
+    )
+    asyncio.run(
+        approval_service._record_decision(TraceEventKind.APPROVAL_APPROVED, run_id, approval)
+    )
+
+    assert observer.events == [
+        TraceEventKind.TOOL_STARTED,
+        TraceEventKind.TOOL_COMPLETED,
+        TraceEventKind.AGENT_STARTED,
+        TraceEventKind.AGENT_COMPLETED,
+        TraceEventKind.APPROVAL_REQUESTED,
+        TraceEventKind.APPROVAL_APPROVED,
+    ]

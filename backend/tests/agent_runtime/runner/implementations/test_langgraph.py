@@ -2,6 +2,7 @@
 
 import asyncio
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -11,6 +12,10 @@ from app.core.config import settings
 from app.services.agent_runtime import (
     AgentExecutionRequest,
     AgentRuntimeError,
+)
+from app.services.agent_runtime.execution.trace_context import (
+    bind_trace_context,
+    current_trace_context,
 )
 from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
@@ -224,6 +229,88 @@ def test_langgraph_runner_translates_model_errors() -> None:
     assert error.value.message == "provider exploded"
     assert error.value.retryable is False
     assert error.value.__cause__ is original
+
+
+def test_bind_trace_context_exposes_identity_and_restores_outer_value() -> None:
+    outer_run_id, outer_step_id = uuid4(), uuid4()
+    inner_run_id, inner_step_id = uuid4(), uuid4()
+
+    assert current_trace_context() is None
+    with bind_trace_context(outer_run_id, outer_step_id):
+        assert current_trace_context() is not None
+        assert current_trace_context().run_id == outer_run_id
+        assert current_trace_context().step_id == outer_step_id
+        with bind_trace_context(inner_run_id, inner_step_id):
+            assert current_trace_context() is not None
+            assert current_trace_context().run_id == inner_run_id
+            assert current_trace_context().step_id == inner_step_id
+        assert current_trace_context() is not None
+        assert current_trace_context().run_id == outer_run_id
+        assert current_trace_context().step_id == outer_step_id
+    assert current_trace_context() is None
+
+
+def test_langgraph_runner_resets_trace_context_after_success_and_error() -> None:
+    run_id, step_id = uuid4(), uuid4()
+    seen = []
+
+    class TraceCapturingModel(FakeChatModel):
+        async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+            seen.append(current_trace_context())
+            return await super().ainvoke(messages)
+
+    success = LangGraphAgentRunner(
+        model_factory=RecordingModelFactory(TraceCapturingModel(AIMessage(content="ok")))
+    )
+    result = asyncio.run(
+        success.run(
+            AgentExecutionRequest(
+                instruction="Instruction",
+                input="input",
+                trace_run_id=run_id,
+                trace_step_id=step_id,
+            )
+        )
+    )
+
+    assert result.output == "ok"
+    assert seen[0] is not None
+    assert (seen[0].run_id, seen[0].step_id) == (run_id, step_id)
+    assert current_trace_context() is None
+
+    original = RuntimeError("graph boom")
+    failing = LangGraphAgentRunner(
+        model_factory=RecordingModelFactory(TraceCapturingModel(error=original))
+    )
+    with pytest.raises(AgentRuntimeError):
+        asyncio.run(
+            failing.run(
+                AgentExecutionRequest(
+                    instruction="Instruction",
+                    input="input",
+                    trace_run_id=run_id,
+                    trace_step_id=step_id,
+                )
+            )
+        )
+    assert seen[-1] is not None
+    assert (seen[-1].run_id, seen[-1].step_id) == (run_id, step_id)
+    assert current_trace_context() is None
+
+
+@pytest.mark.anyio
+async def test_trace_context_is_task_local_between_concurrent_agent_tasks() -> None:
+    identities = [(uuid4(), uuid4()), (uuid4(), uuid4())]
+
+    async def read_bound_identity(run_id, step_id):
+        with bind_trace_context(run_id, step_id):
+            await asyncio.sleep(0)
+            return current_trace_context()
+
+    contexts = await asyncio.gather(*(read_bound_identity(*identity) for identity in identities))
+
+    assert [(context.run_id, context.step_id) for context in contexts] == identities
+    assert current_trace_context() is None
 
 
 def test_langgraph_runner_does_not_retain_messages_between_runs() -> None:

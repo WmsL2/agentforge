@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,8 @@ class ToolExecutionRequest:
     tool_name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    trace_run_id: UUID | None = None
+    trace_step_id: UUID | None = None
 
     def __post_init__(self) -> None:
         """Snapshot mappings so executors cannot mutate caller-owned state."""

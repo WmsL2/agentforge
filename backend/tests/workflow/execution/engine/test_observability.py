@@ -25,7 +25,9 @@ from app.services.workflow import (
 )
 
 
-def workflow(nodes: tuple[WorkflowNode, ...], edges: tuple[WorkflowEdge, ...]) -> WorkflowDefinition:
+def workflow(
+    nodes: tuple[WorkflowNode, ...], edges: tuple[WorkflowEdge, ...]
+) -> WorkflowDefinition:
     return WorkflowDefinition(
         id=uuid4(), name="Observer test", entry_node_id="start", nodes=nodes, edges=edges
     )
@@ -65,12 +67,14 @@ class ScriptedExecutor:
         self.timeline = timeline
         self.fail_node = fail_node
         self.calls: list[str] = []
+        self.contexts: list[NodeExecutionContext] = []
 
     async def execute(
         self, node: WorkflowNode, context: NodeExecutionContext
     ) -> NodeExecutionResult:
         self.timeline.append(f"execute:{node.id}")
         self.calls.append(node.id)
+        self.contexts.append(context)
         if node.id == self.fail_node:
             raise RuntimeError("executor exploded")
         if node.kind is WorkflowNodeKind.APPROVAL:
@@ -93,7 +97,9 @@ class RecordingObserver:
         self.raise_on = raise_on
         self.contexts: dict[str, WorkflowObservationContext] = {}
         self.completed: list[tuple[WorkflowObservationContext, NodeExecutionResult]] = []
-        self.failed: list[tuple[WorkflowObservationContext, RunStepError, Mapping[str, object]]] = []
+        self.failed: list[
+            tuple[WorkflowObservationContext, RunStepError, Mapping[str, object]]
+        ] = []
         self.interrupted: list[tuple[WorkflowObservationContext, NodeExecutionResult]] = []
 
     async def start_step(
@@ -168,7 +174,12 @@ class TimelinePersistence:
         self.timeline.append("persist_interrupt")
 
 
-def execute(engine: WorkflowEngine, definition: WorkflowDefinition, workflow_run: WorkflowRun, **kwargs: object) -> WorkflowRun:
+def execute(
+    engine: WorkflowEngine,
+    definition: WorkflowDefinition,
+    workflow_run: WorkflowRun,
+    **kwargs: object,
+) -> WorkflowRun:
     return asyncio.run(engine.execute(definition, workflow_run, **kwargs))  # type: ignore[arg-type]
 
 
@@ -186,6 +197,35 @@ def test_success_observes_each_actual_executor_attempt_in_lifecycle_order() -> N
     assert len(observer.completed) == 3
     assert observer.completed[0][0] is observer.contexts["start"]
     assert observer.completed[0][1].output == {}
+
+
+def test_engine_propagates_observer_step_identity_to_node_executor() -> None:
+    timeline: list[str] = []
+    executor = ScriptedExecutor(timeline)
+    observer = RecordingObserver(timeline)
+
+    execute(WorkflowEngine(executor, observer=observer), linear_workflow(), run())
+
+    assert [context.step_id for context in executor.contexts] == [
+        observer.contexts[node_id].step_id for node_id in executor.calls
+    ]
+    assert all(context.step_id is not None for context in executor.contexts)
+
+
+def test_engine_falls_open_to_no_step_identity_when_start_observation_fails() -> None:
+    timeline: list[str] = []
+    executor = ScriptedExecutor(timeline)
+    workflow_run = run()
+
+    execute(
+        WorkflowEngine(executor, observer=RecordingObserver(timeline, raise_on="start")),
+        linear_workflow(),
+        workflow_run,
+    )
+
+    assert workflow_run.status is WorkflowRunStatus.COMPLETED
+    assert executor.calls == ["start", "value", "end"]
+    assert all(context.step_id is None for context in executor.contexts)
 
 
 def test_completion_observation_happens_before_durable_node_persistence() -> None:
@@ -215,7 +255,11 @@ def test_executor_failure_observes_error_and_preserves_workflow_run_failure() ->
     assert len(observer.failed) == 1
     context, error, metadata = observer.failed[0]
     assert context is observer.contexts["value"]
-    assert (error.code, error.message, metadata) == ("node_execution_failed", "executor exploded", {})
+    assert (error.code, error.message, metadata) == (
+        "node_execution_failed",
+        "executor exploded",
+        {},
+    )
     assert workflow_run.status is WorkflowRunStatus.FAILED
     assert workflow_run.error is not None
     assert (workflow_run.error.code, workflow_run.error.message, workflow_run.error.node_id) == (
@@ -265,7 +309,11 @@ def test_resume_observes_only_the_reexecuted_incomplete_nodes() -> None:
         pending_node_id="value",
     )
 
-    asyncio.run(WorkflowEngine(executor, observer=observer).resume(linear_workflow(), workflow_run, checkpoint))
+    asyncio.run(
+        WorkflowEngine(executor, observer=observer).resume(
+            linear_workflow(), workflow_run, checkpoint
+        )
+    )
 
     assert executor.calls == ["value", "end"]
     assert list(observer.contexts) == ["value", "end"]
@@ -287,7 +335,11 @@ def test_all_completed_checkpoint_and_invalid_definition_do_not_observe() -> Non
         node_outputs={"start": {}, "value": 100, "end": {"value": 100}},
     )
 
-    asyncio.run(WorkflowEngine(executor, observer=observer).resume(linear_workflow(), workflow_run, checkpoint))
+    asyncio.run(
+        WorkflowEngine(executor, observer=observer).resume(
+            linear_workflow(), workflow_run, checkpoint
+        )
+    )
     assert timeline == []
 
     invalid = workflow(
@@ -312,11 +364,19 @@ def test_observer_callback_failures_are_fail_open(failing_callback: str) -> None
         assert workflow_run.error.message == "executor exploded"
     elif failing_callback == "interrupt":
         workflow_run = run()
-        execute(WorkflowEngine(ScriptedExecutor(timeline), observer=observer), approval_workflow(), workflow_run)
+        execute(
+            WorkflowEngine(ScriptedExecutor(timeline), observer=observer),
+            approval_workflow(),
+            workflow_run,
+        )
         assert workflow_run.status is WorkflowRunStatus.PAUSED
     else:
         workflow_run = run()
-        execute(WorkflowEngine(ScriptedExecutor(timeline), observer=observer), linear_workflow(), workflow_run)
+        execute(
+            WorkflowEngine(ScriptedExecutor(timeline), observer=observer),
+            linear_workflow(),
+            workflow_run,
+        )
         assert workflow_run.status is WorkflowRunStatus.COMPLETED
         if failing_callback == "start":
             assert all(context.step_id is None for context, _ in observer.completed)

@@ -19,6 +19,7 @@ from app.services.agent_runtime.execution.domain import (
     AgentExecutionResult,
     AgentRuntimeError,
 )
+from app.services.agent_runtime.execution.trace_context import bind_trace_context
 
 
 class _BoundAsyncChatModel(Protocol):
@@ -107,13 +108,14 @@ class LangGraphAgentRunner:
             SystemMessage(content=request.instruction),
             HumanMessage(content=_render_input(request.input)),
         ]
-        try:
-            result = await self._graph.ainvoke(
-                {"messages": messages, "model_name": effective_model}
-            )
-        except Exception as exception:
-            raise AgentRuntimeError(
-                code="langgraph_execution_failed",
-                message=str(exception) or type(exception).__name__,
-            ) from exception
+        with bind_trace_context(request.trace_run_id, request.trace_step_id):
+            try:
+                result = await self._graph.ainvoke(
+                    {"messages": messages, "model_name": effective_model}
+                )
+            except Exception as exception:
+                raise AgentRuntimeError(
+                    code="langgraph_execution_failed",
+                    message=str(exception) or type(exception).__name__,
+                ) from exception
         return AgentExecutionResult(output=result["output"])

@@ -40,6 +40,7 @@ class NodeExecutionContext:
     workflow_input: Mapping[str, Any]
     upstream_outputs: Mapping[str, Any]
     node_outputs: Mapping[str, Any]
+    step_id: UUID | None = None
 
     def __post_init__(self) -> None:
         """Snapshot mappings so executors cannot mutate engine-owned state."""

@@ -2,7 +2,9 @@
 
 from app.services.tool.definition import ToolDefinition
 from app.services.tool.execution import (
+    NoOpToolExecutionObserver,
     ToolExecutionError,
+    ToolExecutionObserver,
     ToolExecutionRequest,
     ToolExecutionResult,
     ToolExecutionService,
@@ -16,8 +18,10 @@ from app.services.tool.registry import (
 )
 
 __all__ = [
+    "NoOpToolExecutionObserver",
     "ToolDefinition",
     "ToolExecutionError",
+    "ToolExecutionObserver",
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolExecutionService",

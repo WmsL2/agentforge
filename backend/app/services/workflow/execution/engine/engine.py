@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from dataclasses import replace
 from uuid import UUID
 
 from app.services.workflow.definition.model.domain import (
@@ -196,6 +197,7 @@ class WorkflowEngine:
                 node_outputs=run.node_outputs,
             )
             observation_context = await self._start_observation(run.id, ready_node, context)
+            context = replace(context, step_id=observation_context.step_id)
             try:
                 result = await self._executor.execute(ready_node, context)
             except Exception as exception:
