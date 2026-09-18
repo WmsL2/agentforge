@@ -46,7 +46,10 @@ from app.services.workflow import (
     WorkflowRunService,
     WorkflowService,
 )
-from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
+from app.services.workflow.application.observability import (
+    SQLAlchemyWorkflowExecutionObserver,
+    WorkflowToolExecutionObserver,
+)
 from app.services.agent_runtime import AgentRunner
 from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
@@ -85,6 +88,17 @@ def get_workflow_service(db: DBSession) -> WorkflowService:
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
 
 
+def get_workflow_execution_observer() -> WorkflowExecutionObserver:
+    """Create an observer with its own short-lived database sessions."""
+    return SQLAlchemyWorkflowExecutionObserver(async_session_maker)
+
+
+WorkflowExecutionObserverDep = Annotated[
+    WorkflowExecutionObserver,
+    Depends(get_workflow_execution_observer),
+]
+
+
 def get_tool_registry(request: Request) -> ToolRegistry:
     """Get the application-scoped ToolRegistry from lifespan state."""
     return request.state.tool_registry
@@ -93,9 +107,16 @@ def get_tool_registry(request: Request) -> ToolRegistry:
 ToolRegistryDep = Annotated[ToolRegistry, Depends(get_tool_registry)]
 
 
-def get_tool_execution_service(registry: ToolRegistryDep) -> ToolExecutionService:
+def get_tool_execution_service(
+    registry: ToolRegistryDep,
+    observer: WorkflowExecutionObserverDep,
+) -> ToolExecutionService:
     """Compose the production Tool Platform execution boundary."""
-    return ToolExecutionService(registry=registry, validator=ToolSchemaValidator())
+    return ToolExecutionService(
+        registry=registry,
+        validator=ToolSchemaValidator(),
+        observer=WorkflowToolExecutionObserver(observer),
+    )
 
 
 ToolExecutionServiceDep = Annotated[
@@ -117,25 +138,14 @@ def get_langgraph_agent_runner(
 LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
 
 
-def get_workflow_execution_observer() -> WorkflowExecutionObserver:
-    """Create an observer with its own short-lived database sessions."""
-    return SQLAlchemyWorkflowExecutionObserver(async_session_maker)
-
-
-WorkflowExecutionObserverDep = Annotated[
-    WorkflowExecutionObserver,
-    Depends(get_workflow_execution_observer),
-]
-
-
 def get_workflow_engine(
     langgraph_runner: LangGraphRunnerDep,
     observer: WorkflowExecutionObserverDep,
 ) -> WorkflowEngine:
     """Compose the production workflow engine and its node executors."""
     deterministic_executor = DeterministicNodeExecutor()
-    agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner})
-    approval_executor = ApprovalNodeExecutor()
+    agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner}, observer=observer)
+    approval_executor = ApprovalNodeExecutor(observer=observer)
     dispatching_executor = DispatchingNodeExecutor(
         deterministic_executor=deterministic_executor,
         agent_executor=agent_executor,
@@ -151,8 +161,11 @@ def get_workflow_approval_service(
     db: DBSession,
     workflow_service: WorkflowSvc,
     engine: WorkflowEngineDep,
+    observer: WorkflowExecutionObserverDep,
 ) -> WorkflowApprovalService:
-    return WorkflowApprovalService(db=db, workflow_service=workflow_service, engine=engine)
+    return WorkflowApprovalService(
+        db=db, workflow_service=workflow_service, engine=engine, observer=observer
+    )
 
 
 WorkflowApprovalSvc = Annotated[WorkflowApprovalService, Depends(get_workflow_approval_service)]

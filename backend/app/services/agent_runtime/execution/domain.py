@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,8 @@ class AgentExecutionRequest:
     input: Any
     model: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    trace_run_id: UUID | None = None
+    trace_step_id: UUID | None = None
 
     def __post_init__(self) -> None:
         """Snapshot metadata so runners cannot mutate caller-owned state."""

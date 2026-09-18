@@ -108,12 +108,18 @@ def _runner_with_model(monkeypatch, registry: ToolRegistry, model: RecordingChat
         "_create_model",
         staticmethod(lambda _model_name: model),
     )
-    return get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    return get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
 
 def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
     registry = get_tool_registry(_request_with_registry(_registry()))
-    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    runner = get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
     assert isinstance(runner, LangGraphAgentRunner)
 
@@ -157,7 +163,10 @@ def test_production_composition_executes_current_datetime_tool_loop(
         staticmethod(lambda _model_name: model),
     )
     registry = get_tool_registry(_request_with_registry(_registry()))
-    runner = get_langgraph_agent_runner(registry, get_tool_execution_service(registry))
+    runner = get_langgraph_agent_runner(
+        registry,
+        get_tool_execution_service(registry, NoOpWorkflowExecutionObserver()),
+    )
 
     result = asyncio.run(
         runner.run(AgentExecutionRequest(instruction="Get the time.", input="now"))
