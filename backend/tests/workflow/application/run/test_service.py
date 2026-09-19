@@ -256,6 +256,86 @@ async def test_list_checks_parent_ownership_before_run_repository():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method_name", "repository_name"),
+    [
+        ("list_workflow_run_steps", "run_step_repo"),
+        ("list_workflow_trace_events", "trace_event_repo"),
+    ],
+)
+async def test_observability_queries_return_repository_order_after_ownership_gate(
+    method_name, repository_name
+):
+    db = AsyncMock()
+    owner = uuid4()
+    row = workflow_row(owner)
+    run = SimpleNamespace(id=uuid4(), workflow_id=row.id)
+    ordered = [SimpleNamespace(sequence=1), SimpleNamespace(sequence=2)]
+    service = WorkflowRunService(db, WorkflowService(db), AsyncMock())
+    with (
+        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch(f"app.services.workflow.application.run.service.{repository_name}") as observability_repo,
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
+        if repository_name == "run_step_repo":
+            observability_repo.list_workflow_run_steps = AsyncMock(return_value=ordered)
+        else:
+            observability_repo.list_workflow_trace_events = AsyncMock(return_value=ordered)
+
+        assert await getattr(service, method_name)(row.id, run.id, owner) is ordered
+
+    run_repo.get_workflow_run_by_id.assert_awaited_once_with(db, run.id)
+    expected_call = (db, run.id)
+    if repository_name == "run_step_repo":
+        observability_repo.list_workflow_run_steps.assert_awaited_once_with(*expected_call)
+    else:
+        observability_repo.list_workflow_trace_events.assert_awaited_once_with(*expected_call)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method_name", "repository_name", "workflow_result", "run_result"),
+    [
+        ("list_workflow_run_steps", "run_step_repo", None, None),
+        ("list_workflow_trace_events", "trace_event_repo", "owned", None),
+        ("list_workflow_run_steps", "run_step_repo", "owned", "other_workflow"),
+        ("list_workflow_trace_events", "trace_event_repo", "owned", "other_workflow"),
+    ],
+)
+async def test_observability_queries_never_call_repository_when_ownership_gate_fails(
+    method_name, repository_name, workflow_result, run_result
+):
+    db = AsyncMock()
+    owner = uuid4()
+    row = workflow_row(owner)
+    run_id = uuid4()
+    service = WorkflowRunService(db, WorkflowService(db), AsyncMock())
+    with (
+        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch(f"app.services.workflow.application.run.service.{repository_name}") as observability_repo,
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(
+            return_value=row if workflow_result == "owned" else None
+        )
+        run_repo.get_workflow_run_by_id = AsyncMock(
+            return_value=(
+                SimpleNamespace(id=run_id, workflow_id=uuid4()) if run_result == "other_workflow" else None
+            )
+        )
+
+        with pytest.raises(NotFoundError):
+            await getattr(service, method_name)(row.id, run_id, owner)
+
+    if repository_name == "run_step_repo":
+        observability_repo.list_workflow_run_steps.assert_not_called()
+    else:
+        observability_repo.list_workflow_trace_events.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
     db = AsyncMock()
     owner = uuid4()

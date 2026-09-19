@@ -12,6 +12,11 @@ from app.schemas.workflow.definition import (
     WorkflowValidationIssueRead,
     WorkflowValidationRead,
 )
+from app.schemas.workflow.observability import (
+    WorkflowRunStepErrorRead,
+    WorkflowRunStepRead,
+    WorkflowTraceEventRead,
+)
 from app.schemas.workflow.run import (
     WorkflowRunCreate,
     WorkflowRunErrorRead,
@@ -34,6 +39,9 @@ __all__ = [
     "WorkflowRunList",
     "WorkflowRunListItem",
     "WorkflowRunRead",
+    "WorkflowRunStepErrorRead",
+    "WorkflowRunStepRead",
+    "WorkflowTraceEventRead",
     "WorkflowUpdate",
     "WorkflowValidationIssueRead",
     "WorkflowValidationRead",

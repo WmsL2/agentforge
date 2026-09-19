@@ -5,7 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, WorkflowRunSvc
-from app.schemas.workflow import WorkflowRunCreate, WorkflowRunList, WorkflowRunRead
+from app.schemas.workflow import (
+    WorkflowRunCreate,
+    WorkflowRunList,
+    WorkflowRunRead,
+    WorkflowRunStepRead,
+    WorkflowTraceEventRead,
+)
 
 router = APIRouter()
 
@@ -44,3 +50,23 @@ async def get_workflow_run(
     current_user: CurrentUser,
 ):
     return await workflow_run_service.get_workflow_run(workflow_id, run_id, current_user.id)
+
+
+@router.get("/{workflow_id}/runs/{run_id}/steps", response_model=list[WorkflowRunStepRead])
+async def list_workflow_run_steps(
+    workflow_id: UUID,
+    run_id: UUID,
+    workflow_run_service: WorkflowRunSvc,
+    current_user: CurrentUser,
+):
+    return await workflow_run_service.list_workflow_run_steps(workflow_id, run_id, current_user.id)
+
+
+@router.get("/{workflow_id}/runs/{run_id}/trace", response_model=list[WorkflowTraceEventRead])
+async def list_workflow_trace_events(
+    workflow_id: UUID,
+    run_id: UUID,
+    workflow_run_service: WorkflowRunSvc,
+    current_user: CurrentUser,
+):
+    return await workflow_run_service.list_workflow_trace_events(workflow_id, run_id, current_user.id)

@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.repositories.workflow.observability import run_step as run_step_repo
+from app.repositories.workflow.observability import trace_event as trace_event_repo
 from app.repositories.workflow.run import repository as run_repo
 from app.services.workflow.application.definition.service import WorkflowService
 from app.services.workflow.application.run.durability import DurableWorkflowExecutionPersistence
@@ -106,3 +108,11 @@ class WorkflowRunService:
             ),
             await run_repo.count_workflow_runs_by_workflow(self.db, workflow_id),
         )
+
+    async def list_workflow_run_steps(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
+        await self.get_workflow_run(workflow_id, run_id, user_id)
+        return await run_step_repo.list_workflow_run_steps(self.db, run_id)
+
+    async def list_workflow_trace_events(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
+        await self.get_workflow_run(workflow_id, run_id, user_id)
+        return await trace_event_repo.list_workflow_trace_events(self.db, run_id)
