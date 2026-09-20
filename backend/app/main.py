@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
         },
         {
             "name": "workflows",
-            "description": "Durable workflow execution, checkpoints, and human approval",
+            "description": "Durable workflow execution, checkpoints, human approval, and execution observability",
         },
     ]
 
@@ -106,7 +106,7 @@ Enterprise Agent Workflow Platform
 - **Database**: Async database operations
 - **Redis**: Caching and session storage
 - **Rate Limiting**: Request rate limiting per client
-- **Workflow Core**: definitions, DAG validation, durable execution, checkpoints, and human approval
+- **Workflow Core**: definitions, DAG validation, durable execution, checkpoints, human approval, and RunStep / Trace execution observability
 - **Agent Runtime & Tool Platform**: Agent execution, native tools, and MCP integration
 
 ## Documentation
@@ -114,7 +114,7 @@ Enterprise Agent Workflow Platform
 - [Swagger UI](/docs) - Interactive API documentation
 - [ReDoc](/redoc) - Alternative documentation view
         """.strip(),
-        version="0.6.0",
+        version="0.7.0",
         openapi_url=openapi_url,
         docs_url=docs_url,
         redoc_url=redoc_url,

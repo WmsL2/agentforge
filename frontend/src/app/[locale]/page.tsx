@@ -62,36 +62,30 @@ const FOUNDATION_CAPABILITIES = [
   },
 ] as const;
 
-const PLATFORM_EXPANSION = [
+const PLATFORM_CAPABILITIES = [
   {
     title: "Agent Runtime",
     description:
-      "A runtime abstraction for model execution, agent loops, state transitions, and pluggable execution backends.",
+      "AGENT nodes, runtime contracts, LangGraph execution, and controlled agent lifecycle tracing.",
     icon: PlayCircle,
   },
   {
     title: "Tool / MCP Platform",
     description:
-      "Tool registration, schema normalization, execution policy, MCP connectivity, and controlled tool invocation.",
+      "Tool registration, schema validation, native tools, MCP discovery, and agent tool invocation.",
     icon: Network,
   },
   {
     title: "Durable Execution",
     description:
-      "Checkpoint persistence, pause and resume semantics, recovery, and Human-in-the-Loop control points.",
+      "Checkpoint persistence, pause/resume, approval decisions, and restart-safe recovery.",
     icon: GitBranch,
   },
   {
     title: "Run Observability",
     description:
-      "Structured Run, Step, and Trace records for debugging, replay, operational visibility, and auditability.",
+      "RunStep summaries, append-only Trace history, authenticated query APIs, and PostgreSQL restart/crash verification.",
     icon: ShieldCheck,
-  },
-  {
-    title: "Workspace / RBAC",
-    description:
-      "Enterprise resource boundaries and role-based access control for future multi-user platform operation.",
-    icon: Boxes,
   },
 ] as const;
 
@@ -104,18 +98,25 @@ const ROADMAP = [
       "Establish and validate the engineering foundation before building AgentForge-owned platform capabilities.",
   },
   {
-    version: "v0.2",
-    title: "Workflow Core",
+    version: "v0.2–v0.6",
+    title: "Workflow Platform Layers",
     status: "Current",
     description:
-      "Validated workflow definitions, DAG validation, deterministic execution, run lifecycle, persistence, and history.",
+      "Workflow Core, Agent Runtime, Tool/MCP, durable checkpoints, pause/resume, and Human-in-the-Loop.",
+  },
+  {
+    version: "v0.7",
+    title: "Execution Observability",
+    status: "Current",
+    description:
+      "Durable RunStep and Trace history, lifecycle tracing, query APIs, and PostgreSQL restart/crash verification.",
   },
   {
     version: "Later",
     title: "Platform Expansion",
     status: "Planned",
     description:
-      "Add durable execution, Tool/MCP integration, observability, enterprise resource boundaries, and richer orchestration.",
+      "Workspace/RBAC, frontend workflow editing, richer orchestration, background recovery, and MCP HTTP/OAuth.",
   },
 ] as const;
 
@@ -187,7 +188,7 @@ export default function HomePage() {
             <div>
               <div className="border-foreground/10 bg-foreground/[0.03] mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs">
                 <span className="bg-brand h-2 w-2 rounded-full" />
-                v0.2 · Workflow Core
+                v0.7 · Execution Observability
               </div>
 
               <h1 className="font-display max-w-4xl text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
@@ -197,9 +198,9 @@ export default function HomePage() {
 
               <p className="text-foreground/65 mt-7 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
                 {PRODUCT_NAME} is an Enterprise Agent Workflow Platform. v0.1 established the
-                reliable full-stack engineering foundation; v0.2 adds the AgentForge-owned Workflow
-                Core for definition, validation, persistence, deterministic execution, and run
-                lifecycle/history.
+                reliable full-stack engineering foundation; v0.2–v0.6 deliver the workflow,
+                agent, tool/MCP, and durable-execution layers; v0.7 adds execution history and
+                audit-oriented observability.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -223,8 +224,8 @@ export default function HomePage() {
               </div>
 
               <p className="text-foreground/45 mt-5 max-w-2xl text-sm leading-6">
-                v0.2 implements the Workflow Core, not Agent Runtime, Tool/MCP execution,
-                checkpoints, HITL, durable execution, or enterprise RBAC.
+                Current capabilities include Workflow Core, Agent Runtime, Tool/MCP, Durable
+                Execution, Human-in-the-Loop, and execution observability. Workspace/RBAC remains future work.
               </p>
             </div>
 
@@ -235,7 +236,7 @@ export default function HomePage() {
                     Platform status
                   </p>
                   <h2 className="font-display mt-1 text-xl font-semibold">
-                    Foundation plus Workflow Core
+                    Foundation plus Agent Workflow Platform
                   </h2>
                 </div>
                 <div className="bg-brand/15 flex h-11 w-11 items-center justify-center rounded-xl">
@@ -258,13 +259,13 @@ export default function HomePage() {
 
                 <div className="border-foreground/10 bg-background rounded-2xl border p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium">Workflow Core</span>
+                    <span className="font-medium">Execution platform</span>
                     <span className="bg-brand/15 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase">
                       Current
                     </span>
                   </div>
                   <p className="text-foreground/55 mt-2 text-sm leading-6">
-                    Definition, DAG validation, deterministic execution, run persistence, and history.
+                    Workflow, Agent Runtime, Tool/MCP, durable checkpoints, approval, and execution history.
                   </p>
                 </div>
               </div>
@@ -291,7 +292,7 @@ export default function HomePage() {
             </h2>
             <p className="text-foreground/60 mt-4 text-base leading-7">
               These capabilities belong to the engineering foundation. They make the platform
-              deployable, testable, and support the AgentForge-owned Workflow Core in v0.2.
+              deployable, testable, and support the AgentForge-owned platform layers through v0.7.
             </p>
           </div>
 
@@ -400,7 +401,6 @@ export default function HomePage() {
                     "Tool / MCP",
                     "Checkpoint / HITL",
                     "Run / Step / Trace",
-                    "Workspace / RBAC",
                   ].map((item) => (
                     <span
                       key={item}
@@ -412,8 +412,8 @@ export default function HomePage() {
                 </div>
 
                 <p className="text-foreground/55 mt-6 text-sm leading-6">
-                  Workflow Core is implemented in v0.2. Agent Runtime, Tool/MCP, checkpoints,
-                  observability, and workspace boundaries remain planned expansion work.
+                  Workflow Core, Agent Runtime, Tool/MCP, durable execution, and observability are
+                  implemented. Workspace/RBAC remains a planned enterprise boundary.
                 </p>
               </div>
             </div>
@@ -421,11 +421,11 @@ export default function HomePage() {
             <div className="mt-12">
               <div className="mb-6 flex items-center gap-3">
                 <GitBranch className="h-5 w-5" />
-                <h3 className="font-display text-xl font-semibold">Planned platform expansion</h3>
+                <h3 className="font-display text-xl font-semibold">Current platform capabilities</h3>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {PLATFORM_EXPANSION.map((capability) => {
+                {PLATFORM_CAPABILITIES.map((capability) => {
                   const Icon = capability.icon;
 
                   return (
@@ -493,10 +493,10 @@ export default function HomePage() {
             <div className="border-foreground/10 bg-card grid gap-8 rounded-3xl border p-7 md:grid-cols-[1fr_auto] md:items-center md:p-10">
               <div>
                 <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
-                  AgentForge v0.2
+                  AgentForge v0.7
                 </p>
                 <h2 className="font-display mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-                  Foundation established. Workflow Core is current.
+                  Execution observability completes the current release layer.
                 </h2>
                 <p className="text-foreground/60 mt-3 max-w-2xl text-sm leading-6 sm:text-base">
                   Inspect the repository, run the stack locally, or continue into the authenticated
@@ -532,7 +532,7 @@ export default function HomePage() {
           <p>
             {PRODUCT_NAME} · {APP_DESCRIPTION}
           </p>
-          <p>v0.2 Workflow Core</p>
+          <p>v0.7 Execution Observability</p>
         </div>
       </footer>
     </div>

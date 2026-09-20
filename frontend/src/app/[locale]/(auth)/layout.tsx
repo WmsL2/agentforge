@@ -73,7 +73,7 @@ export default function AuthLayout({
                 aria-hidden
               />
 
-              AgentForge v0.2 · Workflow Core
+              AgentForge v0.7 · Execution Observability
             </span>
           </div>
 
@@ -84,8 +84,8 @@ export default function AuthLayout({
 
             <p className="text-foreground/65 max-w-md text-base leading-relaxed">
               {APP_DESCRIPTION}. v0.1 established the application foundation;
-              v0.2 adds the AgentForge-owned Workflow Core. Agent Runtime and
-              richer platform capabilities remain future work.
+              v0.2–v0.6 add the Workflow Core, Agent Runtime, Tool/MCP, and
+              durable Human-in-the-Loop execution. v0.7 adds execution observability.
             </p>
 
             <ul className="mt-10 space-y-3">
@@ -111,12 +111,10 @@ export default function AuthLayout({
             </p>
 
             <p className="text-foreground/85 mt-3 text-sm leading-relaxed">
-              Mature web engineering capabilities form the
-              foundation. Workflow Engine, Agent Runtime,
-              Tool/MCP, durable execution, observability, and
-              enterprise resource boundaries are developed as
-              AgentForge-owned platform capabilities in later
-              versions.
+              Mature web engineering capabilities form the foundation. Workflow
+              Core, Agent Runtime, Tool/MCP, Durable Execution, and Observability
+              are AgentForge-owned capabilities today. Workspace/RBAC and broader
+              enterprise resource boundaries remain future work.
             </p>
           </div>
         </div>
