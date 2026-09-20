@@ -38,6 +38,35 @@ def run_row(status="completed"):
     )
 
 
+def step_row():
+    started_at = datetime(2026, 9, 1, tzinfo=UTC)
+    return SimpleNamespace(
+        id=uuid4(),
+        run_id=uuid4(),
+        sequence=2,
+        node_id="agent",
+        node_kind="agent",
+        status="completed",
+        input={"request": "status"},
+        output={"answer": "ok"},
+        error=None,
+        metadata_={"model": "offline"},
+        started_at=started_at,
+        finished_at=started_at.replace(second=1, microsecond=500000),
+    )
+
+
+def trace_event_row():
+    return SimpleNamespace(
+        id=uuid4(),
+        run_id=uuid4(),
+        step_id=None,
+        kind="approval_approved",
+        payload={"node_id": "approval"},
+        created_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+
 @pytest.mark.anyio
 async def test_execute_and_list_routes_use_authenticated_run_service():
     user = SimpleNamespace(id=uuid4())
@@ -110,3 +139,91 @@ async def test_detail_route_passes_parent_run_and_current_user_to_service():
         assert calls == [(row.workflow_id, row.id, user.id)]
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_steps_route_returns_read_model_and_passes_authenticated_identity():
+    user = SimpleNamespace(id=uuid4())
+    row = step_row()
+    workflow_id = uuid4()
+    calls = []
+
+    class RunService:
+        async def list_workflow_run_steps(self, workflow_id, run_id, user_id):
+            calls.append((workflow_id, run_id, user_id))
+            return [row]
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_run_service] = RunService
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(f"/api/v1/workflows/{workflow_id}/runs/{row.run_id}/steps")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert calls == [(workflow_id, row.run_id, user.id)]
+    item = response.json()[0]
+    assert item["sequence"] == 2
+    assert item["node_id"] == "agent"
+    assert item["node_kind"] == "agent"
+    assert item["status"] == "completed"
+    assert item["metadata"] == {"model": "offline"}
+    assert item["duration_ms"] == 1500.0
+    assert "metadata_" not in item
+
+
+@pytest.mark.anyio
+async def test_trace_route_returns_run_level_event_and_passes_authenticated_identity():
+    user = SimpleNamespace(id=uuid4())
+    row = trace_event_row()
+    workflow_id = uuid4()
+    calls = []
+
+    class RunService:
+        async def list_workflow_trace_events(self, workflow_id, run_id, user_id):
+            calls.append((workflow_id, run_id, user_id))
+            return [row]
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_run_service] = RunService
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(f"/api/v1/workflows/{workflow_id}/runs/{row.run_id}/trace")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert calls == [(workflow_id, row.run_id, user.id)]
+    item = response.json()[0]
+    assert item["kind"] == "approval_approved"
+    assert item["step_id"] is None
+    assert item["payload"] == {"node_id": "approval"}
+    assert item["created_at"] == "2026-09-01T00:00:00+00:00"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path_suffix", ["steps", "trace"])
+async def test_observability_routes_return_empty_array_for_a_valid_run(path_suffix):
+    user = SimpleNamespace(id=uuid4())
+    workflow_id, run_id = uuid4(), uuid4()
+
+    class RunService:
+        async def list_workflow_run_steps(self, *_):
+            return []
+
+        async def list_workflow_trace_events(self, *_):
+            return []
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_run_service] = RunService
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(
+                f"/api/v1/workflows/{workflow_id}/runs/{run_id}/{path_suffix}"
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []

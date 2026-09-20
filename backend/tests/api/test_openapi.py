@@ -55,6 +55,16 @@ class TestOpenAPISchema:
         assert "/api/v1/auth/register" in paths
 
     @pytest.mark.anyio
+    async def test_schema_has_workflow_observability_query_endpoints(self, client: AsyncClient):
+        response = await client.get("/api/v1/openapi.json")
+        paths = response.json()["paths"]
+
+        assert "/api/v1/workflows/{workflow_id}/runs/{run_id}/steps" in paths
+        assert "/api/v1/workflows/{workflow_id}/runs/{run_id}/trace" in paths
+        assert "get" in paths["/api/v1/workflows/{workflow_id}/runs/{run_id}/steps"]
+        assert "get" in paths["/api/v1/workflows/{workflow_id}/runs/{run_id}/trace"]
+
+    @pytest.mark.anyio
     async def test_schema_has_response_models(self, client: AsyncClient):
         """Test that endpoints define response schemas (not just raw dicts)."""
         response = await client.get("/api/v1/openapi.json")
