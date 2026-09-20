@@ -152,9 +152,12 @@ normal suite unless its environment variable is set.
 
 Workflow PostgreSQL coverage includes `test_agent_workflow_e2e.py`,
 `test_approval_workflow_e2e.py`, `test_checkpoint_postgres.py`, and
-`test_durable_recovery_postgres.py`. The durable recovery tests use `NullPool`,
-new `AsyncSession` instances, and real commits to prove cross-session and
-cross-connection recovery rather than reusing ORM state from the paused phase.
+`test_durable_recovery_postgres.py`. v0.7 additionally includes
+`test_observability_recovery_postgres.py`, which proves v0.6 recovery and v0.7
+RunStep/Trace persistence together. These restart-style tests require migration
+`0037_create_workflow_observability` and use `postgres_restart_session_factory`,
+`NullPool`, fresh `AsyncSession` instances, and real commits to prove
+cross-session and cross-connection durability rather than reusing ORM state.
 
 ## Migration-cycle safety
 

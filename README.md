@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.6 在此基础上交付持久执行、Checkpoint、Pause/Resume 与人工审批。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.7 在持久执行与人工审批之上交付了可持久化的执行观测能力。
 
 ---
 
@@ -45,11 +45,43 @@ v0.1 建设并验证了稳定的工程基础，包括：
   append-only checkpoints, checkpoint-aware resume, immutable definition
   snapshots, `APPROVAL` interruption and decision APIs, resolution checkpoints,
   and real PostgreSQL restart recovery verification.
+- **v0.7 — Execution Observability:** `RunStep` execution-attempt summaries,
+  append-only `TraceEvent` history, the `WorkflowExecutionObserver` boundary,
+  a durable SQLAlchemy observer, fail-open observation, node/agent/tool/approval
+  lifecycle traces, authenticated Steps and Trace query APIs, and PostgreSQL
+  restart/crash verification.
 
-## v0.6 — Durable Execution & Human-in-the-Loop
+## v0.7 — Execution Observability
 
 Current main combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4 Tool
-Platform, v0.5 MCP integration, and v0.6 durable workflow execution.
+Platform, v0.5 MCP integration, v0.6 durable workflow execution, and v0.7
+execution observability. v0.7 builds on v0.6; it does not replace checkpoint
+recovery semantics.
+
+```text
+WorkflowRun
+├── WorkflowCheckpoint — recovery truth
+├── RunStep            — one NodeExecutor execution attempt
+└── TraceEvent         — append-only execution history
+```
+
+- Checkpoints decide where recovery resumes. RunSteps and TraceEvents explain
+  what happened, but never schedule resume work.
+- The SQLAlchemy observer records node lifecycle events and agent, tool, and
+  approval lifecycle facts in independent short transactions. Observation is
+  fail-open for workflow execution.
+- Authenticated APIs expose ordered execution history:
+  `GET /api/v1/workflows/{workflow_id}/runs/{run_id}/steps` and
+  `GET /api/v1/workflows/{workflow_id}/runs/{run_id}/trace`.
+- PostgreSQL restart/crash integration tests prove cross-connection durability,
+  no duplicate completed attempts, sequence continuation, and the permitted
+  stale `RUNNING` RunStep after a process crash.
+
+Read [Execution Observability](docs/execution-observability.md) for the full
+contract and [Durable Execution & Human-in-the-Loop](docs/durable-execution.md)
+for the v0.6 recovery contract.
+
+## v0.6 — Durable Execution & Human-in-the-Loop
 
 - `WorkflowRun` has an explicit durable lifecycle, while an append-only
   `WorkflowCheckpoint` records the completed-node set and exact resume point.
@@ -97,11 +129,12 @@ provide an automatic startup recovery scanner.
 v0.6 does not implement automatic recovery scanning, a background workflow
 worker, retry or timeout frameworks, conditional/loop/parallel execution, a
 Workflow TOOL Node or tool-call approval, LangGraph internal durable-thread
-integration, RunStep/Trace/token accounting/observability dashboard,
-Workspace/RBAC, a frontend Workflow Editor, or MCP HTTP/OAuth.
+integration, token/cost accounting, an observability dashboard, Workspace/RBAC,
+a frontend Workflow Editor, or MCP HTTP/OAuth. RunStep and Trace execution
+history are implemented in v0.7.
 
 ```text
-Run Step / Trace / Observability
+Observability Dashboard / Telemetry / Token and Cost Accounting
 Tool Policy and Workflow TOOL Node
 Retry / Timeout / Idempotency
 Condition / Loop / Parallel
@@ -1028,13 +1061,13 @@ Workflow Definition / Run Persistence
 Agent Runtime
 Tool Platform / MCP Integration
 Durable Checkpoints / Pause / Resume / Human Approval
+RunStep / Trace Execution Observability
 ```
 
 后续将继续自研：
 
 ```text
-Run / Step / Trace
-Observability
+Observability Dashboard / Telemetry Ecosystem
 Workspace / RBAC
 ```
 

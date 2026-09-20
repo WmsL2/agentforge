@@ -5,8 +5,9 @@ conversations, files, RAG documents, and sync sources — use the same pattern:
 **Models → Schemas → Repositories → Services → Endpoints**. The v0.2 Workflow Core adds
 explicit Domain, Validation, and Execution layers to that foundation. v0.3
 adds Agent Runtime Integration, v0.4 adds the Tool Platform, v0.5 adds MCP
-Integration & Tool Discovery, and v0.6 adds Durable Execution & Human-in-the-
-Loop without replacing the Repository + Service model.
+Integration & Tool Discovery, v0.6 adds Durable Execution & Human-in-the-Loop,
+and v0.7 adds Execution Observability without replacing the Repository + Service
+model.
 
 ## Request Flow
 
@@ -98,6 +99,24 @@ checkpoint, skipping completed nodes. This is a recovery primitive, not an
 automatic startup scanner or background worker. See
 [Durable Execution & Human-in-the-Loop](durable-execution.md).
 
+## Execution Observability
+
+v0.7 adds durable historical facts alongside v0.6 recovery state:
+
+```text
+WorkflowRun
+├── WorkflowCheckpoint — recovery truth
+├── RunStep            — one NodeExecutor attempt
+└── TraceEvent         — append-only historical truth
+```
+
+Checkpoints alone decide resume scheduling. RunSteps and TraceEvents never
+choose completed nodes or influence recovery. `WorkflowExecutionObserver` is
+an application/runtime boundary: the pure Engine speaks its protocol, while the
+SQLAlchemy implementation owns independent short-lived transactions for
+fail-open persistence before and after node execution. SQLAlchemy does not
+enter the Engine or domain boundary. See [Execution Observability](execution-observability.md).
+
 ```text
 HTTP / application action
   -> WorkflowRunService / WorkflowApprovalService
@@ -108,7 +127,8 @@ HTTP / application action
 ## Agent Runtime Integration
 
 The current platform combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4
-Tool Platform, and v0.5 MCP Integration & Tool Discovery. Workflow execution
+Tool Platform, v0.5 MCP Integration & Tool Discovery, v0.6 Durable Execution,
+and v0.7 Execution Observability. Workflow execution
 uses the application-scoped registry created by `open_tool_platform()` in the
 FastAPI lifespan; request dependencies compose `AgentRunner` instances against
 that registry.

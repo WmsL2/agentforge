@@ -7,10 +7,11 @@ v0.2 delivers AgentForge's self-built Workflow Core on top of the v0.1 web-engin
 > **Historical release boundary:** this document describes v0.2. Current main
 > additionally includes v0.3 AGENT node execution, `AgentRunner`,
 > `AgentNodeExecutor`, `DispatchingNodeExecutor`, and `LangGraphAgentRunner`,
-> plus the v0.4 Tool Platform, v0.5 MCP Integration, and v0.6 Durable
-> Execution & Human-in-the-Loop. See [Agent Runtime](agent-runtime.md),
+> plus the v0.4 Tool Platform, v0.5 MCP Integration, v0.6 Durable
+> Execution & Human-in-the-Loop, and v0.7 Execution Observability. See [Agent Runtime](agent-runtime.md),
 > [Tool Platform](tool-platform.md), and
-> [Durable Execution](durable-execution.md) for current runtime behavior.
+> [Durable Execution](durable-execution.md), and
+> [Execution Observability](execution-observability.md) for current runtime behavior.
 
 It does not implement CONDITION execution, loops, AGENT or TOOL nodes, MCP execution, checkpoints, pause/resume, cancel/retry, Human-in-the-Loop controls, workflow Celery execution, durable intermediate RUNNING checkpoints, Run Step records, or Trace observability.
 
@@ -276,5 +277,6 @@ v0.2 deliberately excludes conditional branches, loops, parallel execution,
 Agent/Tool/MCP nodes, retries, timeouts, cancellation, checkpointing,
 pause/resume, HITL, durable running state, background execution, Run Steps,
 Traces, and enterprise workspace/RBAC boundaries. On current main, v0.3 has
-implemented the AGENT runtime and v0.4 adds Tool Platform-backed Agent Tool
-Calling only; the remaining items stay outside the current platform boundary.
+implemented the AGENT runtime, v0.4 adds Tool Platform-backed Agent Tool
+Calling, v0.6 adds durable execution, and v0.7 adds RunStep/Trace historical
+observability. The remaining items stay outside the current platform boundary.
