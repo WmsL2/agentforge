@@ -8,6 +8,7 @@ from app.repositories import session as session_repo
 from app.repositories import conversation as conversation_repo
 
 from app.repositories import chat_file as chat_file_repo
+from app.repositories import workspace as workspace_repo
 from app.repositories import workflow as workflow_repo
 
 
@@ -16,5 +17,6 @@ __all__ = [
     "session_repo",
     "conversation_repo",
     "chat_file_repo",
+    "workspace_repo",
     "workflow_repo",
 ]
