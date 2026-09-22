@@ -7,6 +7,7 @@ __all__ = [
     "WorkspaceAuthorizationService",
     "WorkspacePermission",
     "WorkspaceRole",
+    "WorkspaceService",
     "has_workspace_permission",
     "permissions_for_role",
 ]
@@ -18,4 +19,8 @@ def __getattr__(name: str):
         from app.services.workspace.authorization import WorkspaceAuthorizationService
 
         return WorkspaceAuthorizationService
+    if name == "WorkspaceService":
+        from app.services.workspace.service import WorkspaceService
+
+        return WorkspaceService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

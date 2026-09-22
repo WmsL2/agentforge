@@ -14,6 +14,15 @@ from app.schemas.conversation import (
     MessageRead,
     ToolCallRead,
 )
+from app.schemas.workspace import (
+    WorkspaceCreate,
+    WorkspaceList,
+    WorkspaceMemberCreate,
+    WorkspaceMemberRead,
+    WorkspaceMemberUpdate,
+    WorkspaceRead,
+    WorkspaceUpdate,
+)
 
 __all__ = [
     "UserCreate",
@@ -30,4 +39,11 @@ __all__ = [
     "MessageCreate",
     "MessageRead",
     "ToolCallRead",
+    "WorkspaceCreate",
+    "WorkspaceList",
+    "WorkspaceMemberCreate",
+    "WorkspaceMemberRead",
+    "WorkspaceMemberUpdate",
+    "WorkspaceRead",
+    "WorkspaceUpdate",
 ]

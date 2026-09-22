@@ -90,6 +90,10 @@ def create_app() -> FastAPI:
             "name": "workflows",
             "description": "Durable workflow execution, checkpoints, human approval, and execution observability",
         },
+        {
+            "name": "workspaces",
+            "description": "Workspace membership and RBAC management",
+        },
     ]
 
     setup_logging()

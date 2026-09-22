@@ -35,6 +35,8 @@ Redis = Annotated[RedisClient, Depends(get_redis)]
 from app.services.user import UserService
 from app.services.session import SessionService
 from app.services.conversation import ConversationService
+from app.services.workspace.authorization import WorkspaceAuthorizationService
+from app.services.workspace.service import WorkspaceService
 from app.services.workflow import (
     AgentNodeExecutor,
     ApprovalNodeExecutor,
@@ -79,6 +81,27 @@ def get_conversation_service(db: DBSession) -> ConversationService:
 
 
 ConversationSvc = Annotated[ConversationService, Depends(get_conversation_service)]
+
+
+def get_workspace_authorization_service(db: DBSession) -> WorkspaceAuthorizationService:
+    """Create the workspace authorization boundary for a request session."""
+    return WorkspaceAuthorizationService(db)
+
+
+WorkspaceAuthorizationSvc = Annotated[
+    WorkspaceAuthorizationService,
+    Depends(get_workspace_authorization_service),
+]
+
+
+def get_workspace_service(
+    db: DBSession, authorization_service: WorkspaceAuthorizationSvc
+) -> WorkspaceService:
+    """Create the Workspace application service for a request session."""
+    return WorkspaceService(db=db, authorization=authorization_service)
+
+
+WorkspaceSvc = Annotated[WorkspaceService, Depends(get_workspace_service)]
 
 
 def get_workflow_service(db: DBSession) -> WorkflowService:
