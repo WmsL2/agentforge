@@ -17,7 +17,7 @@ from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 
 _POSTGRES_E2E_ENV = "AGENTFORGE_RUN_POSTGRES_E2E"
-_EXPECTED_ALEMBIC_REVISION = "0038_create_workspaces"
+_EXPECTED_ALEMBIC_REVISION = "0039_add_workflow_workspace_scope"
 
 
 @pytest.fixture

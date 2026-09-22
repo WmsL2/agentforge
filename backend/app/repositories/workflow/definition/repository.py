@@ -22,10 +22,12 @@ async def create_workflow(
     description: str | None,
     definition: dict[str, Any],
     revision: int = 1,
+    workspace_id: UUID | None = None,
 ) -> Workflow:
     workflow = Workflow(
         id=workflow_id,
         user_id=user_id,
+        workspace_id=workspace_id,
         name=name,
         description=description,
         definition=definition,
@@ -53,6 +55,27 @@ async def list_workflows_by_user(
 async def count_workflows_by_user(db: AsyncSession, user_id: UUID) -> int:
     return (
         await db.scalar(select(func.count(Workflow.id)).where(Workflow.user_id == user_id))
+    ) or 0
+
+
+async def list_workflows_by_workspace(
+    db: AsyncSession, workspace_id: UUID, *, skip: int = 0, limit: int = 50
+) -> list[Workflow]:
+    """List workflows stored in one workspace without authorization checks."""
+    result = await db.execute(
+        select(Workflow)
+        .where(Workflow.workspace_id == workspace_id)
+        .order_by(Workflow.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def count_workflows_by_workspace(db: AsyncSession, workspace_id: UUID) -> int:
+    """Count workflows stored in one workspace without authorization checks."""
+    return (
+        await db.scalar(select(func.count(Workflow.id)).where(Workflow.workspace_id == workspace_id))
     ) or 0
 
 
