@@ -89,13 +89,13 @@ class WorkspaceService:
         await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.MEMBER_MANAGE
         )
-        self._reject_owner_assignment(data.role)
         if await user_repo.get_by_id(self._db, data.user_id) is None:
             raise NotFoundError(message="User not found")
         if await workspace_repo.get_membership(
             self._db, workspace_id=workspace_id, user_id=data.user_id
         ) is not None:
             raise AlreadyExistsError(message="Workspace member already exists")
+        self._reject_owner_assignment(data.role)
         return await workspace_repo.create_membership(
             self._db,
             workspace_id=workspace_id,
@@ -113,13 +113,13 @@ class WorkspaceService:
         await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.MEMBER_MANAGE
         )
-        self._reject_owner_assignment(data.role)
         membership = await workspace_repo.get_membership(
             self._db, workspace_id=workspace_id, user_id=user_id
         )
         if membership is None:
             raise NotFoundError(message="Workspace member not found")
         self._reject_owner_membership(membership.workspace_role)
+        self._reject_owner_assignment(data.role)
         return await workspace_repo.update_membership_role(
             self._db, db_membership=membership, role=data.role
         )
