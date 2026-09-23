@@ -3,8 +3,10 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.db.models.user import User
+from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workspace import Workspace
 from app.repositories import workflow as workflow_repo
 from app.repositories import workspace as workspace_repo
@@ -63,6 +65,10 @@ async def test_workflow_workspace_scope_preserves_creator_and_cascades_workspace
         description=None,
         definition={},
     )
+    second_workflow_id = second_workflow.id
     await postgres_session.delete(second_workspace)
     await postgres_session.flush()
-    assert await workflow_repo.get_workflow_by_id(postgres_session, second_workflow.id) is None
+    stored_workflow = await postgres_session.scalar(
+        select(Workflow).where(Workflow.id == second_workflow_id)
+    )
+    assert stored_workflow is None
