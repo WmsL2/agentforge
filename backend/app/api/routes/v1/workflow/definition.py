@@ -33,16 +33,19 @@ async def validate(data: WorkflowGraphSchema, workflow_service: WorkflowSvc, _: 
 async def list_workflows(
     workflow_service: WorkflowSvc,
     current_user: CurrentUser,
+    workspace_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
 ):
-    items, total = await workflow_service.list_workflows(current_user.id, skip, limit)
+    items, total = await workflow_service.list_workflows(workspace_id, current_user.id, skip, limit)
     return {"items": items, "total": total}
 
 
 @router.post("", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
-async def create(data: WorkflowCreate, workflow_service: WorkflowSvc, current_user: CurrentUser):
-    return await workflow_service.create_workflow(current_user.id, data)
+async def create(
+    data: WorkflowCreate, workspace_id: UUID, workflow_service: WorkflowSvc, current_user: CurrentUser
+):
+    return await workflow_service.create_workflow(workspace_id, current_user.id, data)
 
 
 @router.get("/{workflow_id}", response_model=WorkflowRead)

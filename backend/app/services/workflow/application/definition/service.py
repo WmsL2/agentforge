@@ -16,14 +16,22 @@ from app.services.workflow.definition.model.domain import (
 )
 from app.services.workflow.definition.serialization.serializer import serialize_workflow_graph
 from app.services.workflow.definition.validation.validator import WorkflowValidator
+from app.services.workspace.authorization import WorkspaceAuthorizationService
+from app.services.workspace.domain import WorkspacePermission
 
 if TYPE_CHECKING:
     from app.schemas.workflow.definition import WorkflowCreate, WorkflowGraphSchema, WorkflowUpdate
 
 
 class WorkflowService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, authorization: WorkspaceAuthorizationService | None = None):
         self.db = db
+        self._authorization = authorization
+
+    def _require_authorization(self) -> WorkspaceAuthorizationService:
+        if self._authorization is None:
+            raise RuntimeError("WorkflowService authorization is required for Workspace-scoped CRUD")
+        return self._authorization
 
     def _definition(
         self,
@@ -66,12 +74,30 @@ class WorkflowService:
             )
 
     async def get_owned_workflow(self, workflow_id: UUID, user_id: UUID):
+        """Legacy creator boundary retained for Atomic 6 Run/Approval compatibility."""
         row = await workflow_repo.get_workflow_by_id(self.db, workflow_id)
         if row is None or row.user_id != user_id:
             raise NotFoundError(message="Workflow not found")
         return row
 
-    async def create_workflow(self, user_id: UUID, data: WorkflowCreate):
+    async def get_authorized_workflow(
+        self, workflow_id: UUID, actor_user_id: UUID, permission: WorkspacePermission
+    ):
+        row = await workflow_repo.get_workflow_by_id(self.db, workflow_id)
+        if row is None or row.workspace_id is None:
+            raise NotFoundError(message="Workflow not found")
+        try:
+            await self._require_authorization().require_permission(
+                row.workspace_id, actor_user_id, permission
+            )
+        except NotFoundError:
+            raise NotFoundError(message="Workflow not found") from None
+        return row
+
+    async def create_workflow(self, workspace_id: UUID, actor_user_id: UUID, data: WorkflowCreate):
+        await self._require_authorization().require_permission(
+            workspace_id, actor_user_id, WorkspacePermission.WORKFLOW_CREATE
+        )
         definition = self._definition(
             data.definition,
             workflow_id=uuid4(),
@@ -83,23 +109,31 @@ class WorkflowService:
         return await workflow_repo.create_workflow(
             self.db,
             workflow_id=definition.id,
-            user_id=user_id,
+            user_id=actor_user_id,
+            workspace_id=workspace_id,
             name=data.name,
             description=data.description,
             definition=serialize_workflow_graph(definition),
             revision=1,
         )
 
-    async def get_workflow(self, workflow_id: UUID, user_id: UUID):
-        return await self.get_owned_workflow(workflow_id, user_id)
+    async def get_workflow(self, workflow_id: UUID, actor_user_id: UUID):
+        return await self.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.WORKFLOW_READ
+        )
 
-    async def list_workflows(self, user_id: UUID, skip: int = 0, limit: int = 50):
-        return await workflow_repo.list_workflows_by_user(
-            self.db, user_id, skip=skip, limit=limit
-        ), await workflow_repo.count_workflows_by_user(self.db, user_id)
+    async def list_workflows(self, workspace_id: UUID, actor_user_id: UUID, skip: int = 0, limit: int = 50):
+        await self._require_authorization().require_permission(
+            workspace_id, actor_user_id, WorkspacePermission.WORKFLOW_READ
+        )
+        return await workflow_repo.list_workflows_by_workspace(
+            self.db, workspace_id, skip=skip, limit=limit
+        ), await workflow_repo.count_workflows_by_workspace(self.db, workspace_id)
 
-    async def update_workflow(self, workflow_id: UUID, user_id: UUID, data: WorkflowUpdate):
-        row = await self.get_owned_workflow(workflow_id, user_id)
+    async def update_workflow(self, workflow_id: UUID, actor_user_id: UUID, data: WorkflowUpdate):
+        row = await self.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.WORKFLOW_EDIT
+        )
         supplied = data.model_fields_set
         if not supplied:
             return row
@@ -128,8 +162,10 @@ class WorkflowService:
             },
         )
 
-    async def delete_workflow(self, workflow_id: UUID, user_id: UUID) -> None:
-        await self.get_owned_workflow(workflow_id, user_id)
+    async def delete_workflow(self, workflow_id: UUID, actor_user_id: UUID) -> None:
+        await self.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.WORKFLOW_DELETE
+        )
         await workflow_repo.delete_workflow(self.db, workflow_id)
 
     def validate_definition(self, graph: WorkflowGraphSchema):

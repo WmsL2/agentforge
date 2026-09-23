@@ -15,6 +15,7 @@ from app.api.deps import (
     get_workflow_approval_service,
     get_workflow_engine,
     get_workflow_execution_observer,
+    get_workflow_service,
 )
 from app.composition.tool_platform import open_tool_platform
 from app.integrations.mcp import MCPToolCallResult, MCPToolExecutor
@@ -33,6 +34,7 @@ from app.services.workflow import (
 )
 from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
 from app.services.workflow.execution.observability import TraceEventKind, WorkflowObservationContext
+from app.services.workspace.authorization import WorkspaceAuthorizationService
 
 
 class FakeAgentRunner:
@@ -152,6 +154,16 @@ def test_get_langgraph_agent_runner_returns_concrete_runner() -> None:
 
 def test_get_workflow_execution_observer_returns_sqlalchemy_implementation() -> None:
     assert isinstance(get_workflow_execution_observer(), SQLAlchemyWorkflowExecutionObserver)
+
+
+def test_get_workflow_service_reuses_request_db_and_authorization_instance() -> None:
+    db = AsyncMock()
+    authorization = MagicMock(spec=WorkspaceAuthorizationService)
+
+    service = get_workflow_service(db, authorization)
+
+    assert service.db is db
+    assert service._authorization is authorization
 
 
 def test_production_composition_executes_current_datetime_tool_loop(

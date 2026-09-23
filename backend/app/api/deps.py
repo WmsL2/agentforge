@@ -104,8 +104,10 @@ def get_workspace_service(
 WorkspaceSvc = Annotated[WorkspaceService, Depends(get_workspace_service)]
 
 
-def get_workflow_service(db: DBSession) -> WorkflowService:
-    return WorkflowService(db)
+def get_workflow_service(
+    db: DBSession, authorization_service: WorkspaceAuthorizationSvc
+) -> WorkflowService:
+    return WorkflowService(db, authorization=authorization_service)
 
 
 WorkflowSvc = Annotated[WorkflowService, Depends(get_workflow_service)]
