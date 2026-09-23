@@ -24,14 +24,9 @@ if TYPE_CHECKING:
 
 
 class WorkflowService:
-    def __init__(self, db: AsyncSession, authorization: WorkspaceAuthorizationService | None = None):
+    def __init__(self, db: AsyncSession, authorization: WorkspaceAuthorizationService):
         self.db = db
         self._authorization = authorization
-
-    def _require_authorization(self) -> WorkspaceAuthorizationService:
-        if self._authorization is None:
-            raise RuntimeError("WorkflowService authorization is required for Workspace-scoped CRUD")
-        return self._authorization
 
     def _definition(
         self,
@@ -87,7 +82,7 @@ class WorkflowService:
         if row is None or row.workspace_id is None:
             raise NotFoundError(message="Workflow not found")
         try:
-            await self._require_authorization().require_permission(
+            await self._authorization.require_permission(
                 row.workspace_id, actor_user_id, permission
             )
         except NotFoundError:
@@ -95,7 +90,7 @@ class WorkflowService:
         return row
 
     async def create_workflow(self, workspace_id: UUID, actor_user_id: UUID, data: WorkflowCreate):
-        await self._require_authorization().require_permission(
+        await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.WORKFLOW_CREATE
         )
         definition = self._definition(
@@ -123,7 +118,7 @@ class WorkflowService:
         )
 
     async def list_workflows(self, workspace_id: UUID, actor_user_id: UUID, skip: int = 0, limit: int = 50):
-        await self._require_authorization().require_permission(
+        await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.WORKFLOW_READ
         )
         return await workflow_repo.list_workflows_by_workspace(

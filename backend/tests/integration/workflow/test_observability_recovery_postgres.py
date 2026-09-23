@@ -17,6 +17,7 @@ from app.db.models.workflow import (
     WorkflowRunStep,
     WorkflowTraceEvent,
 )
+from app.repositories import workspace as workspace_repo
 from app.schemas.workflow.definition import WorkflowCreate, WorkflowGraphSchema
 from app.services.workflow import (
     ApprovalNodeExecutor,
@@ -33,6 +34,8 @@ from app.services.workflow.application.observability import SQLAlchemyWorkflowEx
 from app.services.workflow.application.run.durability import DurableWorkflowExecutionPersistence
 from app.services.workflow.execution.checkpoint import deserialize_workflow_checkpoint
 from app.services.workflow.execution.run import deserialize_workflow_run
+from app.services.workspace.authorization import WorkspaceAuthorizationService
+from app.services.workspace.domain import WorkspaceRole
 
 
 class SimulatedProcessCrash(BaseException):
@@ -117,14 +120,20 @@ def observer(factory: async_sessionmaker[AsyncSession]) -> SQLAlchemyWorkflowExe
 
 async def create_run(
     factory: async_sessionmaker[AsyncSession], graph: WorkflowGraphSchema, executor: RecordingExecutor
-) -> tuple[UUID, UUID, UUID]:
+) -> tuple[UUID, UUID, UUID, UUID]:
     async with factory() as session:
         user = User(id=uuid4(), email=f"observability-{uuid4()}@example.test", role=UserRole.USER.value)
         session.add(user)
         await session.commit()
-        workflow_service = WorkflowService(session)
+        workspace = await workspace_repo.create_workspace(
+            session, name="Observability recovery", created_by_user_id=user.id
+        )
+        await workspace_repo.create_membership(
+            session, workspace_id=workspace.id, user_id=user.id, role=WorkspaceRole.OWNER
+        )
+        workflow_service = WorkflowService(session, WorkspaceAuthorizationService(session))
         workflow = await workflow_service.create_workflow(
-            user.id, WorkflowCreate(name="Observability recovery", definition=graph)
+            workspace.id, user.id, WorkflowCreate(name="Observability recovery", definition=graph)
         )
         await session.commit()
         workflow_observer = observer(factory)
@@ -132,7 +141,7 @@ async def create_run(
         run = await WorkflowRunService(
             session, workflow_service, WorkflowEngine(executor, observer=workflow_observer)
         ).execute_workflow(workflow.id, user.id, {})
-        return user.id, workflow.id, run.id
+        return user.id, workspace.id, workflow.id, run.id
 
 
 async def steps(session: AsyncSession, run_id: UUID) -> list[WorkflowRunStep]:
@@ -172,10 +181,14 @@ async def checkpoints(session: AsyncSession, run_id: UUID) -> list[WorkflowCheck
 
 
 async def cleanup(
-    factory: async_sessionmaker[AsyncSession], user_id: UUID, workflow_id: UUID, run_id: UUID
+    factory: async_sessionmaker[AsyncSession],
+    user_id: UUID,
+    workspace_id: UUID,
+    workflow_id: UUID,
+    run_id: UUID,
 ) -> None:
     async with factory() as session:
-        await session.execute(delete(Workflow).where(Workflow.id == workflow_id))
+        await workspace_repo.delete_workspace(session, workspace_id)
         await session.execute(delete(User).where(User.id == user_id))
         await session.commit()
         assert await session.scalar(
@@ -238,7 +251,7 @@ async def test_completed_workflow_observability_survives_cross_connection_reads(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     executor = RecordingExecutor()
-    user_id, workflow_id, run_id = await create_run(
+    user_id, workspace_id, workflow_id, run_id = await create_run(
         postgres_restart_session_factory, completed_graph(), executor
     )
     try:
@@ -267,7 +280,7 @@ async def test_completed_workflow_observability_survives_cross_connection_reads(
         }
         assert all(kinds == ["node_started", "node_completed"] for kinds in event_kinds_by_step.values())
     finally:
-        await cleanup(postgres_restart_session_factory, user_id, workflow_id, run_id)
+        await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)
 
 
 @pytest.mark.anyio
@@ -275,7 +288,7 @@ async def test_approval_restart_preserves_interrupted_history_and_appends_downst
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     phase_a = RecordingExecutor()
-    user_id, workflow_id, run_id = await create_run(
+    user_id, workspace_id, workflow_id, run_id = await create_run(
         postgres_restart_session_factory, approval_graph(), phase_a
     )
     try:
@@ -295,7 +308,7 @@ async def test_approval_restart_preserves_interrupted_history_and_appends_downst
         async with postgres_restart_session_factory() as session_b:
             approval_service = WorkflowApprovalService(
                 session_b,
-                WorkflowService(session_b),
+                WorkflowService(session_b, WorkspaceAuthorizationService(session_b)),
                 WorkflowEngine(phase_b, observer=observer(postgres_restart_session_factory)),
                 observer=observer(postgres_restart_session_factory),
             )
@@ -336,14 +349,14 @@ async def test_approval_restart_preserves_interrupted_history_and_appends_downst
         assert phase_a.calls == ["start", "before", "approval"]
         assert phase_b.calls == ["after", "end"]
     finally:
-        await cleanup(postgres_restart_session_factory, user_id, workflow_id, run_id)
+        await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)
 
 
 @pytest.mark.anyio
 async def test_crash_after_resolution_checkpoint_recovers_without_duplicate_observability_steps(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workflow_id, run_id = await create_run(
+    user_id, workspace_id, workflow_id, run_id = await create_run(
         postgres_restart_session_factory, approval_graph(), RecordingExecutor()
     )
     try:
@@ -353,7 +366,7 @@ async def test_crash_after_resolution_checkpoint_recovers_without_duplicate_obse
             )
             approval_service = WorkflowApprovalService(
                 session_b,
-                WorkflowService(session_b),
+                WorkflowService(session_b, WorkspaceAuthorizationService(session_b)),
                 crash_engine,
                 observer=observer(postgres_restart_session_factory),
             )
@@ -392,7 +405,7 @@ async def test_crash_after_resolution_checkpoint_recovers_without_duplicate_obse
             ]
         assert phase_c.calls == ["after", "end"]
     finally:
-        await cleanup(postgres_restart_session_factory, user_id, workflow_id, run_id)
+        await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)
 
 
 @pytest.mark.anyio
@@ -400,15 +413,23 @@ async def test_process_crash_leaves_stale_running_step_with_only_started_trace(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     executor = CrashOnValueExecutor()
-    user_id = workflow_id = run_id = None
+    user_id = workspace_id = workflow_id = run_id = None
     try:
         async with postgres_restart_session_factory() as session_a:
             user = User(id=uuid4(), email=f"crash-{uuid4()}@example.test", role=UserRole.USER.value)
             session_a.add(user)
             await session_a.commit()
-            workflow_service = WorkflowService(session_a)
+            workspace = await workspace_repo.create_workspace(
+                session_a, name="Crash semantics", created_by_user_id=user.id
+            )
+            await workspace_repo.create_membership(
+                session_a, workspace_id=workspace.id, user_id=user.id, role=WorkspaceRole.OWNER
+            )
+            workflow_service = WorkflowService(session_a, WorkspaceAuthorizationService(session_a))
             workflow = await workflow_service.create_workflow(
-                user.id, WorkflowCreate(name="Crash semantics", definition=completed_graph())
+                workspace.id,
+                user.id,
+                WorkflowCreate(name="Crash semantics", definition=completed_graph()),
             )
             await session_a.commit()
             with pytest.raises(SimulatedProcessCrash):
@@ -417,7 +438,7 @@ async def test_process_crash_leaves_stale_running_step_with_only_started_trace(
                     workflow_service,
                     WorkflowEngine(executor, observer=observer(postgres_restart_session_factory)),
                 ).execute_workflow(workflow.id, user.id, {})
-            user_id, workflow_id = user.id, workflow.id
+            user_id, workspace_id, workflow_id = user.id, workspace.id, workflow.id
             run_id = (await session_a.scalar(select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow.id)))
             assert run_id is not None
 
@@ -436,5 +457,5 @@ async def test_process_crash_leaves_stale_running_step_with_only_started_trace(
                 "node_started"
             ]
     finally:
-        if user_id is not None and workflow_id is not None and run_id is not None:
-            await cleanup(postgres_restart_session_factory, user_id, workflow_id, run_id)
+        if user_id is not None and workspace_id is not None and workflow_id is not None and run_id is not None:
+            await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)

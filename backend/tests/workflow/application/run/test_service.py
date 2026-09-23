@@ -20,6 +20,11 @@ from app.services.workflow.definition.validation.validator import (
     WorkflowValidationResult,
 )
 from app.services.workflow.execution.engine import WorkflowExecutionValidationError
+from app.services.workspace.authorization import WorkspaceAuthorizationService
+
+
+def create_definition_service(db):
+    return WorkflowService(db, AsyncMock(spec=WorkspaceAuthorizationService))
 
 
 def workflow_row(owner_id, workflow_id=None, revision=3):
@@ -55,7 +60,7 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
     db = AsyncMock()
     owner = uuid4()
     row = workflow_row(owner)
-    definition_service = WorkflowService(db)
+    definition_service = create_definition_service(db)
     service = WorkflowRunService(
         db, definition_service, WorkflowEngine(DeterministicNodeExecutor())
     )
@@ -116,7 +121,7 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
     db = AsyncMock()
     owner = uuid4()
     row = workflow_row(owner)
-    definition_service = WorkflowService(db)
+    definition_service = create_definition_service(db)
     engine = AsyncMock()
     engine.validate_definition = MagicMock()
 
@@ -185,7 +190,7 @@ async def test_paused_approval_run_is_durably_persisted_by_engine_without_termin
             approval_executor=ApprovalNodeExecutor(),
         )
     )
-    service = WorkflowRunService(db, WorkflowService(db), engine)
+    service = WorkflowRunService(db, create_definition_service(db), engine)
     db_run = SimpleNamespace()
     persistence = MagicMock()
     persistence.persist_node_completion = AsyncMock()
@@ -217,7 +222,7 @@ async def test_ownership_and_run_parent_mismatch_are_not_found():
     db = AsyncMock()
     owner, other = uuid4(), uuid4()
     row = workflow_row(owner)
-    definition_service = WorkflowService(db)
+    definition_service = create_definition_service(db)
     service = WorkflowRunService(db, definition_service, AsyncMock())
     with (
         patch(
@@ -242,7 +247,7 @@ async def test_list_checks_parent_ownership_before_run_repository():
     db = AsyncMock()
     owner = uuid4()
     row = workflow_row(owner)
-    service = WorkflowRunService(db, WorkflowService(db), AsyncMock())
+    service = WorkflowRunService(db, create_definition_service(db), AsyncMock())
     with (
         patch(
             "app.services.workflow.application.definition.service.workflow_repo"
@@ -271,7 +276,7 @@ async def test_observability_queries_return_repository_order_after_ownership_gat
     row = workflow_row(owner)
     run = SimpleNamespace(id=uuid4(), workflow_id=row.id)
     ordered = [SimpleNamespace(sequence=1), SimpleNamespace(sequence=2)]
-    service = WorkflowRunService(db, WorkflowService(db), AsyncMock())
+    service = WorkflowRunService(db, create_definition_service(db), AsyncMock())
     with (
         patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
@@ -311,7 +316,7 @@ async def test_observability_queries_never_call_repository_when_ownership_gate_f
     owner = uuid4()
     row = workflow_row(owner)
     run_id = uuid4()
-    service = WorkflowRunService(db, WorkflowService(db), AsyncMock())
+    service = WorkflowRunService(db, create_definition_service(db), AsyncMock())
     with (
         patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
@@ -344,7 +349,7 @@ async def test_execution_validation_error_is_not_persisted_as_a_terminal_run():
     engine.validate_definition = MagicMock(
         side_effect=WorkflowExecutionValidationError(WorkflowValidationResult(issues=()))
     )
-    service = WorkflowRunService(db, WorkflowService(db), engine)
+    service = WorkflowRunService(db, create_definition_service(db), engine)
     with (
         patch(
             "app.services.workflow.application.definition.service.workflow_repo"
@@ -370,7 +375,7 @@ async def test_persistence_exception_propagates_without_terminal_failure_update(
     engine = AsyncMock()
     engine.validate_definition = MagicMock()
     engine.execute.side_effect = RuntimeError("durability failed")
-    service = WorkflowRunService(db, WorkflowService(db), engine)
+    service = WorkflowRunService(db, create_definition_service(db), engine)
     db_run = SimpleNamespace()
     with (
         patch(

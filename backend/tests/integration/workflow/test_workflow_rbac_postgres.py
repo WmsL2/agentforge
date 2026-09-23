@@ -47,7 +47,7 @@ async def test_workflow_workspace_rbac_postgresql(postgres_session) -> None:
     assert {item.id for item in listed} >= {member_workflow.id, owner_workflow.id}
     with pytest.raises(AuthorizationError) as denied:
         await service.delete_workflow(owner_workflow.id, ids["member"])
-    assert denied.value.code == "WORKSPACE_PERMISSION_DENIED"
+    assert (denied.value.status_code, denied.value.code) == (403, "WORKSPACE_PERMISSION_DENIED")
     await service.delete_workflow(owner_workflow.id, ids["admin"])
     owner_delete = await service.create_workflow(workspace.id, ids["owner"], create_data("Owner delete"))
     await service.delete_workflow(owner_delete.id, ids["owner"])
@@ -73,6 +73,9 @@ async def test_workflow_workspace_rbac_postgresql(postgres_session) -> None:
         await service.create_workflow(workspace.id, ids["outsider"], create_data("Denied"))
     with pytest.raises(NotFoundError, match="Workspace not found"):
         await service.list_workflows(workspace.id, ids["outsider"])
+    with pytest.raises(NotFoundError) as denied:
+        await service.get_workflow(member_workflow.id, ids["outsider"])
+    assert (denied.value.status_code, denied.value.message) == (404, "Workflow not found")
     with pytest.raises(NotFoundError, match="Workflow not found"):
         await service.get_workflow(member_workflow.id, ids["global"])
     for action in (

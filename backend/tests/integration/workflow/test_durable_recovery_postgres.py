@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models.user import User, UserRole
 from app.db.models.workflow import ApprovalRequest, Workflow, WorkflowCheckpoint, WorkflowRun
+from app.repositories import workspace as workspace_repo
 from app.schemas.workflow.definition import WorkflowCreate, WorkflowGraphSchema
 from app.services.workflow import (
     ApprovalNodeExecutor,
@@ -25,6 +26,8 @@ from app.services.workflow import (
 from app.services.workflow.application.run.durability import DurableWorkflowExecutionPersistence
 from app.services.workflow.execution.checkpoint import deserialize_workflow_checkpoint
 from app.services.workflow.execution.run import deserialize_workflow_run
+from app.services.workspace.authorization import WorkspaceAuthorizationService
+from app.services.workspace.domain import WorkspaceRole
 
 
 class SimulatedProcessCrash(RuntimeError):
@@ -79,14 +82,21 @@ def graph(after_value: str = "after-v1") -> WorkflowGraphSchema:
 
 async def create_paused_run(
     session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[UUID, UUID, UUID]:
+) -> tuple[UUID, UUID, UUID, UUID]:
     """Commit phase one and return IDs only after Session A has closed."""
     async with session_factory() as session:
         user = User(id=uuid4(), email=f"recovery-{uuid4()}@example.test", role=UserRole.USER.value)
         session.add(user)
         await session.commit()
-        workflow_service = WorkflowService(session)
+        workspace = await workspace_repo.create_workspace(
+            session, name="Durable recovery", created_by_user_id=user.id
+        )
+        await workspace_repo.create_membership(
+            session, workspace_id=workspace.id, user_id=user.id, role=WorkspaceRole.OWNER
+        )
+        workflow_service = WorkflowService(session, WorkspaceAuthorizationService(session))
         workflow = await workflow_service.create_workflow(
+            workspace.id,
             user.id,
             WorkflowCreate(name="Durable recovery", definition=graph()),
         )
@@ -117,15 +127,15 @@ async def create_paused_run(
         assert (
             checkpoint.interrupt is not None and checkpoint.interrupt["type"] == "approval_required"
         )
-        return user.id, workflow.id, run_id
+        return user.id, workspace.id, workflow.id, run_id
 
 
 async def cleanup_case(
-    session_factory: async_sessionmaker[AsyncSession], user_id: UUID, workflow_id: UUID
+    session_factory: async_sessionmaker[AsyncSession], user_id: UUID, workspace_id: UUID
 ) -> None:
     """Delete only this test's aggregate, relying on its database cascades."""
     async with session_factory() as session:
-        await session.execute(delete(Workflow).where(Workflow.id == workflow_id))
+        await workspace_repo.delete_workspace(session, workspace_id)
         await session.execute(delete(User).where(User.id == user_id))
         await session.commit()
 
@@ -161,14 +171,14 @@ async def revise_current_workflow(
 async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
     try:
         await revise_current_workflow(postgres_restart_session_factory, workflow_id)
 
         guard = RecordingExecutor({"start", "before", "approval"})
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
-                session, WorkflowService(session), WorkflowEngine(guard)
+                session, WorkflowService(session, WorkspaceAuthorizationService(session)), WorkflowEngine(guard)
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
             await approval_service.approve(
@@ -200,18 +210,20 @@ async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
             assert stored_checkpoints[-1].interrupt is None
         assert guard.calls == ["after", "end"]
     finally:
-        await cleanup_case(postgres_restart_session_factory, user_id, workflow_id)
+        await cleanup_case(postgres_restart_session_factory, user_id, workspace_id)
 
 
 @pytest.mark.anyio
 async def test_recovery_after_crash_uses_committed_resolution_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
     try:
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
-                session, WorkflowService(session), CrashBeforeDownstreamEngine(RecordingExecutor())
+                session,
+                WorkflowService(session, WorkspaceAuthorizationService(session)),
+                CrashBeforeDownstreamEngine(RecordingExecutor()),
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
             with pytest.raises(SimulatedProcessCrash):
@@ -275,19 +287,19 @@ async def test_recovery_after_crash_uses_committed_resolution_checkpoint(
             assert [checkpoint.sequence for checkpoint in stored_checkpoints] == [1, 2, 3, 4, 5, 6]
         assert guard.calls == ["after", "end"]
     finally:
-        await cleanup_case(postgres_restart_session_factory, user_id, workflow_id)
+        await cleanup_case(postgres_restart_session_factory, user_id, workspace_id)
 
 
 @pytest.mark.anyio
 async def test_approval_restart_reject_cancels_without_execution_or_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
     try:
         guard = RecordingExecutor({"start", "before", "approval", "after", "end"})
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
-                session, WorkflowService(session), WorkflowEngine(guard)
+                session, WorkflowService(session, WorkspaceAuthorizationService(session)), WorkflowEngine(guard)
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
             await approval_service.reject(
@@ -308,4 +320,4 @@ async def test_approval_restart_reject_cancels_without_execution_or_checkpoint(
             assert stored_checkpoints[-1].interrupt["type"] == "approval_required"
         assert guard.calls == []
     finally:
-        await cleanup_case(postgres_restart_session_factory, user_id, workflow_id)
+        await cleanup_case(postgres_restart_session_factory, user_id, workspace_id)
