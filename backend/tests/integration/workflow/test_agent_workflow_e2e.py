@@ -14,7 +14,9 @@ from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
 from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 from app.main import app
+from app.repositories import workspace as workspace_repo
 from app.services.agent_runtime import AgentExecutionRequest, AgentExecutionResult
+from app.services.workspace.domain import WorkspaceRole
 
 
 class FakeAgentRunner:
@@ -39,6 +41,17 @@ async def test_agent_workflow_executes_and_persists_through_postgres(
     )
     postgres_session.add(user)
     await postgres_session.flush()
+    workspace = await workspace_repo.create_workspace(
+        postgres_session,
+        name="PostgreSQL AGENT workflow",
+        created_by_user_id=user.id,
+    )
+    await workspace_repo.create_membership(
+        postgres_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        role=WorkspaceRole.OWNER,
+    )
 
     async def override_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield postgres_session
@@ -71,7 +84,9 @@ async def test_agent_workflow_executes_and_persists_through_postgres(
     }
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            create_response = await client.post("/api/v1/workflows", json=payload)
+            create_response = await client.post(
+                f"/api/v1/workflows?workspace_id={workspace.id}", json=payload
+            )
             assert create_response.status_code == 201
             workflow_id = UUID(create_response.json()["id"])
 
@@ -79,6 +94,7 @@ async def test_agent_workflow_executes_and_persists_through_postgres(
                 select(Workflow).where(Workflow.id == workflow_id)
             )
             assert workflow is not None
+            assert workflow.workspace_id == workspace.id
             assert workflow.user_id == user.id
             assert workflow.revision == 1
             assert isinstance(workflow.definition, dict)

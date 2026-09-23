@@ -12,6 +12,8 @@ from app.api.deps import get_current_user, get_db_session, get_langgraph_agent_r
 from app.db.models.user import User, UserRole
 from app.db.models.workflow import ApprovalRequest, Workflow, WorkflowCheckpoint, WorkflowRun
 from app.main import app
+from app.repositories import workspace as workspace_repo
+from app.services.workspace.domain import WorkspaceRole
 
 
 class NoopAgentRunner:
@@ -28,6 +30,17 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
     user = User(id=uuid4(), email=f"approval-e2e-{uuid4()}@example.test", role=UserRole.USER.value)
     postgres_session.add(user)
     await postgres_session.flush()
+    workspace = await workspace_repo.create_workspace(
+        postgres_session,
+        name="PostgreSQL approval workflow",
+        created_by_user_id=user.id,
+    )
+    await workspace_repo.create_membership(
+        postgres_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        role=WorkspaceRole.OWNER,
+    )
 
     async def override_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield postgres_session
@@ -52,7 +65,9 @@ async def test_approval_workflow_approve_resumes_and_completes_through_postgres(
     }
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            created = await client.post("/api/v1/workflows", json=payload)
+            created = await client.post(
+                f"/api/v1/workflows?workspace_id={workspace.id}", json=payload
+            )
             assert created.status_code == 201
             workflow_id = UUID(created.json()["id"])
             executed = await client.post(
@@ -124,6 +139,17 @@ async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_th
     )
     postgres_session.add(user)
     await postgres_session.flush()
+    workspace = await workspace_repo.create_workspace(
+        postgres_session,
+        name="PostgreSQL rejection workflow",
+        created_by_user_id=user.id,
+    )
+    await workspace_repo.create_membership(
+        postgres_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        role=WorkspaceRole.OWNER,
+    )
 
     async def override_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield postgres_session
@@ -148,7 +174,9 @@ async def test_approval_workflow_reject_cancels_without_resolution_checkpoint_th
     }
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            created = await client.post("/api/v1/workflows", json=payload)
+            created = await client.post(
+                f"/api/v1/workflows?workspace_id={workspace.id}", json=payload
+            )
             assert created.status_code == 201
             workflow_id = UUID(created.json()["id"])
             executed = await client.post(
