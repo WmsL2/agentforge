@@ -71,12 +71,15 @@ def trace_event_row():
 async def test_execute_and_list_routes_use_authenticated_run_service():
     user = SimpleNamespace(id=uuid4())
     row = run_row()
+    calls = []
 
     class RunService:
-        async def execute_workflow(self, *_):
+        async def execute_workflow(self, workflow_id, actor_user_id, input_data):
+            calls.append(("execute", workflow_id, actor_user_id, input_data))
             return row
 
-        async def list_workflow_runs(self, *_):
+        async def list_workflow_runs(self, workflow_id, actor_user_id, skip, limit):
+            calls.append(("list", workflow_id, actor_user_id, skip, limit))
             return [row], 1
 
     service = RunService()
@@ -92,6 +95,10 @@ async def test_execute_and_list_routes_use_authenticated_run_service():
         assert response.json()["status"] == "completed"
         assert listed.status_code == 200
         assert listed.json()["total"] == 1
+        assert calls == [
+            ("execute", row.workflow_id, user.id, {}),
+            ("list", row.workflow_id, user.id, 0, 50),
+        ]
     finally:
         app.dependency_overrides.clear()
 

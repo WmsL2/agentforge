@@ -23,6 +23,7 @@ from app.services.workflow.execution.observability.observer import (
     WorkflowObservationContext,
 )
 from app.services.workflow.execution.run import WorkflowRunStatus, deserialize_workflow_run
+from app.services.workspace.domain import WorkspacePermission
 
 
 class WorkflowApprovalConflictError(AppException):
@@ -43,8 +44,10 @@ class WorkflowApprovalService:
         self.db, self.workflow_service, self.engine = db, workflow_service, engine
         self._observer = observer or NoOpWorkflowExecutionObserver()
 
-    async def get_pending_approval(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
-        await self._owned_run(workflow_id, run_id, user_id)
+    async def get_pending_approval(self, workflow_id: UUID, run_id: UUID, actor_user_id: UUID):
+        await self._authorized_run(
+            workflow_id, run_id, actor_user_id, WorkspacePermission.APPROVAL_DECIDE
+        )
         approval = await approval_repo.get_pending_approval_by_run(self.db, run_id)
         if approval is None:
             raise NotFoundError(message="Pending approval request not found")
@@ -55,14 +58,16 @@ class WorkflowApprovalService:
         workflow_id: UUID,
         run_id: UUID,
         approval_id: UUID,
-        user_id: UUID,
+        actor_user_id: UUID,
         *,
         note: str | None = None,
     ):
-        workflow, db_run = await self._owned_run(workflow_id, run_id, user_id)
+        workflow, db_run = await self._authorized_run(
+            workflow_id, run_id, actor_user_id, WorkspacePermission.APPROVAL_DECIDE
+        )
         db_approval, approval = await self._locked_pending(db_run, approval_id, run_id)
         run, definition, checkpoint = await self._state(workflow, db_run, approval)
-        approval.approve(decided_by=user_id, note=note)
+        approval.approve(decided_by=actor_user_id, note=note)
         resolved = _resolved(definition, checkpoint, approval)
         try:
             self.engine.validate_resume(definition, run, resolved)
@@ -93,14 +98,16 @@ class WorkflowApprovalService:
         workflow_id: UUID,
         run_id: UUID,
         approval_id: UUID,
-        user_id: UUID,
+        actor_user_id: UUID,
         *,
         note: str | None = None,
     ):
-        workflow, db_run = await self._owned_run(workflow_id, run_id, user_id)
+        workflow, db_run = await self._authorized_run(
+            workflow_id, run_id, actor_user_id, WorkspacePermission.APPROVAL_DECIDE
+        )
         db_approval, approval = await self._locked_pending(db_run, approval_id, run_id)
         run, _, _ = await self._state(workflow, db_run, approval)
-        approval.reject(decided_by=user_id, note=note)
+        approval.reject(decided_by=actor_user_id, note=note)
         run.cancel()
         updated = await approval_repo.update_approval_request_state(
             self.db, db_approval=db_approval, approval=approval
@@ -124,8 +131,10 @@ class WorkflowApprovalService:
                 },
             )
 
-    async def _owned_run(self, workflow_id, run_id, user_id):
-        workflow = await self.workflow_service.get_owned_workflow(workflow_id, user_id)
+    async def _authorized_run(self, workflow_id, run_id, actor_user_id, permission):
+        workflow = await self.workflow_service.get_authorized_workflow(
+            workflow_id, actor_user_id, permission
+        )
         db_run = await run_repo.get_workflow_run_by_id(self.db, run_id)
         if db_run is None or db_run.workflow_id != workflow_id:
             raise NotFoundError(message="Workflow run not found")

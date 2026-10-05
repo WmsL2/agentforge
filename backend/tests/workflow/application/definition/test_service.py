@@ -74,14 +74,3 @@ async def test_same_workspace_member_can_update_and_delete_permission_remains_40
             await subject.delete_workflow(row.id, actor_id)
     assert error.value.code == "WORKSPACE_PERMISSION_DENIED"
     repo.delete_workflow.assert_not_awaited()
-
-
-@pytest.mark.anyio
-async def test_get_owned_workflow_remains_creator_legacy_boundary() -> None:
-    subject, _ = service()
-    owner, other = uuid4(), uuid4()
-    row = SimpleNamespace(user_id=owner)
-    with patch("app.services.workflow.application.definition.service.workflow_repo.get_workflow_by_id", AsyncMock(return_value=row)):
-        assert await subject.get_owned_workflow(uuid4(), owner) is row
-        with pytest.raises(NotFoundError):
-            await subject.get_owned_workflow(uuid4(), other)

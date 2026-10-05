@@ -68,13 +68,6 @@ class WorkflowService:
                 }
             )
 
-    async def get_owned_workflow(self, workflow_id: UUID, user_id: UUID):
-        """Legacy creator boundary retained for Atomic 6 Run/Approval compatibility."""
-        row = await workflow_repo.get_workflow_by_id(self.db, workflow_id)
-        if row is None or row.user_id != user_id:
-            raise NotFoundError(message="Workflow not found")
-        return row
-
     async def get_authorized_workflow(
         self, workflow_id: UUID, actor_user_id: UUID, permission: WorkspacePermission
     ):

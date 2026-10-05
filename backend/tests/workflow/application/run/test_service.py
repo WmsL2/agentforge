@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import AuthorizationError, NotFoundError, ValidationError
 from app.services.workflow import (
     ApprovalNodeExecutor,
     DeterministicNodeExecutor,
@@ -21,6 +21,7 @@ from app.services.workflow.definition.validation.validator import (
 )
 from app.services.workflow.execution.engine import WorkflowExecutionValidationError
 from app.services.workspace.authorization import WorkspaceAuthorizationService
+from app.services.workspace.domain import WorkspacePermission
 
 
 def create_definition_service(db):
@@ -31,6 +32,7 @@ def workflow_row(owner_id, workflow_id=None, revision=3):
     return SimpleNamespace(
         id=workflow_id or uuid4(),
         user_id=owner_id,
+        workspace_id=uuid4(),
         name="Workflow",
         description=None,
         revision=revision,
@@ -99,6 +101,9 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
         result = await service.execute_workflow(row.id, owner, {"request": "hello"})
 
     assert result is db_run
+    definition_service._authorization.require_permission.assert_awaited_once_with(
+        row.workspace_id, owner, WorkspacePermission.WORKFLOW_RUN
+    )
     created_run = run_repo.create_workflow_run.await_args.kwargs["run"]
     snapshot = run_repo.create_workflow_run.await_args.kwargs["definition_snapshot"]
     assert (created_run.workflow_id, created_run.workflow_revision, created_run.input) == (
@@ -150,6 +155,30 @@ async def test_failed_engine_result_is_persisted_and_returned_normally():
     assert persisted_run.status.value == "failed"
     assert persisted_run.error.code == "node_execution_failed"
     assert db.commit.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_same_workspace_non_creator_can_execute_workflow():
+    db = AsyncMock()
+    creator, member = uuid4(), uuid4()
+    row = workflow_row(creator)
+    definition_service = create_definition_service(db)
+    engine = AsyncMock()
+    engine.validate_definition = MagicMock()
+    engine.execute = AsyncMock()
+    service = WorkflowRunService(db, definition_service, engine)
+    with (
+        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence"),
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        run_repo.create_workflow_run = AsyncMock(return_value=SimpleNamespace())
+        assert await service.execute_workflow(row.id, member, {}) is not None
+
+    definition_service._authorization.require_permission.assert_awaited_once_with(
+        row.workspace_id, member, WorkspacePermission.WORKFLOW_RUN
+    )
 
 
 @pytest.mark.anyio
@@ -218,7 +247,7 @@ async def test_paused_approval_run_is_durably_persisted_by_engine_without_termin
 
 
 @pytest.mark.anyio
-async def test_ownership_and_run_parent_mismatch_are_not_found():
+async def test_workflow_authorization_failure_hides_runs_and_parent_mismatch_is_not_found():
     db = AsyncMock()
     owner, other = uuid4(), uuid4()
     row = workflow_row(owner)
@@ -232,9 +261,13 @@ async def test_ownership_and_run_parent_mismatch_are_not_found():
     ):
         definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
         run_repo.create_workflow_run = AsyncMock()
+        definition_service._authorization.require_permission.side_effect = NotFoundError(
+            message="Workflow not found"
+        )
         with pytest.raises(NotFoundError):
             await service.execute_workflow(row.id, other, {})
         run_repo.create_workflow_run.assert_not_awaited()
+        definition_service._authorization.require_permission.side_effect = None
         run_repo.get_workflow_run_by_id = AsyncMock(
             return_value=SimpleNamespace(workflow_id=uuid4())
         )
@@ -243,7 +276,29 @@ async def test_ownership_and_run_parent_mismatch_are_not_found():
 
 
 @pytest.mark.anyio
-async def test_list_checks_parent_ownership_before_run_repository():
+@pytest.mark.parametrize("error", [NotFoundError(message="Workflow not found"), AuthorizationError(code="WORKSPACE_PERMISSION_DENIED")])
+async def test_run_read_authorization_errors_propagate_without_run_repository_access(error):
+    db = AsyncMock()
+    actor = uuid4()
+    row = workflow_row(uuid4())
+    definition_service = create_definition_service(db)
+    definition_service._authorization.require_permission.side_effect = error
+    service = WorkflowRunService(db, definition_service, AsyncMock())
+    with (
+        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch("app.services.workflow.application.run.service.run_repo") as run_repo,
+    ):
+        definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
+        with pytest.raises(type(error)):
+            await service.get_workflow_run(row.id, uuid4(), actor)
+    definition_service._authorization.require_permission.assert_awaited_once_with(
+        row.workspace_id, actor, WorkspacePermission.RUN_READ
+    )
+    run_repo.get_workflow_run_by_id.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_list_checks_parent_run_read_before_run_repository():
     db = AsyncMock()
     owner = uuid4()
     row = workflow_row(owner)
@@ -258,6 +313,9 @@ async def test_list_checks_parent_ownership_before_run_repository():
         run_repo.list_workflow_runs_by_workflow = AsyncMock(return_value=[])
         run_repo.count_workflow_runs_by_workflow = AsyncMock(return_value=0)
         assert await service.list_workflow_runs(row.id, owner) == ([], 0)
+    service.workflow_service._authorization.require_permission.assert_awaited_once_with(
+        row.workspace_id, owner, WorkspacePermission.RUN_READ
+    )
 
 
 @pytest.mark.anyio
@@ -268,7 +326,7 @@ async def test_list_checks_parent_ownership_before_run_repository():
         ("list_workflow_trace_events", "trace_event_repo"),
     ],
 )
-async def test_observability_queries_return_repository_order_after_ownership_gate(
+async def test_observability_queries_return_repository_order_after_run_read_gate(
     method_name, repository_name
 ):
     db = AsyncMock()
@@ -292,6 +350,9 @@ async def test_observability_queries_return_repository_order_after_ownership_gat
         assert await getattr(service, method_name)(row.id, run.id, owner) is ordered
 
     run_repo.get_workflow_run_by_id.assert_awaited_once_with(db, run.id)
+    service.workflow_service._authorization.require_permission.assert_awaited_once_with(
+        row.workspace_id, owner, WorkspacePermission.RUN_READ
+    )
     expected_call = (db, run.id)
     if repository_name == "run_step_repo":
         observability_repo.list_workflow_run_steps.assert_awaited_once_with(*expected_call)

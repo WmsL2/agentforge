@@ -35,15 +35,16 @@ async def test_pending_approval_route_returns_schema() -> None:
 
     class ApprovalService:
         async def get_pending_approval(self, workflow_id, run_id, user_id):
-            assert (workflow_id, run_id, user_id) == (workflow_id, approval.run_id, user.id)
+            assert (workflow_id, run_id, user_id) == (route_workflow_id, approval.run_id, user.id)
             return approval
 
+    route_workflow_id = uuid4()
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_workflow_approval_service] = ApprovalService
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get(
-                f"/api/v1/workflows/{uuid4()}/runs/{approval.run_id}/approvals/pending"
+                f"/api/v1/workflows/{route_workflow_id}/runs/{approval.run_id}/approvals/pending"
             )
         assert response.status_code == 200
         assert response.json()["status"] == "pending"
@@ -90,6 +91,8 @@ async def test_decision_routes_pass_note_and_return_updated_schema() -> None:
         assert rejected.status_code == 200
         assert calls[0][2] == "Looks good"
         assert calls[1][2] == "Needs changes"
+        assert calls[0][1] == (workflow_id, approval.run_id, approval.id, user.id)
+        assert calls[1][1] == (workflow_id, approval.run_id, approval.id, user.id)
     finally:
         app.dependency_overrides.clear()
 

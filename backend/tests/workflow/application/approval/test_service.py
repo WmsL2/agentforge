@@ -7,13 +7,14 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AuthorizationError, NotFoundError
 from app.services.workflow.application.approval.service import (
     WorkflowApprovalConflictError,
     WorkflowApprovalService,
 )
 from app.services.workflow.execution.observability import TraceEventKind
 from app.services.workflow.execution.run import WorkflowRunStatus
+from app.services.workspace.domain import WorkspacePermission
 
 
 def graph(value="old"):
@@ -133,7 +134,7 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
             "interrupt": None,
         }
     )
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     decided = {}
     resolution_outputs = {}
     with (
@@ -204,6 +205,9 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
         "decided_at": decided_approval.decided_at.isoformat(),
         "decision_note": "ok",
     }
+    workflow_service.get_authorized_workflow.assert_awaited_once_with(
+        workflow.id, decided_by, WorkspacePermission.APPROVAL_DECIDE
+    )
 
 
 @pytest.mark.anyio
@@ -212,7 +216,7 @@ async def test_reject_cancels_without_resume_or_checkpoint():
     observer = RecordingObserver(events)
     svc, db, workflow_service, engine = service(observer=observer)
     workflow, run, approval, checkpoint = rows()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -242,6 +246,55 @@ async def test_reject_cancels_without_resume_or_checkpoint():
     assert payload["approval_id"] == str(approval.id)
     assert payload["node_id"] == "approval"
     assert payload["decision_note"] == "stop"
+    workflow_service.get_authorized_workflow.assert_awaited_once_with(
+        workflow.id, ANY, WorkspacePermission.APPROVAL_DECIDE
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["get", "approve", "reject"])
+async def test_member_without_approval_permission_is_rejected_before_repository_access(operation):
+    svc, db, workflow_service, engine = service()
+    workflow, run, approval, _ = rows()
+    actor = uuid4()
+    workflow_service.get_authorized_workflow.side_effect = AuthorizationError(
+        code="WORKSPACE_PERMISSION_DENIED"
+    )
+    with (
+        patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
+        pytest.raises(AuthorizationError) as denied,
+    ):
+        if operation == "get":
+            await svc.get_pending_approval(workflow.id, run.id, actor)
+        elif operation == "approve":
+            await svc.approve(workflow.id, run.id, approval.id, actor)
+        else:
+            await svc.reject(workflow.id, run.id, approval.id, actor)
+
+    assert (denied.value.status_code, denied.value.code) == (403, "WORKSPACE_PERMISSION_DENIED")
+    workflow_service.get_authorized_workflow.assert_awaited_once_with(
+        workflow.id, actor, WorkspacePermission.APPROVAL_DECIDE
+    )
+    run_repo.get_workflow_run_by_id.assert_not_called()
+    approval_repo.get_pending_approval_by_run.assert_not_called()
+    approval_repo.get_approval_request_by_id_for_update.assert_not_called()
+    db.commit.assert_not_awaited()
+    engine.resume.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("actor_kind", ["outsider", "cross_workspace"])
+async def test_workflow_not_found_from_authorization_hides_approval_hierarchy(actor_kind):
+    svc, _, workflow_service, _ = service()
+    workflow, run, _, _ = rows()
+    workflow_service.get_authorized_workflow.side_effect = NotFoundError(message="Workflow not found")
+    with (
+        patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        pytest.raises(NotFoundError, match="Workflow not found"),
+    ):
+        await svc.get_pending_approval(workflow.id, run.id, uuid4())
+    run_repo.get_workflow_run_by_id.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -261,7 +314,7 @@ async def test_approve_observer_failure_does_not_prevent_engine_resume():
             "interrupt": None,
         }
     )
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -298,7 +351,7 @@ async def test_reject_observer_failure_keeps_run_cancelled_and_returns_resolutio
         observer=RecordingObserver(events, error=RuntimeError("trace unavailable"))
     )
     workflow, run, approval, checkpoint = rows()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -327,7 +380,7 @@ async def test_reject_observer_failure_keeps_run_cancelled_and_returns_resolutio
 async def test_repeated_decision_is_locked_conflict(status):
     svc, _, workflow_service, engine = service()
     workflow, run, approval, _ = rows(status)
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -345,7 +398,7 @@ async def test_invalid_checkpoint_is_resume_state_conflict():
     svc, _, workflow_service, _ = service()
     workflow, run, approval, checkpoint = rows()
     checkpoint.pending_node_id = "wrong"
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -365,7 +418,7 @@ async def test_invalid_checkpoint_is_resume_state_conflict():
 async def test_get_pending_checks_workflow_ownership_first():
     svc, _, workflow_service, _ = service()
     workflow, run, approval, _ = rows()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -375,7 +428,9 @@ async def test_get_pending_checks_workflow_ownership_first():
         result = await svc.get_pending_approval(workflow.id, run.id, uuid4())
 
     assert result is approval
-    workflow_service.get_owned_workflow.assert_awaited_once()
+    workflow_service.get_authorized_workflow.assert_awaited_once_with(
+        workflow.id, ANY, WorkspacePermission.APPROVAL_DECIDE
+    )
 
 
 @pytest.mark.anyio
@@ -383,7 +438,7 @@ async def test_run_from_another_workflow_is_not_found():
     svc, _, workflow_service, _ = service()
     workflow, run, _, _ = rows()
     run.workflow_id = uuid4()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with patch("app.services.workflow.application.approval.service.run_repo") as run_repo:
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         with pytest.raises(NotFoundError, match="Workflow run not found"):
@@ -395,7 +450,7 @@ async def test_approval_from_another_run_is_not_found():
     svc, _, workflow_service, _ = service()
     workflow, run, approval, _ = rows()
     approval.run_id = uuid4()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -411,7 +466,7 @@ async def test_non_paused_run_is_conflict_without_resume_or_commit():
     svc, db, workflow_service, engine = service()
     workflow, run, approval, _ = rows()
     run.status = "running"
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -429,7 +484,7 @@ async def test_non_paused_run_is_conflict_without_resume_or_commit():
 async def test_missing_checkpoint_is_conflict_without_changes_or_resume():
     svc, _, workflow_service, engine = service()
     workflow, run, approval, _ = rows()
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
@@ -462,7 +517,7 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
             "interrupt": None,
         }
     )
-    workflow_service.get_owned_workflow = AsyncMock(return_value=workflow)
+    workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,

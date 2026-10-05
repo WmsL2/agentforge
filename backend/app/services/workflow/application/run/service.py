@@ -17,6 +17,7 @@ from app.services.workflow.definition.serialization.serializer import (
 )
 from app.services.workflow.execution.engine import WorkflowEngine, WorkflowExecutionValidationError
 from app.services.workflow.execution.run.domain import WorkflowRun, WorkflowRunStatus
+from app.services.workspace.domain import WorkspacePermission
 
 
 class WorkflowRunService:
@@ -37,8 +38,12 @@ class WorkflowRunService:
             revision=workflow_row.revision,
         )
 
-    async def execute_workflow(self, workflow_id: UUID, user_id: UUID, input_data: dict[str, Any]):
-        workflow_row = await self.workflow_service.get_owned_workflow(workflow_id, user_id)
+    async def execute_workflow(
+        self, workflow_id: UUID, actor_user_id: UUID, input_data: dict[str, Any]
+    ):
+        workflow_row = await self.workflow_service.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.WORKFLOW_RUN
+        )
         definition = self._definition_from_row(workflow_row)
         try:
             self.engine.validate_definition(definition)
@@ -91,17 +96,21 @@ class WorkflowRunService:
             await self.db.commit()
         return db_run
 
-    async def get_workflow_run(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
-        await self.workflow_service.get_owned_workflow(workflow_id, user_id)
+    async def get_workflow_run(self, workflow_id: UUID, run_id: UUID, actor_user_id: UUID):
+        await self.workflow_service.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.RUN_READ
+        )
         run = await run_repo.get_workflow_run_by_id(self.db, run_id)
         if run is None or run.workflow_id != workflow_id:
             raise NotFoundError(message="Workflow run not found")
         return run
 
     async def list_workflow_runs(
-        self, workflow_id: UUID, user_id: UUID, skip: int = 0, limit: int = 50
+        self, workflow_id: UUID, actor_user_id: UUID, skip: int = 0, limit: int = 50
     ):
-        await self.workflow_service.get_owned_workflow(workflow_id, user_id)
+        await self.workflow_service.get_authorized_workflow(
+            workflow_id, actor_user_id, WorkspacePermission.RUN_READ
+        )
         return (
             await run_repo.list_workflow_runs_by_workflow(
                 self.db, workflow_id, skip=skip, limit=limit
@@ -109,10 +118,12 @@ class WorkflowRunService:
             await run_repo.count_workflow_runs_by_workflow(self.db, workflow_id),
         )
 
-    async def list_workflow_run_steps(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
-        await self.get_workflow_run(workflow_id, run_id, user_id)
+    async def list_workflow_run_steps(self, workflow_id: UUID, run_id: UUID, actor_user_id: UUID):
+        await self.get_workflow_run(workflow_id, run_id, actor_user_id)
         return await run_step_repo.list_workflow_run_steps(self.db, run_id)
 
-    async def list_workflow_trace_events(self, workflow_id: UUID, run_id: UUID, user_id: UUID):
-        await self.get_workflow_run(workflow_id, run_id, user_id)
+    async def list_workflow_trace_events(
+        self, workflow_id: UUID, run_id: UUID, actor_user_id: UUID
+    ):
+        await self.get_workflow_run(workflow_id, run_id, actor_user_id)
         return await trace_event_repo.list_workflow_trace_events(self.db, run_id)
