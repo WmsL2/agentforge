@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.7 在持久执行与人工审批之上交付了可持久化的执行观测能力。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.8 将 Workflow、Run、Observability 与 Approval 收紧到 Workspace RBAC 边界。
 
 ---
 
@@ -50,13 +50,18 @@ v0.1 建设并验证了稳定的工程基础，包括：
   a durable SQLAlchemy observer, fail-open observation, node/agent/tool/approval
   lifecycle traces, authenticated Steps and Trace query APIs, and PostgreSQL
   restart/crash verification.
+- **v0.8 — Workspace & RBAC:** Workspace persistence and membership, OWNER /
+  ADMIN / MEMBER roles, `WorkspacePermission`, non-null Workflow workspace
+  scope, Workspace-scoped CRUD/run/observability/approval authorization,
+  404 anti-enumeration for non-members, and opt-in PostgreSQL security proofs.
 
-## v0.7 — Execution Observability
+## v0.8 — Workspace & RBAC
 
 Current main combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4 Tool
 Platform, v0.5 MCP integration, v0.6 durable workflow execution, and v0.7
-execution observability. v0.7 builds on v0.6; it does not replace checkpoint
-recovery semantics.
+execution observability with v0.8 Workspace RBAC. Authentication establishes
+identity; Workspace membership and role-derived permissions authorize resource
+access. A global application admin does not bypass Workspace membership.
 
 ```text
 WorkflowRun
@@ -73,6 +78,8 @@ WorkflowRun
 - Authenticated APIs expose ordered execution history:
   `GET /api/v1/workflows/{workflow_id}/runs/{run_id}/steps` and
   `GET /api/v1/workflows/{workflow_id}/runs/{run_id}/trace`.
+- Workflow `workspace_id` is the non-null resource scope; nullable `user_id`
+  records creator provenance only.
 - PostgreSQL restart/crash integration tests prove cross-connection durability,
   no duplicate completed attempts, sequence continuation, and the permitted
   stale `RUNNING` RunStep after a process crash.

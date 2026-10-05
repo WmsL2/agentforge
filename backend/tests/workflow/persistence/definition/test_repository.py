@@ -1,5 +1,6 @@
 """Focused unit tests for workflow repository persistence primitives."""
 
+from inspect import Parameter, signature
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -39,6 +40,7 @@ async def test_create_workflow_preserves_explicit_resource_fields_and_graph_payl
     assert created.workspace_id == workspace_id
     assert created.definition == payload
     assert created.revision == 2
+    assert signature(workflow_repo.create_workflow).parameters["workspace_id"].default is Parameter.empty
     db.flush.assert_awaited_once()
     db.refresh.assert_awaited_once_with(created)
 
@@ -56,38 +58,6 @@ async def test_get_and_delete_workflow_handle_missing_rows():
 
 
 @pytest.mark.anyio
-async def test_list_and_count_workflows_are_owner_scoped():
-    db = AsyncMock()
-    owner_id = uuid4()
-    rows = [MagicMock(), MagicMock()]
-    result = MagicMock()
-    result.scalars.return_value.all.return_value = rows
-    db.execute.return_value = result
-    db.scalar.return_value = 2
-
-    assert await workflow_repo.list_workflows_by_user(db, owner_id) == rows
-    assert await workflow_repo.count_workflows_by_user(db, owner_id) == 2
-    statement = db.execute.await_args.args[0]
-    assert "workflows.user_id" in str(statement)
-
-
-@pytest.mark.anyio
-async def test_create_workflow_allows_null_workspace_during_migration_bridge():
-    db = AsyncMock()
-    db.add = MagicMock()
-    created = await workflow_repo.create_workflow(
-        db,
-        workflow_id=uuid4(),
-        user_id=uuid4(),
-        name="Bridge",
-        description=None,
-        definition={},
-    )
-
-    assert created.workspace_id is None
-    db.commit.assert_not_awaited()
-
-
 @pytest.mark.anyio
 async def test_list_and_count_workflows_are_workspace_scoped_without_committing():
     db = AsyncMock()

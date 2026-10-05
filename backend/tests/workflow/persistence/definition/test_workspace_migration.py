@@ -6,15 +6,16 @@ from uuid import uuid4
 
 from app.db.models.workflow.definition.model import Workflow
 
-MIGRATION = Path(__file__).parents[4] / "alembic" / "versions" / "0039_add_workflow_workspace_scope.py"
+MIGRATION_0039 = Path(__file__).parents[4] / "alembic" / "versions" / "0039_add_workflow_workspace_scope.py"
+MIGRATION_0040 = Path(__file__).parents[4] / "alembic" / "versions" / "0040_harden_workflow_workspace_scope.py"
 
 
-def test_workflow_orm_uses_nullable_workspace_scope_and_creator_provenance() -> None:
+def test_workflow_orm_uses_required_workspace_scope_and_creator_provenance() -> None:
     table = Workflow.__table__
     workspace_fk = next(iter(table.c.workspace_id.foreign_keys))
     user_fk = next(iter(table.c.user_id.foreign_keys))
 
-    assert table.c.workspace_id.nullable is True
+    assert table.c.workspace_id.nullable is False
     assert (workspace_fk.target_fullname, workspace_fk.ondelete) == ("workspaces.id", "CASCADE")
     assert table.c.user_id.nullable is True
     assert (user_fk.target_fullname, user_fk.ondelete) == ("users.id", "SET NULL")
@@ -22,7 +23,7 @@ def test_workflow_orm_uses_nullable_workspace_scope_and_creator_provenance() -> 
 
 
 def test_workspace_scope_migration_has_expected_revision_and_stable_personal_ids() -> None:
-    namespace = runpy.run_path(str(MIGRATION))
+    namespace = runpy.run_path(str(MIGRATION_0039))
     first, second = uuid4(), uuid4()
 
     assert namespace["revision"] == "0039_add_workflow_workspace_scope"
@@ -32,7 +33,7 @@ def test_workspace_scope_migration_has_expected_revision_and_stable_personal_ids
 
 
 def test_workspace_scope_migration_declares_upgrade_and_downgrade_semantics() -> None:
-    source = MIGRATION.read_text(encoding="utf-8")
+    source = MIGRATION_0039.read_text(encoding="utf-8")
 
     assert "workflows_workspace_id_fkey" in source
     assert "workflows_workspace_id_idx" in source
@@ -43,3 +44,20 @@ def test_workspace_scope_migration_declares_upgrade_and_downgrade_semantics() ->
     assert "workflows.c.workspace_id.is_(None)" in source
     assert "nullable=False" in source
     assert "op.drop_column(\"workflows\", \"workspace_id\")" in source
+
+
+def test_hardening_migration_backfills_recoverable_null_scopes_before_not_null() -> None:
+    namespace = runpy.run_path(str(MIGRATION_0040))
+    source = MIGRATION_0040.read_text(encoding="utf-8")
+    user_id = uuid4()
+
+    assert namespace["revision"] == "0040_harden_workflow_workspace_scope"
+    assert namespace["down_revision"] == "0039_add_workflow_workspace_scope"
+    assert namespace["personal_workspace_id"](user_id) == namespace["personal_workspace_id"](user_id)
+    assert "Personal Workspace" in source
+    assert "on_conflict_do_nothing" in source
+    assert "workflows.c.workspace_id.is_(None)" in source
+    assert "workflows.c.user_id.is_not(None)" in source
+    assert "Cannot harden workflows.workspace_id" in source
+    assert "nullable=False" in source
+    assert "nullable=True" in source

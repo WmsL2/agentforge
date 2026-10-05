@@ -22,11 +22,10 @@ class Workflow(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
-    # Nullable only during the v0.8 migration bridge; Atomic 5 supplies workspace context.
-    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

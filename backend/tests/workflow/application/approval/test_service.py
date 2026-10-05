@@ -415,7 +415,7 @@ async def test_invalid_checkpoint_is_resume_state_conflict():
 
 
 @pytest.mark.anyio
-async def test_get_pending_checks_workflow_ownership_first():
+async def test_get_pending_checks_workflow_authorization_first():
     svc, _, workflow_service, _ = service()
     workflow, run, approval, _ = rows()
     workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)

@@ -6,8 +6,8 @@ conversations, files, RAG documents, and sync sources — use the same pattern:
 explicit Domain, Validation, and Execution layers to that foundation. v0.3
 adds Agent Runtime Integration, v0.4 adds the Tool Platform, v0.5 adds MCP
 Integration & Tool Discovery, v0.6 adds Durable Execution & Human-in-the-Loop,
-and v0.7 adds Execution Observability without replacing the Repository + Service
-model.
+and v0.7 adds Execution Observability. v0.8 adds Workspace-scoped RBAC without
+replacing the Repository + Service model.
 
 ## Request Flow
 
@@ -247,6 +247,18 @@ The project supports two authentication methods, both always available:
    - Passed via the `X-API-Key` header (configurable via `API_KEY_HEADER`).
    - A single shared key set via the `API_KEY` environment variable.
    - Uses constant-time comparison (`secrets.compare_digest`) to prevent timing attacks.
+
+### Workspace Authorization
+
+Authentication answers **who you are**. Workspace authorization answers **what
+you may do**: a user needs a Workspace membership, whose OWNER / ADMIN / MEMBER
+role is mapped to `WorkspacePermission`. Workflow `workspace_id` is required;
+`user_id` is nullable creator provenance rather than the resource scope.
+
+Workflow CRUD, execution, Run/RunStep/Trace reads, and approval actions enforce
+the permission at the application-service boundary. Non-members, including a
+global `UserRole.ADMIN` or `is_app_admin` user without membership, receive 404
+to avoid enumeration. Members without the needed permission receive 403.
 
 ### Roles
 

@@ -21,7 +21,7 @@ from app.services.workspace.domain import WorkspacePermission
 
 
 class WorkflowRunService:
-    """Coordinate ownership, synchronous execution, and run persistence."""
+    """Coordinate workspace authorization, synchronous execution, and run persistence."""
 
     def __init__(self, db: AsyncSession, workflow_service: WorkflowService, engine: WorkflowEngine):
         self.db = db

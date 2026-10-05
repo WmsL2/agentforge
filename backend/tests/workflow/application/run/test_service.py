@@ -370,7 +370,7 @@ async def test_observability_queries_return_repository_order_after_run_read_gate
         ("list_workflow_trace_events", "trace_event_repo", "owned", "other_workflow"),
     ],
 )
-async def test_observability_queries_never_call_repository_when_ownership_gate_fails(
+async def test_observability_queries_never_call_repository_when_authorization_gate_fails(
     method_name, repository_name, workflow_result, run_result
 ):
     db = AsyncMock()

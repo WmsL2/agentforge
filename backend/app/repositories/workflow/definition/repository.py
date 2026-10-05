@@ -21,8 +21,8 @@ async def create_workflow(
     name: str,
     description: str | None,
     definition: dict[str, Any],
+    workspace_id: UUID,
     revision: int = 1,
-    workspace_id: UUID | None = None,
 ) -> Workflow:
     workflow = Workflow(
         id=workflow_id,
@@ -37,25 +37,6 @@ async def create_workflow(
     await db.flush()
     await db.refresh(workflow)
     return workflow
-
-
-async def list_workflows_by_user(
-    db: AsyncSession, user_id: UUID, *, skip: int = 0, limit: int = 50
-) -> list[Workflow]:
-    result = await db.execute(
-        select(Workflow)
-        .where(Workflow.user_id == user_id)
-        .order_by(Workflow.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    return list(result.scalars().all())
-
-
-async def count_workflows_by_user(db: AsyncSession, user_id: UUID) -> int:
-    return (
-        await db.scalar(select(func.count(Workflow.id)).where(Workflow.user_id == user_id))
-    ) or 0
 
 
 async def list_workflows_by_workspace(

@@ -49,7 +49,7 @@ class WorkflowUpdate(BaseSchema):
 class WorkflowRead(BaseSchema):
     id: UUID
     user_id: UUID | None = None
-    workspace_id: UUID | None = None
+    workspace_id: UUID
     name: str
     description: str | None
     definition: WorkflowGraphSchema
