@@ -60,7 +60,10 @@ def upgrade() -> None:
         bind.execute(
             insert(memberships)
             .values(workspace_id=workspace_id, user_id=user_id, role="owner")
-            .on_conflict_do_nothing(index_elements=["workspace_id", "user_id"])
+            .on_conflict_do_update(
+                index_elements=["workspace_id", "user_id"],
+                set_={"role": "owner"},
+            )
         )
         bind.execute(
             sa.update(workflows)

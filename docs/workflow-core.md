@@ -194,7 +194,14 @@ WorkflowRun ORM object
 workflow_runs table
 ```
 
-`workflows` stores `id`, `user_id`, `name`, `description`, `definition` JSONB, `revision`, `created_at`, and `updated_at`. `workflow_runs` stores `id`, `workflow_id`, `workflow_revision`, `definition_snapshot`, `status`, `input`, `node_outputs`, `output`, `error`, `started_at`, `finished_at`, `created_at`, and `updated_at`. `workflows.user_id → users.id` and `workflow_runs.workflow_id → workflows.id` both use `ON DELETE CASCADE`.
+**v0.2 historical persistence:** `workflows` stored `id`, `user_id`, `name`,
+`description`, `definition` JSONB, `revision`, `created_at`, and `updated_at`;
+its `user_id → users.id` relationship used `ON DELETE CASCADE`.
+`workflow_runs.workflow_id → workflows.id` also uses `ON DELETE CASCADE`.
+
+**Current v0.8 persistence:** `workflows.workspace_id` is NOT NULL and uses
+`ON DELETE CASCADE`; `workflows.user_id` is nullable creator provenance and
+uses `ON DELETE SET NULL`.
 
 The v0.2 release Alembic head was `0034_align_workflow_updated_at`. It aligned
 `workflows.updated_at` with the ORM timestamp contract: nullable with no server

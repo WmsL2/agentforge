@@ -55,7 +55,8 @@ def test_hardening_migration_backfills_recoverable_null_scopes_before_not_null()
     assert namespace["down_revision"] == "0039_add_workflow_workspace_scope"
     assert namespace["personal_workspace_id"](user_id) == namespace["personal_workspace_id"](user_id)
     assert "Personal Workspace" in source
-    assert "on_conflict_do_nothing" in source
+    assert "on_conflict_do_update" in source
+    assert 'set_={"role": "owner"}' in source
     assert "workflows.c.workspace_id.is_(None)" in source
     assert "workflows.c.user_id.is_not(None)" in source
     assert "Cannot harden workflows.workspace_id" in source

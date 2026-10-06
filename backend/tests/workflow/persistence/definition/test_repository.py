@@ -58,7 +58,6 @@ async def test_get_and_delete_workflow_handle_missing_rows():
 
 
 @pytest.mark.anyio
-@pytest.mark.anyio
 async def test_list_and_count_workflows_are_workspace_scoped_without_committing():
     db = AsyncMock()
     workspace_id = uuid4()

@@ -266,11 +266,13 @@ Two roles are defined in `UserRole` (see `app/db/models/user.py`):
 
 | Role | Value | Description |
 |------|-------|-------------|
-| **ADMIN** | `"admin"` | Full system access, can manage users, RAG, webhooks, exports |
+| **ADMIN** | `"admin"` | Global application admin for routes protected by `UserRole` / `CurrentAdmin` |
 | **USER** | `"user"` | Standard access: chat, profile, search |
 
-Role hierarchy: `ADMIN` has access to everything. The `has_role()` method on the
-User model returns `True` for any role if the user is an admin.
+For global application routes, the `has_role()` method on the User model returns
+`True` for an admin. This does not grant `WorkspaceMembership`,
+`WorkspaceRole`, or `WorkspacePermission`: a global admin without membership in
+the target Workspace still receives 404 for Workspace-scoped resources.
 
 ### How RoleChecker Works
 
