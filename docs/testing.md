@@ -150,12 +150,13 @@ at the external boundary. The live runtime smoke uses the real configured
 provider and does not require PostgreSQL. Neither integration runs in the
 normal suite unless its environment variable is set.
 
-Workflow PostgreSQL coverage includes `test_agent_workflow_e2e.py`,
-`test_approval_workflow_e2e.py`, `test_checkpoint_postgres.py`, and
-`test_durable_recovery_postgres.py`. v0.7 additionally includes
-`test_observability_recovery_postgres.py`, which proves v0.6 recovery and v0.7
-RunStep/Trace persistence together. These restart-style tests require migration
-`0037_create_workflow_observability` and use `postgres_restart_session_factory`,
+Workflow PostgreSQL coverage includes Workspace scope migration/hardening,
+Workflow RBAC, Run/Approval RBAC, `test_agent_workflow_e2e.py`,
+`test_approval_workflow_e2e.py`, `test_checkpoint_postgres.py`,
+`test_durable_recovery_postgres.py`, and `test_observability_recovery_postgres.py`.
+Together these prove v0.6 recovery, v0.7 RunStep/Trace persistence, and v0.8
+Workspace-scoped authorization. These restart-style tests require migration
+`0040_harden_workflow_workspace_scope` and use `postgres_restart_session_factory`,
 `NullPool`, fresh `AsyncSession` instances, and real commits to prove
 cross-session and cross-connection durability rather than reusing ORM state.
 

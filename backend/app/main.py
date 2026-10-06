@@ -112,13 +112,14 @@ Enterprise Agent Workflow Platform
 - **Rate Limiting**: Request rate limiting per client
 - **Workflow Core**: definitions, DAG validation, durable execution, checkpoints, human approval, and RunStep / Trace execution observability
 - **Agent Runtime & Tool Platform**: Agent execution, native tools, and MCP integration
+- **Workspace & RBAC**: Workspace membership and role-derived authorization
 
 ## Documentation
 
 - [Swagger UI](/docs) - Interactive API documentation
 - [ReDoc](/redoc) - Alternative documentation view
         """.strip(),
-        version="0.7.0",
+        version="0.8.0",
         openapi_url=openapi_url,
         docs_url=docs_url,
         redoc_url=redoc_url,

@@ -1,5 +1,9 @@
 # Execution Observability — v0.7
 
+> **Current main / v0.8:** Workspace-scoped authorization builds on the v0.7
+> observability model. Steps and Trace are authorized through Workspace RBAC
+> and `RUN_READ`; `WorkflowCheckpoint` remains recovery truth.
+
 ## Scope
 
 v0.7 answers: “what actually happened during this `WorkflowRun`?” v0.6 answers
@@ -88,7 +92,9 @@ event exists. v0.7 intentionally does not repair such records.
 
 ## Query API
 
-Both endpoints require authentication and workflow/run ownership:
+In v0.7 historical behavior, both endpoints required authentication and
+workflow/run ownership. In current v0.8, they require Workspace RBAC and
+`RUN_READ`:
 
 ```text
 GET /api/v1/workflows/{workflow_id}/runs/{run_id}/steps

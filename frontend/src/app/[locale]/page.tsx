@@ -87,6 +87,12 @@ const PLATFORM_CAPABILITIES = [
       "RunStep summaries, append-only Trace history, authenticated query APIs, and PostgreSQL restart/crash verification.",
     icon: ShieldCheck,
   },
+  {
+    title: "Workspace & RBAC",
+    description:
+      "Workspace persistence, membership roles (OWNER, ADMIN, MEMBER), role-derived WorkspacePermission, and Workspace-scoped Workflow, Run, and Approval authorization.",
+    icon: KeyRound,
+  },
 ] as const;
 
 const ROADMAP = [
@@ -100,23 +106,30 @@ const ROADMAP = [
   {
     version: "v0.2–v0.6",
     title: "Workflow Platform Layers",
-    status: "Current",
+    status: "Completed",
     description:
       "Workflow Core, Agent Runtime, Tool/MCP, durable checkpoints, pause/resume, and Human-in-the-Loop.",
   },
   {
     version: "v0.7",
     title: "Execution Observability",
-    status: "Current",
+    status: "Completed",
     description:
       "Durable RunStep and Trace history, lifecycle tracing, query APIs, and PostgreSQL restart/crash verification.",
+  },
+  {
+    version: "v0.8",
+    title: "Workspace & RBAC",
+    status: "Current",
+    description:
+      "Workspace-scoped resource ownership, membership, role-derived permissions, and Workflow, Run, and Approval authorization.",
   },
   {
     version: "Later",
     title: "Platform Expansion",
     status: "Planned",
     description:
-      "Workspace/RBAC, frontend workflow editing, richer orchestration, background recovery, and MCP HTTP/OAuth.",
+      "Frontend workflow editing, richer orchestration, background recovery, and MCP HTTP/OAuth.",
   },
 ] as const;
 
@@ -188,7 +201,7 @@ export default function HomePage() {
             <div>
               <div className="border-foreground/10 bg-foreground/[0.03] mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs">
                 <span className="bg-brand h-2 w-2 rounded-full" />
-                v0.7 · Execution Observability
+                v0.8 · Workspace & RBAC
               </div>
 
               <h1 className="font-display max-w-4xl text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl lg:text-6xl">
@@ -198,9 +211,10 @@ export default function HomePage() {
 
               <p className="text-foreground/65 mt-7 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
                 {PRODUCT_NAME} is an Enterprise Agent Workflow Platform. v0.1 established the
-                reliable full-stack engineering foundation; v0.2–v0.6 deliver the workflow,
-                agent, tool/MCP, and durable-execution layers; v0.7 adds execution history and
-                audit-oriented observability.
+                reliable full-stack engineering foundation; v0.2–v0.6 deliver the workflow, agent,
+                tool/MCP, and durable-execution layers; v0.7 adds execution history and
+                audit-oriented observability; v0.8 adds Workspace-scoped resource ownership,
+                membership, and RBAC authorization.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -225,7 +239,7 @@ export default function HomePage() {
 
               <p className="text-foreground/45 mt-5 max-w-2xl text-sm leading-6">
                 Current capabilities include Workflow Core, Agent Runtime, Tool/MCP, Durable
-                Execution, Human-in-the-Loop, and execution observability. Workspace/RBAC remains future work.
+                Execution, Human-in-the-Loop, execution observability, and Workspace/RBAC.
               </p>
             </div>
 
@@ -265,7 +279,8 @@ export default function HomePage() {
                     </span>
                   </div>
                   <p className="text-foreground/55 mt-2 text-sm leading-6">
-                    Workflow, Agent Runtime, Tool/MCP, durable checkpoints, approval, and execution history.
+                    Workflow, Agent Runtime, Tool/MCP, durable checkpoints, approval, and execution
+                    history.
                   </p>
                 </div>
               </div>
@@ -292,7 +307,7 @@ export default function HomePage() {
             </h2>
             <p className="text-foreground/60 mt-4 text-base leading-7">
               These capabilities belong to the engineering foundation. They make the platform
-              deployable, testable, and support the AgentForge-owned platform layers through v0.7.
+              deployable, testable, and support the AgentForge-owned platform layers through v0.8.
             </p>
           </div>
 
@@ -412,8 +427,9 @@ export default function HomePage() {
                 </div>
 
                 <p className="text-foreground/55 mt-6 text-sm leading-6">
-                  Workflow Core, Agent Runtime, Tool/MCP, durable execution, and observability are
-                  implemented. Workspace/RBAC remains a planned enterprise boundary.
+                  Workflow Core, Agent Runtime, Tool/MCP, durable execution, observability, and
+                  Workspace/RBAC are implemented. Workspace/RBAC is the enterprise resource
+                  authorization boundary.
                 </p>
               </div>
             </div>
@@ -421,7 +437,9 @@ export default function HomePage() {
             <div className="mt-12">
               <div className="mb-6 flex items-center gap-3">
                 <GitBranch className="h-5 w-5" />
-                <h3 className="font-display text-xl font-semibold">Current platform capabilities</h3>
+                <h3 className="font-display text-xl font-semibold">
+                  Current platform capabilities
+                </h3>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -493,10 +511,10 @@ export default function HomePage() {
             <div className="border-foreground/10 bg-card grid gap-8 rounded-3xl border p-7 md:grid-cols-[1fr_auto] md:items-center md:p-10">
               <div>
                 <p className="text-brand font-mono text-xs font-semibold tracking-wider uppercase">
-                  AgentForge v0.7
+                  AgentForge v0.8
                 </p>
                 <h2 className="font-display mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-                  Execution observability completes the current release layer.
+                  Workspace-scoped authorization completes the v0.8 release layer.
                 </h2>
                 <p className="text-foreground/60 mt-3 max-w-2xl text-sm leading-6 sm:text-base">
                   Inspect the repository, run the stack locally, or continue into the authenticated
@@ -532,7 +550,7 @@ export default function HomePage() {
           <p>
             {PRODUCT_NAME} · {APP_DESCRIPTION}
           </p>
-          <p>v0.7 Execution Observability</p>
+          <p>v0.8 Workspace &amp; RBAC</p>
         </div>
       </footer>
     </div>

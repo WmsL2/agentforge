@@ -14,8 +14,9 @@ AgentForge WorkflowEngine
 ```
 
 > **Current main note:** v0.7 adds `RunStep` and `TraceEvent` execution
-> observability on top of this recovery model. `WorkflowCheckpoint` remains the
-> recovery truth and resume still starts from the latest checkpoint. See
+> observability, and v0.8 adds Workspace-scoped authorization, on top of this
+> recovery model. `WorkflowCheckpoint` remains the recovery truth and resume
+> still starts from the latest checkpoint. See
 > [Execution Observability](execution-observability.md).
 
 ## Run lifecycle
