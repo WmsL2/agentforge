@@ -9,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.user import User
 from app.db.models.workflow import Workflow, WorkflowRun
 from app.db.models.workflow import WorkflowCheckpoint as DBWorkflowCheckpoint
+from app.repositories import workspace as workspace_repo
 from app.repositories.workflow.checkpoint import (
     create_workflow_checkpoint,
     get_latest_workflow_checkpoint,
 )
 from app.services.workflow import WorkflowCheckpoint
+from app.services.workspace.domain import WorkspaceRole
 
 
 @pytest.mark.anyio
@@ -21,12 +23,26 @@ async def test_checkpoint_round_trip_uses_real_postgresql(postgres_session: Asyn
     user_id = uuid4()
     workflow_id = uuid4()
     run_id = uuid4()
+    user = User(id=user_id, email=f"checkpoint-{user_id.hex}@example.invalid")
+    postgres_session.add(user)
+    await postgres_session.flush()
+    workspace = await workspace_repo.create_workspace(
+        postgres_session,
+        name="Checkpoint persistence",
+        created_by_user_id=user.id,
+    )
+    await workspace_repo.create_membership(
+        postgres_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        role=WorkspaceRole.OWNER,
+    )
     postgres_session.add_all(
         [
-            User(id=user_id, email=f"checkpoint-{user_id.hex}@example.invalid"),
             Workflow(
                 id=workflow_id,
-                user_id=user_id,
+                user_id=user.id,
+                workspace_id=workspace.id,
                 name="Checkpoint persistence",
                 definition={"nodes": [], "edges": []},
                 revision=4,
