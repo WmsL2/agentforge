@@ -416,6 +416,7 @@ export default function HomePage() {
                     "Tool / MCP",
                     "Checkpoint / HITL",
                     "Run / Step / Trace",
+                    "Workspace / RBAC",
                   ].map((item) => (
                     <span
                       key={item}
