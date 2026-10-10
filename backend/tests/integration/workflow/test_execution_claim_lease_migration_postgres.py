@@ -36,10 +36,11 @@ async def test_migration_preserves_legacy_run_and_reverses_only_claim_fields():
         pytest.skip("Set AGENTFORGE_RUN_POSTGRES_E2E=1 to run PostgreSQL migration proof.")
     if settings.POSTGRES_DB != DATABASE:
         pytest.skip(f"Destructive migration proof requires POSTGRES_DB={DATABASE}.")
-    migrate("upgrade", PREVIOUS)
     workspace_id, workflow_id, run_id = uuid4(), uuid4(), uuid4()
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     try:
+        migrate("upgrade", "head")
+        migrate("downgrade", PREVIOUS)
         async with engine.begin() as connection:
             assert (
                 await connection.scalar(text("SELECT version_num FROM alembic_version")) == PREVIOUS
