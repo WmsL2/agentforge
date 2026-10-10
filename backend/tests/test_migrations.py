@@ -6,10 +6,13 @@ These tests ensure that:
 3. The upgrade/downgrade cycle is idempotent
 """
 
+import os
 import subprocess
 import sys
 
 import pytest
+
+from app.core.config import settings
 
 
 def _db_available() -> bool:
@@ -25,8 +28,13 @@ def _db_available() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _db_available(),
-    reason="No live database available — skipping migration tests",
+    os.getenv("AGENTFORGE_RUN_MIGRATION_CYCLE") != "1"
+    or settings.POSTGRES_DB != "agentforge_migration_cycle_verify"
+    or not _db_available(),
+    reason=(
+        "Destructive migration tests require AGENTFORGE_RUN_MIGRATION_CYCLE=1 "
+        "and POSTGRES_DB=agentforge_migration_cycle_verify with a live database."
+    ),
 )
 
 
