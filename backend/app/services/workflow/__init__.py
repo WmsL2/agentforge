@@ -2,6 +2,8 @@
 
 from app.services.workflow.application import (
     WorkflowApprovalService,
+    WorkflowExecutionDispatcher,
+    WorkflowExecutionJob,
     WorkflowRunService,
     WorkflowService,
 )
@@ -75,6 +77,8 @@ __all__ = [
     "WorkflowDefinition",
     "WorkflowEdge",
     "WorkflowEngine",
+    "WorkflowExecutionDispatcher",
+    "WorkflowExecutionJob",
     "WorkflowExecutionObserver",
     "WorkflowExecutionPersistence",
     "WorkflowExecutionValidationError",
