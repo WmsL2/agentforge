@@ -5,13 +5,29 @@ from app.services.workflow.application.background.contract import (
     WorkflowExecutionDispatcher,
 )
 from app.services.workflow.application.background.domain import (
+    BackgroundRunExecutionResult,
+    BackgroundRunExecutionStatus,
+    BackgroundRunStateError,
+    WorkflowCheckpointSequenceError,
     WorkflowExecutionJob,
     WorkflowExecutionLease,
+    WorkflowExecutionLeaseLostError,
 )
+from app.services.workflow.application.background.durability import (
+    FencedDurableWorkflowExecutionPersistence,
+)
+from app.services.workflow.application.background.executor import BackgroundRunExecutor
 
 __all__ = [
+    "BackgroundRunExecutionResult",
+    "BackgroundRunExecutionStatus",
+    "BackgroundRunExecutor",
+    "BackgroundRunStateError",
+    "FencedDurableWorkflowExecutionPersistence",
+    "WorkflowCheckpointSequenceError",
     "WorkflowExecutionClaimService",
     "WorkflowExecutionDispatcher",
     "WorkflowExecutionJob",
     "WorkflowExecutionLease",
+    "WorkflowExecutionLeaseLostError",
 ]

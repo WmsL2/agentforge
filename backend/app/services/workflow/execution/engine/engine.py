@@ -100,6 +100,39 @@ class WorkflowEngine:
             persistence=persistence,
         )
 
+    async def recover_running(
+        self,
+        definition: WorkflowDefinition,
+        run: WorkflowRun,
+        checkpoint: WorkflowCheckpoint,
+        *,
+        persistence: WorkflowExecutionPersistence | None = None,
+    ) -> WorkflowRun:
+        """Recover a running run without replaying committed nodes or restarting it."""
+        self.validate_definition(definition)
+        if run.status is not WorkflowRunStatus.RUNNING:
+            raise WorkflowRunTransitionError(run.status, WorkflowRunStatus.RUNNING)
+        if definition.id != run.workflow_id:
+            raise WorkflowResumeValidationError("definition_run_mismatch")
+        if definition.revision != run.workflow_revision:
+            raise WorkflowResumeValidationError("definition_revision_mismatch")
+        predecessors = self._build_predecessors(definition)
+        self._validate_resume_state(definition, run, checkpoint, predecessors)
+        if checkpoint.interrupt is not None:
+            raise WorkflowResumeValidationError("running_checkpoint_interrupted")
+        if len(checkpoint.completed_node_ids) == len(definition.nodes):
+            raise WorkflowResumeValidationError("running_checkpoint_already_complete")
+
+        run.node_outputs = dict(checkpoint.node_outputs)
+        return await self._run_from_state(
+            definition,
+            run,
+            completed=set(checkpoint.completed_node_ids),
+            first_node_id=checkpoint.pending_node_id,
+            predecessors=predecessors,
+            persistence=persistence,
+        )
+
     def validate_resume(
         self,
         definition: WorkflowDefinition,
