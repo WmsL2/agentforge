@@ -45,9 +45,13 @@ from app.services.workflow import (
     WorkflowEngine,
     WorkflowExecutionObserver,
     WorkflowApprovalService,
+    WorkflowAsyncRunService,
     WorkflowRunService,
     WorkflowService,
 )
+from app.integrations.celery import CeleryWorkflowDispatcher
+from app.services.workflow import WorkflowExecutionDispatcher
+from app.worker.celery_app import celery_app
 from app.services.workflow.application.observability import (
     SQLAlchemyWorkflowExecutionObserver,
     WorkflowToolExecutionObserver,
@@ -205,6 +209,35 @@ def get_workflow_run_service(
 
 
 WorkflowRunSvc = Annotated[WorkflowRunService, Depends(get_workflow_run_service)]
+
+
+def get_workflow_execution_dispatcher() -> WorkflowExecutionDispatcher:
+    """Create the broker adapter without publishing during dependency construction."""
+    return CeleryWorkflowDispatcher(celery_app)
+
+
+WorkflowExecutionDispatcherDep = Annotated[
+    WorkflowExecutionDispatcher,
+    Depends(get_workflow_execution_dispatcher),
+]
+
+
+def get_workflow_async_run_service(
+    db: DBSession,
+    workflow_service: WorkflowSvc,
+    dispatcher: WorkflowExecutionDispatcherDep,
+) -> WorkflowAsyncRunService:
+    return WorkflowAsyncRunService(
+        db=db,
+        workflow_service=workflow_service,
+        dispatcher=dispatcher,
+    )
+
+
+WorkflowAsyncRunSvc = Annotated[
+    WorkflowAsyncRunService,
+    Depends(get_workflow_async_run_service),
+]
 
 
 from app.services.file_upload import FileUploadService

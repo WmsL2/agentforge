@@ -16,7 +16,7 @@ from app.services.workflow.application.background import (
 )
 from app.services.workflow.application.definition import WorkflowService
 from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
-from app.services.workflow.application.run import WorkflowRunService
+from app.services.workflow.application.run import WorkflowAsyncRunService, WorkflowRunService
 
 __all__ = [
     "BackgroundRunExecutionResult",
@@ -26,6 +26,7 @@ __all__ = [
     "FencedDurableWorkflowExecutionPersistence",
     "SQLAlchemyWorkflowExecutionObserver",
     "WorkflowApprovalService",
+    "WorkflowAsyncRunService",
     "WorkflowCheckpointSequenceError",
     "WorkflowExecutionClaimService",
     "WorkflowExecutionDispatcher",

@@ -2,9 +2,9 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import CurrentUser, WorkflowRunSvc
+from app.api.deps import CurrentUser, WorkflowAsyncRunSvc, WorkflowRunSvc
 from app.schemas.workflow import (
     WorkflowRunCreate,
     WorkflowRunList,
@@ -26,6 +26,27 @@ async def execute_workflow(
     current_user: CurrentUser,
 ):
     return await workflow_run_service.execute_workflow(workflow_id, current_user.id, data.input)
+
+
+@router.post(
+    "/{workflow_id}/runs/async",
+    response_model=WorkflowRunRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def submit_workflow_async(
+    workflow_id: UUID,
+    data: WorkflowRunCreate,
+    workflow_async_run_service: WorkflowAsyncRunSvc,
+    current_user: CurrentUser,
+    response: Response,
+):
+    run = await workflow_async_run_service.submit_workflow(
+        workflow_id,
+        current_user.id,
+        data.input,
+    )
+    response.headers["Location"] = f"/api/v1/workflows/{workflow_id}/runs/{run.id}"
+    return run
 
 
 @router.get("/{workflow_id}/runs", response_model=WorkflowRunList)
@@ -69,4 +90,6 @@ async def list_workflow_trace_events(
     workflow_run_service: WorkflowRunSvc,
     current_user: CurrentUser,
 ):
-    return await workflow_run_service.list_workflow_trace_events(workflow_id, run_id, current_user.id)
+    return await workflow_run_service.list_workflow_trace_events(
+        workflow_id, run_id, current_user.id
+    )

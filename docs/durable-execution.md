@@ -1,5 +1,20 @@
 # Durable Execution & Human-in-the-Loop — v0.6
 
+## Asynchronous run submission
+
+`POST /api/v1/workflows/{workflow_id}/runs/async` authorizes and validates the
+workflow, commits a new `PENDING` run to PostgreSQL, and only then publishes its
+run ID to Celery. A `202 Accepted` response means submission was accepted, not
+that execution completed. The response is the creation-time snapshot; a fast
+worker may already have advanced the persisted state, so clients should follow
+the `Location` header and use the existing run GET endpoint for current state.
+
+PostgreSQL commit and Celery publish are not one distributed transaction. If
+publish cannot be confirmed, the API returns `503 WORKFLOW_DISPATCH_FAILED` and
+retains the committed `PENDING` run for a future recovery scanner. Cancellation
+after commit can leave the same recoverable state. This release does not provide
+a transactional outbox, exactly-once delivery, or HTTP request idempotency.
+
 v0.6 establishes durable workflow runs, append-only checkpoints, pause/resume,
 `APPROVAL` interruption, approval persistence, human decisions, and crash-safe
 continuation. It is an AgentForge Workflow Engine capability, separate from a
