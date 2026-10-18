@@ -8,6 +8,10 @@ celery_app = Celery(
     "agentforge",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
+    include=(
+        "app.worker.tasks.smoke",
+        "app.worker.tasks.workflow",
+    ),
 )
 
 celery_app.conf.update(
@@ -21,7 +25,5 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_concurrency=4,
 )
-
-celery_app.autodiscover_tasks(["app.worker.tasks"])
 
 celery_app.conf.beat_schedule = {}

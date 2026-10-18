@@ -136,6 +136,7 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    WORKFLOW_BACKGROUND_LEASE_SECONDS: int = Field(default=900, gt=0)
     # Legacy template-chat compatibility. Platform Runtime uses LLM_* settings below.
     OPENAI_API_KEY: str = ""
     LLM_PROVIDER: str = "openai"

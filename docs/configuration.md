@@ -138,6 +138,7 @@ OAuth, persisted connections, and frontend MCP management are not configured.
 |----------|---------|-------------|
 | `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery broker URL |
 | `CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery result backend URL |
+| `WORKFLOW_BACKGROUND_LEASE_SECONDS` | `900` | Workflow execution claim lease duration; must be greater than zero |
 
 ## CORS
 
