@@ -32,9 +32,7 @@ async def test_require_membership_returns_persisted_membership() -> None:
     ) as get_membership:
         assert await service.require_membership(workspace_id, actor_user_id) is stored
 
-    get_membership.assert_awaited_once_with(
-        db, workspace_id=workspace_id, user_id=actor_user_id
-    )
+    get_membership.assert_awaited_once_with(db, workspace_id=workspace_id, user_id=actor_user_id)
     db.commit.assert_not_awaited()
 
 
@@ -43,12 +41,14 @@ async def test_require_membership_hides_non_members_as_not_found() -> None:
     db = AsyncMock()
     service = WorkspaceAuthorizationService(db)
 
-    with patch(
-        "app.services.workspace.authorization.workspace_repo.get_membership",
-        AsyncMock(return_value=None),
-    ), patch.object(workspace_repo, "get_workspace_by_id", AsyncMock()) as get_workspace, pytest.raises(
-        NotFoundError
-    ) as error:
+    with (
+        patch(
+            "app.services.workspace.authorization.workspace_repo.get_membership",
+            AsyncMock(return_value=None),
+        ),
+        patch.object(workspace_repo, "get_workspace_by_id", AsyncMock()) as get_workspace,
+        pytest.raises(NotFoundError) as error,
+    ):
         await service.require_membership(uuid4(), uuid4())
 
     assert (error.value.status_code, error.value.message) == (404, "Workspace not found")
@@ -88,9 +88,10 @@ async def test_require_permission_returns_403_for_member_without_permission(
 ) -> None:
     service = WorkspaceAuthorizationService(AsyncMock())
 
-    with patch.object(service, "require_membership", AsyncMock(return_value=membership(role))), pytest.raises(
-        AuthorizationError
-    ) as error:
+    with (
+        patch.object(service, "require_membership", AsyncMock(return_value=membership(role))),
+        pytest.raises(AuthorizationError) as error,
+    ):
         await service.require_permission(uuid4(), uuid4(), permission)
 
     assert error.value.status_code == 403
@@ -102,9 +103,14 @@ async def test_require_permission_returns_403_for_member_without_permission(
 async def test_require_permission_hides_non_members_as_not_found() -> None:
     service = WorkspaceAuthorizationService(AsyncMock())
 
-    with patch.object(service, "require_membership", AsyncMock(side_effect=NotFoundError(message="Workspace not found"))), pytest.raises(
-        NotFoundError
-    ) as error:
+    with (
+        patch.object(
+            service,
+            "require_membership",
+            AsyncMock(side_effect=NotFoundError(message="Workspace not found")),
+        ),
+        pytest.raises(NotFoundError) as error,
+    ):
         await service.require_permission(uuid4(), uuid4(), WorkspacePermission.WORKFLOW_READ)
 
     assert error.value.status_code == 404

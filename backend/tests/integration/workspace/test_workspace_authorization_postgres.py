@@ -15,7 +15,9 @@ from app.services.workspace import (
 
 
 @pytest.mark.anyio
-async def test_workspace_authorization_uses_persisted_postgresql_memberships(postgres_session) -> None:
+async def test_workspace_authorization_uses_persisted_postgresql_memberships(
+    postgres_session,
+) -> None:
     user_ids = {role: uuid4() for role in ("owner", "admin", "member", "outsider")}
     postgres_session.add_all(
         [

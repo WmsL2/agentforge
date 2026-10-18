@@ -25,7 +25,9 @@ class NoOpToolExecutionObserver:
     async def start_tool(self, request: ToolExecutionRequest) -> None:
         return None
 
-    async def complete_tool(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
+    async def complete_tool(
+        self, request: ToolExecutionRequest, result: ToolExecutionResult
+    ) -> None:
         return None
 
     async def fail_tool(self, request: ToolExecutionRequest, error: ToolExecutionError) -> None:

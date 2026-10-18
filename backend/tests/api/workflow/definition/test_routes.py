@@ -15,7 +15,17 @@ from app.services.workspace.authorization import WorkspaceAuthorizationService
 
 
 def workflow_row(workspace_id):
-    return SimpleNamespace(id=uuid4(), user_id=uuid4(), workspace_id=workspace_id, name="Workflow", description=None, definition={"entry_node_id": "start", "nodes": [], "edges": []}, revision=1, created_at=datetime.now(UTC), updated_at=None)
+    return SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        workspace_id=workspace_id,
+        name="Workflow",
+        description=None,
+        definition={"entry_node_id": "start", "nodes": [], "edges": []},
+        revision=1,
+        created_at=datetime.now(UTC),
+        updated_at=None,
+    )
 
 
 def validation_service(db):
@@ -148,9 +158,27 @@ async def test_workspace_query_contract_for_list_create_and_missing_query() -> N
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             assert (await client.get("/api/v1/workflows")).status_code == 422
-            assert (await client.post("/api/v1/workflows", json={"name": "W", "definition": {"entry_node_id": "start", "nodes": [], "edges": []}})).status_code == 422
-            assert (await client.get(f"/api/v1/workflows?workspace_id={workspace_id}&skip=0&limit=50")).status_code == 200
-            assert (await client.post(f"/api/v1/workflows?workspace_id={workspace_id}", json={"name": "W", "definition": {"entry_node_id": "start", "nodes": [], "edges": []}})).status_code == 201
+            assert (
+                await client.post(
+                    "/api/v1/workflows",
+                    json={
+                        "name": "W",
+                        "definition": {"entry_node_id": "start", "nodes": [], "edges": []},
+                    },
+                )
+            ).status_code == 422
+            assert (
+                await client.get(f"/api/v1/workflows?workspace_id={workspace_id}&skip=0&limit=50")
+            ).status_code == 200
+            assert (
+                await client.post(
+                    f"/api/v1/workflows?workspace_id={workspace_id}",
+                    json={
+                        "name": "W",
+                        "definition": {"entry_node_id": "start", "nodes": [], "edges": []},
+                    },
+                )
+            ).status_code == 201
     finally:
         app.dependency_overrides.clear()
     service.list_workflows.assert_awaited_once_with(workspace_id, user.id, 0, 50)

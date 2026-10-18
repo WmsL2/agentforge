@@ -127,7 +127,9 @@ def test_start_step_allocates_after_existing_max_sequence() -> None:
         observer.start_step(
             run_id=run_id,
             node=WorkflowNode("value", WorkflowNodeKind.VALUE),
-            execution_context=NodeExecutionContext(run_id=run_id, workflow_input={}, upstream_outputs={}, node_outputs={}),
+            execution_context=NodeExecutionContext(
+                run_id=run_id, workflow_input={}, upstream_outputs={}, node_outputs={}
+            ),
         )
     )
 
@@ -152,7 +154,11 @@ def test_complete_reconstructs_domain_step_updates_and_commits_completed_event()
         {"duration_ms": 10},
     )
     assert event.kind == "node_completed"
-    assert event.payload == {"node_id": "value", "node_kind": "value", "metadata": {"duration_ms": 10}}
+    assert event.payload == {
+        "node_id": "value",
+        "node_kind": "value",
+        "metadata": {"duration_ms": 10},
+    }
     db.commit.assert_awaited_once()
 
 
@@ -208,7 +214,9 @@ def test_fail_and_interrupt_update_domain_step_and_append_events(
                 result=NodeExecutionResult(
                     metadata={"duration_ms": 10},
                     outcome=NodeExecutionOutcome.INTERRUPTED,
-                    interrupt=NodeExecutionInterrupt(type="approval_required", payload={"prompt": "Continue?"}),
+                    interrupt=NodeExecutionInterrupt(
+                        type="approval_required", payload={"prompt": "Continue?"}
+                    ),
                 ),
             )
         )
@@ -245,7 +253,9 @@ def test_record_event_persists_any_kind_with_a_none_step_id() -> None:
     db.commit.assert_awaited_once()
 
 
-def test_persistence_failure_rolls_back_and_reraises_original_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_persistence_failure_rolls_back_and_reraises_original_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     db = session()
     run_id = uuid4()
     result = MagicMock()

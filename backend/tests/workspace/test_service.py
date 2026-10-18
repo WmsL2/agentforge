@@ -33,11 +33,15 @@ async def test_create_workspace_adds_creator_as_owner_without_committing() -> No
     service, db, _ = make_service()
     actor_id = uuid4()
     workspace = SimpleNamespace(id=uuid4())
-    with patch(
-        "app.services.workspace.service.workspace_repo.create_workspace", AsyncMock(return_value=workspace)
-    ) as create_workspace, patch(
-        "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
-    ) as create_membership:
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.create_workspace",
+            AsyncMock(return_value=workspace),
+        ) as create_workspace,
+        patch(
+            "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
+        ) as create_membership,
+    ):
         assert await service.create_workspace(actor_id, WorkspaceCreate(name="Team")) is workspace
 
     create_workspace.assert_awaited_once_with(db, name="Team", created_by_user_id=actor_id)
@@ -52,11 +56,16 @@ async def test_list_and_get_workspace_use_membership_boundary_first() -> None:
     service, db, authorization = make_service()
     actor_id, workspace_id = uuid4(), uuid4()
     workspace = SimpleNamespace(id=workspace_id)
-    with patch(
-        "app.services.workspace.service.workspace_repo.list_workspaces_by_user", AsyncMock(return_value=[workspace])
-    ) as list_workspaces, patch(
-        "app.services.workspace.service.workspace_repo.get_workspace_by_id", AsyncMock(return_value=workspace)
-    ) as get_workspace:
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.list_workspaces_by_user",
+            AsyncMock(return_value=[workspace]),
+        ) as list_workspaces,
+        patch(
+            "app.services.workspace.service.workspace_repo.get_workspace_by_id",
+            AsyncMock(return_value=workspace),
+        ) as get_workspace,
+    ):
         assert await service.list_workspaces(actor_id) == [workspace]
         assert await service.get_workspace(workspace_id, actor_id) is workspace
 
@@ -70,12 +79,18 @@ async def test_update_workspace_requires_owner_permission_and_skips_empty_patch(
     service, db, authorization = make_service()
     actor_id, workspace_id = uuid4(), uuid4()
     workspace = SimpleNamespace(id=workspace_id, name="Existing")
-    with patch(
-        "app.services.workspace.service.workspace_repo.get_workspace_by_id", AsyncMock(return_value=workspace)
-    ), patch(
-        "app.services.workspace.service.workspace_repo.update_workspace", AsyncMock()
-    ) as update_workspace:
-        assert await service.update_workspace(workspace_id, actor_id, WorkspaceUpdate()) is workspace
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.get_workspace_by_id",
+            AsyncMock(return_value=workspace),
+        ),
+        patch(
+            "app.services.workspace.service.workspace_repo.update_workspace", AsyncMock()
+        ) as update_workspace,
+    ):
+        assert (
+            await service.update_workspace(workspace_id, actor_id, WorkspaceUpdate()) is workspace
+        )
 
     authorization.require_permission.assert_awaited_once()
     update_workspace.assert_not_awaited()
@@ -86,9 +101,12 @@ async def test_update_workspace_requires_owner_permission_and_skips_empty_patch(
 async def test_authorization_rejection_prevents_workspace_mutation() -> None:
     service, _, authorization = make_service()
     authorization.require_permission.side_effect = AuthorizationError(message="denied")
-    with patch(
-        "app.services.workspace.service.workspace_repo.update_workspace", AsyncMock()
-    ) as update_workspace, pytest.raises(AuthorizationError):
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.update_workspace", AsyncMock()
+        ) as update_workspace,
+        pytest.raises(AuthorizationError),
+    ):
         await service.update_workspace(uuid4(), uuid4(), WorkspaceUpdate(name="Nope"))
     update_workspace.assert_not_awaited()
 
@@ -96,12 +114,16 @@ async def test_authorization_rejection_prevents_workspace_mutation() -> None:
 @pytest.mark.anyio
 async def test_add_member_reports_missing_user_before_reserved_owner_role() -> None:
     service, _, _ = make_service()
-    with patch(
-        "app.services.workspace.service.user_repo.get_by_id", AsyncMock(return_value=None)
-    ), patch(
-        "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
-    ) as create_membership, pytest.raises(NotFoundError) as error:
-        await service.add_member(uuid4(), uuid4(), WorkspaceMemberCreate(user_id=uuid4(), role=WorkspaceRole.OWNER))
+    with (
+        patch("app.services.workspace.service.user_repo.get_by_id", AsyncMock(return_value=None)),
+        patch(
+            "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
+        ) as create_membership,
+        pytest.raises(NotFoundError) as error,
+    ):
+        await service.add_member(
+            uuid4(), uuid4(), WorkspaceMemberCreate(user_id=uuid4(), role=WorkspaceRole.OWNER)
+        )
 
     assert (error.value.status_code, error.value.message) == (404, "User not found")
     create_membership.assert_not_awaited()
@@ -110,16 +132,28 @@ async def test_add_member_reports_missing_user_before_reserved_owner_role() -> N
 @pytest.mark.anyio
 async def test_add_member_reports_duplicate_before_reserved_owner_role() -> None:
     service, _, _ = make_service()
-    with patch(
-        "app.services.workspace.service.user_repo.get_by_id", AsyncMock(return_value=SimpleNamespace())
-    ), patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=SimpleNamespace())
-    ), patch(
-        "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
-    ) as create_membership, pytest.raises(AlreadyExistsError) as error:
-        await service.add_member(uuid4(), uuid4(), WorkspaceMemberCreate(user_id=uuid4(), role=WorkspaceRole.OWNER))
+    with (
+        patch(
+            "app.services.workspace.service.user_repo.get_by_id",
+            AsyncMock(return_value=SimpleNamespace()),
+        ),
+        patch(
+            "app.services.workspace.service.workspace_repo.get_membership",
+            AsyncMock(return_value=SimpleNamespace()),
+        ),
+        patch(
+            "app.services.workspace.service.workspace_repo.create_membership", AsyncMock()
+        ) as create_membership,
+        pytest.raises(AlreadyExistsError) as error,
+    ):
+        await service.add_member(
+            uuid4(), uuid4(), WorkspaceMemberCreate(user_id=uuid4(), role=WorkspaceRole.OWNER)
+        )
 
-    assert (error.value.status_code, error.value.message) == (409, "Workspace member already exists")
+    assert (error.value.status_code, error.value.message) == (
+        409,
+        "Workspace member already exists",
+    )
     create_membership.assert_not_awaited()
 
 
@@ -128,10 +162,13 @@ async def test_owner_membership_cannot_be_updated_or_deleted() -> None:
     service, _, _ = make_service()
     owner = SimpleNamespace(workspace_role=WorkspaceRole.OWNER)
     with patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=owner)
+        "app.services.workspace.service.workspace_repo.get_membership",
+        AsyncMock(return_value=owner),
     ):
         with pytest.raises(AuthorizationError) as update_error:
-            await service.update_member(uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.ADMIN))
+            await service.update_member(
+                uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.ADMIN)
+            )
         with pytest.raises(AuthorizationError) as delete_error:
             await service.delete_member(uuid4(), uuid4(), uuid4())
     assert update_error.value.code == "WORKSPACE_OWNER_MEMBERSHIP_PROTECTED"
@@ -141,12 +178,19 @@ async def test_owner_membership_cannot_be_updated_or_deleted() -> None:
 @pytest.mark.anyio
 async def test_update_member_reports_missing_membership_before_reserved_owner_role() -> None:
     service, _, _ = make_service()
-    with patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=None)
-    ), patch(
-        "app.services.workspace.service.workspace_repo.update_membership_role", AsyncMock()
-    ) as update_membership_role, pytest.raises(NotFoundError) as error:
-        await service.update_member(uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER))
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.get_membership",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.workspace.service.workspace_repo.update_membership_role", AsyncMock()
+        ) as update_membership_role,
+        pytest.raises(NotFoundError) as error,
+    ):
+        await service.update_member(
+            uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER)
+        )
 
     assert (error.value.status_code, error.value.message) == (404, "Workspace member not found")
     update_membership_role.assert_not_awaited()
@@ -156,10 +200,16 @@ async def test_update_member_reports_missing_membership_before_reserved_owner_ro
 async def test_update_member_protects_existing_owner_before_reserved_owner_role() -> None:
     service, _, _ = make_service()
     owner = SimpleNamespace(workspace_role=WorkspaceRole.OWNER)
-    with patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=owner)
-    ), pytest.raises(AuthorizationError) as error:
-        await service.update_member(uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER))
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.get_membership",
+            AsyncMock(return_value=owner),
+        ),
+        pytest.raises(AuthorizationError) as error,
+    ):
+        await service.update_member(
+            uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER)
+        )
 
     assert error.value.status_code == 403
     assert error.value.code == "WORKSPACE_OWNER_MEMBERSHIP_PROTECTED"
@@ -169,10 +219,16 @@ async def test_update_member_protects_existing_owner_before_reserved_owner_role(
 async def test_update_member_rejects_reserved_owner_role_after_normal_membership_lookup() -> None:
     service, _, _ = make_service()
     member = SimpleNamespace(workspace_role=WorkspaceRole.MEMBER)
-    with patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=member)
-    ), pytest.raises(ValidationError) as error:
-        await service.update_member(uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER))
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.get_membership",
+            AsyncMock(return_value=member),
+        ),
+        pytest.raises(ValidationError) as error,
+    ):
+        await service.update_member(
+            uuid4(), uuid4(), uuid4(), WorkspaceMemberUpdate(role=WorkspaceRole.OWNER)
+        )
 
     assert error.value.status_code == 422
     assert error.value.code == "WORKSPACE_OWNER_ROLE_RESERVED"
@@ -184,14 +240,22 @@ async def test_update_member_changes_normal_member_role() -> None:
     workspace_id, actor_user_id, user_id = uuid4(), uuid4(), uuid4()
     member = SimpleNamespace(workspace_role=WorkspaceRole.MEMBER)
     updated = SimpleNamespace(workspace_role=WorkspaceRole.ADMIN)
-    with patch(
-        "app.services.workspace.service.workspace_repo.get_membership", AsyncMock(return_value=member)
-    ), patch(
-        "app.services.workspace.service.workspace_repo.update_membership_role", AsyncMock(return_value=updated)
-    ) as update_membership_role:
+    with (
+        patch(
+            "app.services.workspace.service.workspace_repo.get_membership",
+            AsyncMock(return_value=member),
+        ),
+        patch(
+            "app.services.workspace.service.workspace_repo.update_membership_role",
+            AsyncMock(return_value=updated),
+        ) as update_membership_role,
+    ):
         assert (
             await service.update_member(
-                workspace_id, actor_user_id, user_id, WorkspaceMemberUpdate(role=WorkspaceRole.ADMIN)
+                workspace_id,
+                actor_user_id,
+                user_id,
+                WorkspaceMemberUpdate(role=WorkspaceRole.ADMIN),
             )
             is updated
         )

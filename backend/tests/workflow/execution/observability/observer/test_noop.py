@@ -21,7 +21,9 @@ def test_noop_start_step_returns_run_context_without_a_step_id() -> None:
     observer = NoOpWorkflowExecutionObserver()
     run_id = uuid4()
     node = WorkflowNode(id="value", kind=WorkflowNodeKind.VALUE)
-    execution_context = NodeExecutionContext(run_id=run_id, workflow_input={}, upstream_outputs={}, node_outputs={})
+    execution_context = NodeExecutionContext(
+        run_id=run_id, workflow_input={}, upstream_outputs={}, node_outputs={}
+    )
 
     context = asyncio.run(
         observer.start_step(run_id=run_id, node=node, execution_context=execution_context)
@@ -44,17 +46,23 @@ def test_noop_lifecycle_and_event_methods_have_no_side_effects() -> None:
 
     async def observe_without_side_effects() -> None:
         assert await observer.complete_step(context, result=completed) is None
-        assert await observer.fail_step(
-            context,
-            error=RunStepError(code="node_execution_failed", message="boom"),
-            metadata=metadata,
-        ) is None
+        assert (
+            await observer.fail_step(
+                context,
+                error=RunStepError(code="node_execution_failed", message="boom"),
+                metadata=metadata,
+            )
+            is None
+        )
         assert await observer.interrupt_step(context, result=interrupted) is None
-        assert await observer.record_event(
-            context,
-            kind=TraceEventKind.APPROVAL_APPROVED,
-            payload=payload,
-        ) is None
+        assert (
+            await observer.record_event(
+                context,
+                kind=TraceEventKind.APPROVAL_APPROVED,
+                payload=payload,
+            )
+            is None
+        )
 
     asyncio.run(observe_without_side_effects())
 

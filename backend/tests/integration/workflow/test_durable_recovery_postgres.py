@@ -171,14 +171,18 @@ async def revise_current_workflow(
 async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(
+        postgres_restart_session_factory
+    )
     try:
         await revise_current_workflow(postgres_restart_session_factory, workflow_id)
 
         guard = RecordingExecutor({"start", "before", "approval"})
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
-                session, WorkflowService(session, WorkspaceAuthorizationService(session)), WorkflowEngine(guard)
+                session,
+                WorkflowService(session, WorkspaceAuthorizationService(session)),
+                WorkflowEngine(guard),
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
             await approval_service.approve(
@@ -217,7 +221,9 @@ async def test_approval_restart_recovers_from_committed_snapshot_and_checkpoint(
 async def test_recovery_after_crash_uses_committed_resolution_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(
+        postgres_restart_session_factory
+    )
     try:
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
@@ -294,12 +300,16 @@ async def test_recovery_after_crash_uses_committed_resolution_checkpoint(
 async def test_approval_restart_reject_cancels_without_execution_or_checkpoint(
     postgres_restart_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    user_id, workspace_id, workflow_id, run_id = await create_paused_run(postgres_restart_session_factory)
+    user_id, workspace_id, workflow_id, run_id = await create_paused_run(
+        postgres_restart_session_factory
+    )
     try:
         guard = RecordingExecutor({"start", "before", "approval", "after", "end"})
         async with postgres_restart_session_factory() as session:
             approval_service = WorkflowApprovalService(
-                session, WorkflowService(session, WorkspaceAuthorizationService(session)), WorkflowEngine(guard)
+                session,
+                WorkflowService(session, WorkspaceAuthorizationService(session)),
+                WorkflowEngine(guard),
             )
             approval = await approval_service.get_pending_approval(workflow_id, run_id, user_id)
             await approval_service.reject(

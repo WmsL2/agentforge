@@ -13,7 +13,9 @@ class AgentTraceContext:
     step_id: UUID | None
 
 
-_trace_context: ContextVar[AgentTraceContext | None] = ContextVar("agent_trace_context", default=None)
+_trace_context: ContextVar[AgentTraceContext | None] = ContextVar(
+    "agent_trace_context", default=None
+)
 
 
 @contextmanager

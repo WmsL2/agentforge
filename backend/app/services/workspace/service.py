@@ -58,7 +58,9 @@ class WorkspaceService:
             raise NotFoundError(message="Workspace not found")
         return workspace
 
-    async def update_workspace(self, workspace_id: UUID, actor_user_id: UUID, data: WorkspaceUpdate):
+    async def update_workspace(
+        self, workspace_id: UUID, actor_user_id: UUID, data: WorkspaceUpdate
+    ):
         await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.WORKSPACE_MANAGE
         )
@@ -91,9 +93,12 @@ class WorkspaceService:
         )
         if await user_repo.get_by_id(self._db, data.user_id) is None:
             raise NotFoundError(message="User not found")
-        if await workspace_repo.get_membership(
-            self._db, workspace_id=workspace_id, user_id=data.user_id
-        ) is not None:
+        if (
+            await workspace_repo.get_membership(
+                self._db, workspace_id=workspace_id, user_id=data.user_id
+            )
+            is not None
+        ):
             raise AlreadyExistsError(message="Workspace member already exists")
         self._reject_owner_assignment(data.role)
         return await workspace_repo.create_membership(
@@ -134,9 +139,7 @@ class WorkspaceService:
         if membership is None:
             raise NotFoundError(message="Workspace member not found")
         self._reject_owner_membership(membership.workspace_role)
-        await workspace_repo.delete_membership(
-            self._db, workspace_id=workspace_id, user_id=user_id
-        )
+        await workspace_repo.delete_membership(self._db, workspace_id=workspace_id, user_id=user_id)
 
     @staticmethod
     def _reject_owner_assignment(role: WorkspaceRole) -> None:

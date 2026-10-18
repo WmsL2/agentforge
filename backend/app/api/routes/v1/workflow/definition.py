@@ -43,7 +43,10 @@ async def list_workflows(
 
 @router.post("", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
 async def create(
-    data: WorkflowCreate, workspace_id: UUID, workflow_service: WorkflowSvc, current_user: CurrentUser
+    data: WorkflowCreate,
+    workspace_id: UUID,
+    workflow_service: WorkflowSvc,
+    current_user: CurrentUser,
 ):
     return await workflow_service.create_workflow(workspace_id, current_user.id, data)
 

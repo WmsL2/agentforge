@@ -25,7 +25,9 @@ class WorkflowToolExecutionObserver:
             {"tool_name": request.tool_name, "arguments": dict(request.arguments)},
         )
 
-    async def complete_tool(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
+    async def complete_tool(
+        self, request: ToolExecutionRequest, result: ToolExecutionResult
+    ) -> None:
         await self._record(
             request,
             TraceEventKind.TOOL_COMPLETED,

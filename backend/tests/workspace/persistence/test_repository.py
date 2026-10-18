@@ -69,7 +69,10 @@ async def test_list_workspaces_by_user_joins_memberships() -> None:
     assert len(await workspace_repo.list_workspaces_by_user(db, user_id)) == 1
 
     statement = db.execute.await_args.args[0]
-    assert "JOIN workspace_memberships ON workspace_memberships.workspace_id = workspaces.id" in str(statement)
+    assert (
+        "JOIN workspace_memberships ON workspace_memberships.workspace_id = workspaces.id"
+        in str(statement)
+    )
     assert "workspace_memberships.user_id" in str(statement)
     assert "ORDER BY workspaces.created_at DESC" in str(statement)
     db.commit.assert_not_awaited()

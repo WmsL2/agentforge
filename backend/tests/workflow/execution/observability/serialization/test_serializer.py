@@ -152,7 +152,12 @@ def test_trace_event_round_trip_preserves_a_none_step_id() -> None:
     )
 
     restored = deserialize_trace_event(
-        {"id": event.id, "run_id": event.run_id, "step_id": None, **serialize_trace_event_state(event)}
+        {
+            "id": event.id,
+            "run_id": event.run_id,
+            "step_id": None,
+            **serialize_trace_event_state(event),
+        }
     )
 
     assert restored.step_id is None

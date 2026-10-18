@@ -112,7 +112,9 @@ async def test_run_and_approval_workspace_rbac_postgresql(postgres_session) -> N
     assert total >= 1
     assert await run_service.get_workflow_run(workflow_a.id, run_a.id, ids["member"]) is run_a
     assert await run_service.list_workflow_run_steps(workflow_a.id, run_a.id, ids["member"]) == []
-    assert await run_service.list_workflow_trace_events(workflow_a.id, run_a.id, ids["member"]) == []
+    assert (
+        await run_service.list_workflow_trace_events(workflow_a.id, run_a.id, ids["member"]) == []
+    )
 
     for actor in (ids["outsider"], ids["global"]):
         for operation in (
@@ -141,23 +143,33 @@ async def test_run_and_approval_workspace_rbac_postgresql(postgres_session) -> N
     )
     for operation in (
         approval_service.get_pending_approval(approval_workflow.id, admin_run.id, ids["member"]),
-        approval_service.approve(approval_workflow.id, admin_run.id, admin_pending.id, ids["member"]),
-        approval_service.reject(approval_workflow.id, admin_run.id, admin_pending.id, ids["member"]),
+        approval_service.approve(
+            approval_workflow.id, admin_run.id, admin_pending.id, ids["member"]
+        ),
+        approval_service.reject(
+            approval_workflow.id, admin_run.id, admin_pending.id, ids["member"]
+        ),
     ):
         with pytest.raises(AuthorizationError) as denied:
             await operation
         assert (denied.value.status_code, denied.value.code) == (403, "WORKSPACE_PERMISSION_DENIED")
-    assert await approval_service.approve(
-        approval_workflow.id, admin_run.id, admin_pending.id, ids["admin"]
-    ) is not None
+    assert (
+        await approval_service.approve(
+            approval_workflow.id, admin_run.id, admin_pending.id, ids["admin"]
+        )
+        is not None
+    )
 
     owner_run = await run_service.execute_workflow(approval_workflow.id, ids["owner"], {})
     owner_pending = await approval_service.get_pending_approval(
         approval_workflow.id, owner_run.id, ids["owner"]
     )
-    assert await approval_service.reject(
-        approval_workflow.id, owner_run.id, owner_pending.id, ids["owner"]
-    ) is not None
+    assert (
+        await approval_service.reject(
+            approval_workflow.id, owner_run.id, owner_pending.id, ids["owner"]
+        )
+        is not None
+    )
     with pytest.raises(NotFoundError, match="Approval request not found"):
         await approval_service.approve(
             approval_workflow.id, owner_run.id, admin_pending.id, ids["owner"]

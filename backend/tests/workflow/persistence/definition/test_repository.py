@@ -40,7 +40,10 @@ async def test_create_workflow_preserves_explicit_resource_fields_and_graph_payl
     assert created.workspace_id == workspace_id
     assert created.definition == payload
     assert created.revision == 2
-    assert signature(workflow_repo.create_workflow).parameters["workspace_id"].default is Parameter.empty
+    assert (
+        signature(workflow_repo.create_workflow).parameters["workspace_id"].default
+        is Parameter.empty
+    )
     db.flush.assert_awaited_once()
     db.refresh.assert_awaited_once_with(created)
 

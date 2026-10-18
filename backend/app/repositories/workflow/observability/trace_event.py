@@ -29,9 +29,7 @@ async def create_workflow_trace_event(
     return db_event
 
 
-async def list_workflow_trace_events(
-    db: AsyncSession, run_id: UUID
-) -> list[DBWorkflowTraceEvent]:
+async def list_workflow_trace_events(db: AsyncSession, run_id: UUID) -> list[DBWorkflowTraceEvent]:
     """List one run's append-only events in stable history order."""
     result = await db.execute(
         select(DBWorkflowTraceEvent)

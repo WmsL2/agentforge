@@ -33,7 +33,9 @@ async def test_workspace_application_service_uses_postgresql_memberships(postgre
     await postgres_session.flush()
     service = WorkspaceService(postgres_session, WorkspaceAuthorizationService(postgres_session))
 
-    workspace = await service.create_workspace(user_ids["owner"], WorkspaceCreate(name="Application proof"))
+    workspace = await service.create_workspace(
+        user_ids["owner"], WorkspaceCreate(name="Application proof")
+    )
     owner_members = await service.list_members(workspace.id, user_ids["owner"])
     assert [(membership.user_id, membership.role) for membership in owner_members] == [
         (user_ids["owner"], "owner")
@@ -49,7 +51,9 @@ async def test_workspace_application_service_uses_postgresql_memberships(postgre
         WorkspaceMemberCreate(user_id=user_ids["member"], role=WorkspaceRole.MEMBER),
     )
     for actor in ("owner", "admin", "member"):
-        assert [item.id for item in await service.list_workspaces(user_ids[actor])] == [workspace.id]
+        assert [item.id for item in await service.list_workspaces(user_ids[actor])] == [
+            workspace.id
+        ]
     assert len(await service.list_members(workspace.id, user_ids["member"])) == 3
 
     with pytest.raises(AuthorizationError):

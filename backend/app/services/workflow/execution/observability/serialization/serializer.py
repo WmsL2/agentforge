@@ -23,7 +23,9 @@ def serialize_run_step_state(step: RunStep) -> dict[str, Any]:
         "status": step.status.value,
         "input": dict(step.input),
         "output": step.output,
-        "error": None if step.error is None else {"code": step.error.code, "message": step.error.message},
+        "error": None
+        if step.error is None
+        else {"code": step.error.code, "message": step.error.message},
         "metadata": dict(step.metadata),
         "started_at": step.started_at,
         "finished_at": step.finished_at,

@@ -288,7 +288,9 @@ async def test_member_without_approval_permission_is_rejected_before_repository_
 async def test_workflow_not_found_from_authorization_hides_approval_hierarchy(actor_kind):
     svc, _, workflow_service, _ = service()
     workflow, run, _, _ = rows()
-    workflow_service.get_authorized_workflow.side_effect = NotFoundError(message="Workflow not found")
+    workflow_service.get_authorized_workflow.side_effect = NotFoundError(
+        message="Workflow not found"
+    )
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
         pytest.raises(NotFoundError, match="Workflow not found"),

@@ -10,7 +10,13 @@ def test_workspace_table_has_the_expected_persistence_contract() -> None:
     table = Workspace.__table__
 
     assert table.name == "workspaces"
-    assert set(table.columns.keys()) == {"id", "name", "created_by_user_id", "created_at", "updated_at"}
+    assert set(table.columns.keys()) == {
+        "id",
+        "name",
+        "created_by_user_id",
+        "created_at",
+        "updated_at",
+    }
     assert table.c.name.type.length == 255
     assert table.c.created_by_user_id.nullable is True
     foreign_key = next(iter(table.c.created_by_user_id.foreign_keys))

@@ -19,7 +19,9 @@ router = APIRouter()
 
 
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
-async def create_workspace(data: WorkspaceCreate, workspace_service: WorkspaceSvc, current_user: CurrentUser):
+async def create_workspace(
+    data: WorkspaceCreate, workspace_service: WorkspaceSvc, current_user: CurrentUser
+):
     return await workspace_service.create_workspace(current_user.id, data)
 
 
@@ -29,7 +31,9 @@ async def list_workspaces(workspace_service: WorkspaceSvc, current_user: Current
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceRead)
-async def get_workspace(workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser):
+async def get_workspace(
+    workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser
+):
     return await workspace_service.get_workspace(workspace_id, current_user.id)
 
 
@@ -44,17 +48,23 @@ async def update_workspace(
 
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
-async def delete_workspace(workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser):
+async def delete_workspace(
+    workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser
+):
     await workspace_service.delete_workspace(workspace_id, current_user.id)
 
 
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberRead])
-async def list_members(workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser):
+async def list_members(
+    workspace_id: UUID, workspace_service: WorkspaceSvc, current_user: CurrentUser
+):
     return await workspace_service.list_members(workspace_id, current_user.id)
 
 
 @router.post(
-    "/{workspace_id}/members", response_model=WorkspaceMemberRead, status_code=status.HTTP_201_CREATED
+    "/{workspace_id}/members",
+    response_model=WorkspaceMemberRead,
+    status_code=status.HTTP_201_CREATED,
 )
 async def add_member(
     workspace_id: UUID,

@@ -152,7 +152,9 @@ class SQLAlchemyWorkflowExecutionObserver:
         if context.step_id is None:
             return None
         if result.outcome is not NodeExecutionOutcome.INTERRUPTED or result.interrupt is None:
-            raise ValueError("Interrupted observation requires an interrupted node execution result.")
+            raise ValueError(
+                "Interrupted observation requires an interrupted node execution result."
+            )
         async with self._transaction() as session:
             step, db_step = await self._load_step(session, context)
             finished_at = datetime.now(UTC)

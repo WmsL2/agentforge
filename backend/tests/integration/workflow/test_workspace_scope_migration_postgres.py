@@ -90,7 +90,10 @@ async def test_workspace_scope_hardening_migration_repairs_data_and_rolls_back_u
 
         engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
         async with engine.begin() as connection:
-            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == REVISION_0039
+            assert (
+                await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == REVISION_0039
+            )
             await seed_user(connection, user_a, f"migration-a-{user_a.hex}@example.invalid")
             await seed_null_scoped_workflow(connection, workflow_a, user_a)
             await connection.execute(
@@ -112,23 +115,35 @@ async def test_workspace_scope_hardening_migration_repairs_data_and_rolls_back_u
         alembic("upgrade", REVISION_0040)
         engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
         async with engine.connect() as connection:
-            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == REVISION_0040
-            assert await connection.scalar(
-                text("SELECT workspace_id FROM workflows WHERE id = :id"), {"id": workflow_a}
-            ) == workspace_a
-            assert await connection.scalar(
-                text(
-                    "SELECT role FROM workspace_memberships "
-                    "WHERE workspace_id = :workspace_id AND user_id = :user_id"
-                ),
-                {"workspace_id": workspace_a, "user_id": user_a},
-            ) == "owner"
-            assert await connection.scalar(
-                text(
-                    "SELECT is_nullable FROM information_schema.columns "
-                    "WHERE table_name = 'workflows' AND column_name = 'workspace_id'"
+            assert (
+                await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == REVISION_0040
+            )
+            assert (
+                await connection.scalar(
+                    text("SELECT workspace_id FROM workflows WHERE id = :id"), {"id": workflow_a}
                 )
-            ) == "NO"
+                == workspace_a
+            )
+            assert (
+                await connection.scalar(
+                    text(
+                        "SELECT role FROM workspace_memberships "
+                        "WHERE workspace_id = :workspace_id AND user_id = :user_id"
+                    ),
+                    {"workspace_id": workspace_a, "user_id": user_a},
+                )
+                == "owner"
+            )
+            assert (
+                await connection.scalar(
+                    text(
+                        "SELECT is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'workflows' AND column_name = 'workspace_id'"
+                    )
+                )
+                == "NO"
+            )
         await engine.dispose()
 
         alembic("downgrade", REVISION_0039)
@@ -144,14 +159,25 @@ async def test_workspace_scope_hardening_migration_repairs_data_and_rolls_back_u
 
         engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
         async with engine.begin() as connection:
-            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == REVISION_0039
-            assert await connection.scalar(
-                text("SELECT workspace_id FROM workflows WHERE id = :id"), {"id": workflow_b}
-            ) is None
-            assert await connection.scalar(
-                text("SELECT id FROM workspaces WHERE id = :id"), {"id": workspace_b}
-            ) is None
-            await connection.execute(text("DELETE FROM workflows WHERE id = :id"), {"id": unrecoverable_workflow})
+            assert (
+                await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == REVISION_0039
+            )
+            assert (
+                await connection.scalar(
+                    text("SELECT workspace_id FROM workflows WHERE id = :id"), {"id": workflow_b}
+                )
+                is None
+            )
+            assert (
+                await connection.scalar(
+                    text("SELECT id FROM workspaces WHERE id = :id"), {"id": workspace_b}
+                )
+                is None
+            )
+            await connection.execute(
+                text("DELETE FROM workflows WHERE id = :id"), {"id": unrecoverable_workflow}
+            )
         await engine.dispose()
 
         alembic("upgrade", REVISION_0040)

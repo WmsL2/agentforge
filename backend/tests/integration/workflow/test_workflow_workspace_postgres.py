@@ -14,9 +14,15 @@ from app.services.workspace.domain import WorkspaceRole
 
 
 @pytest.mark.anyio
-async def test_workflow_workspace_scope_preserves_creator_and_cascades_workspace(postgres_session) -> None:
+async def test_workflow_workspace_scope_preserves_creator_and_cascades_workspace(
+    postgres_session,
+) -> None:
     creator_id = uuid4()
-    creator = User(id=creator_id, email=f"workflow-creator-{creator_id.hex}@example.invalid", hashed_password=None)
+    creator = User(
+        id=creator_id,
+        email=f"workflow-creator-{creator_id.hex}@example.invalid",
+        hashed_password=None,
+    )
     postgres_session.add(creator)
     await postgres_session.flush()
     workspace = await workspace_repo.create_workspace(

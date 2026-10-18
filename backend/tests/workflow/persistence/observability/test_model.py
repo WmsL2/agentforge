@@ -49,7 +49,10 @@ def test_workflow_trace_event_table_has_the_expected_persistence_contract() -> N
     assert table.name == "workflow_trace_events"
     assert {"id", "run_id", "step_id", "kind", "payload", "created_at"} == set(table.columns.keys())
     assert table.c.step_id.nullable is True
-    assert all(table.c[name].nullable is False for name in {"id", "run_id", "kind", "payload", "created_at"})
+    assert all(
+        table.c[name].nullable is False
+        for name in {"id", "run_id", "kind", "payload", "created_at"}
+    )
     assert next(iter(table.c.run_id.foreign_keys)).target_fullname == "workflow_runs.id"
     assert next(iter(table.c.step_id.foreign_keys)).target_fullname == "workflow_run_steps.id"
     assert {tuple(index.columns.keys()) for index in table.indexes} == {

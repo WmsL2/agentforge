@@ -168,7 +168,9 @@ async def test_same_workspace_non_creator_can_execute_workflow():
     engine.execute = AsyncMock()
     service = WorkflowRunService(db, definition_service, engine)
     with (
-        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
         patch("app.services.workflow.application.run.service.DurableWorkflowExecutionPersistence"),
     ):
@@ -276,7 +278,13 @@ async def test_workflow_authorization_failure_hides_runs_and_parent_mismatch_is_
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("error", [NotFoundError(message="Workflow not found"), AuthorizationError(code="WORKSPACE_PERMISSION_DENIED")])
+@pytest.mark.parametrize(
+    "error",
+    [
+        NotFoundError(message="Workflow not found"),
+        AuthorizationError(code="WORKSPACE_PERMISSION_DENIED"),
+    ],
+)
 async def test_run_read_authorization_errors_propagate_without_run_repository_access(error):
     db = AsyncMock()
     actor = uuid4()
@@ -285,7 +293,9 @@ async def test_run_read_authorization_errors_propagate_without_run_repository_ac
     definition_service._authorization.require_permission.side_effect = error
     service = WorkflowRunService(db, definition_service, AsyncMock())
     with (
-        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
     ):
         definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
@@ -336,9 +346,13 @@ async def test_observability_queries_return_repository_order_after_run_read_gate
     ordered = [SimpleNamespace(sequence=1), SimpleNamespace(sequence=2)]
     service = WorkflowRunService(db, create_definition_service(db), AsyncMock())
     with (
-        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
-        patch(f"app.services.workflow.application.run.service.{repository_name}") as observability_repo,
+        patch(
+            f"app.services.workflow.application.run.service.{repository_name}"
+        ) as observability_repo,
     ):
         definition_repo.get_workflow_by_id = AsyncMock(return_value=row)
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
@@ -379,16 +393,22 @@ async def test_observability_queries_never_call_repository_when_authorization_ga
     run_id = uuid4()
     service = WorkflowRunService(db, create_definition_service(db), AsyncMock())
     with (
-        patch("app.services.workflow.application.definition.service.workflow_repo") as definition_repo,
+        patch(
+            "app.services.workflow.application.definition.service.workflow_repo"
+        ) as definition_repo,
         patch("app.services.workflow.application.run.service.run_repo") as run_repo,
-        patch(f"app.services.workflow.application.run.service.{repository_name}") as observability_repo,
+        patch(
+            f"app.services.workflow.application.run.service.{repository_name}"
+        ) as observability_repo,
     ):
         definition_repo.get_workflow_by_id = AsyncMock(
             return_value=row if workflow_result == "owned" else None
         )
         run_repo.get_workflow_run_by_id = AsyncMock(
             return_value=(
-                SimpleNamespace(id=run_id, workflow_id=uuid4()) if run_result == "other_workflow" else None
+                SimpleNamespace(id=run_id, workflow_id=uuid4())
+                if run_result == "other_workflow"
+                else None
             )
         )
 

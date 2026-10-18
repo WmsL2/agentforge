@@ -154,4 +154,6 @@ async def test_list_trace_events_uses_stable_created_at_then_id_order() -> None:
 
     statement = db.execute.await_args.args[0]
     assert "workflow_trace_events.run_id" in str(statement)
-    assert "ORDER BY workflow_trace_events.created_at ASC, workflow_trace_events.id ASC" in str(statement)
+    assert "ORDER BY workflow_trace_events.created_at ASC, workflow_trace_events.id ASC" in str(
+        statement
+    )

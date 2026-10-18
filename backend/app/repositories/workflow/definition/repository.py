@@ -56,7 +56,9 @@ async def list_workflows_by_workspace(
 async def count_workflows_by_workspace(db: AsyncSession, workspace_id: UUID) -> int:
     """Count workflows stored in one workspace without authorization checks."""
     return (
-        await db.scalar(select(func.count(Workflow.id)).where(Workflow.workspace_id == workspace_id))
+        await db.scalar(
+            select(func.count(Workflow.id)).where(Workflow.workspace_id == workspace_id)
+        )
     ) or 0
 
 

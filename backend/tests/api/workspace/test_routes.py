@@ -59,10 +59,14 @@ async def test_workspace_routes_forward_current_user_and_return_expected_statuse
     app.dependency_overrides[get_workspace_service] = lambda: service
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            assert (await client.post("/api/v1/workspaces", json={"name": "Team"})).status_code == 201
+            assert (
+                await client.post("/api/v1/workspaces", json={"name": "Team"})
+            ).status_code == 201
             assert (await client.get("/api/v1/workspaces")).status_code == 200
             assert (await client.get(f"/api/v1/workspaces/{row.id}")).status_code == 200
-            assert (await client.patch(f"/api/v1/workspaces/{row.id}", json={"name": "Renamed"})).status_code == 200
+            assert (
+                await client.patch(f"/api/v1/workspaces/{row.id}", json={"name": "Renamed"})
+            ).status_code == 200
             assert (await client.delete(f"/api/v1/workspaces/{row.id}")).status_code == 204
             assert (await client.get(f"/api/v1/workspaces/{row.id}/members")).status_code == 200
             assert (
@@ -76,7 +80,9 @@ async def test_workspace_routes_forward_current_user_and_return_expected_statuse
                     f"/api/v1/workspaces/{row.id}/members/{target_user_id}", json={"role": "admin"}
                 )
             ).status_code == 200
-            assert (await client.delete(f"/api/v1/workspaces/{row.id}/members/{target_user_id}")).status_code == 204
+            assert (
+                await client.delete(f"/api/v1/workspaces/{row.id}/members/{target_user_id}")
+            ).status_code == 204
     finally:
         app.dependency_overrides.clear()
 

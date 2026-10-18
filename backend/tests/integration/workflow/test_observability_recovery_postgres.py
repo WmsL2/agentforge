@@ -119,10 +119,14 @@ def observer(factory: async_sessionmaker[AsyncSession]) -> SQLAlchemyWorkflowExe
 
 
 async def create_run(
-    factory: async_sessionmaker[AsyncSession], graph: WorkflowGraphSchema, executor: RecordingExecutor
+    factory: async_sessionmaker[AsyncSession],
+    graph: WorkflowGraphSchema,
+    executor: RecordingExecutor,
 ) -> tuple[UUID, UUID, UUID, UUID]:
     async with factory() as session:
-        user = User(id=uuid4(), email=f"observability-{uuid4()}@example.test", role=UserRole.USER.value)
+        user = User(
+            id=uuid4(), email=f"observability-{uuid4()}@example.test", role=UserRole.USER.value
+        )
         session.add(user)
         await session.commit()
         workspace = await workspace_repo.create_workspace(
@@ -191,12 +195,22 @@ async def cleanup(
         await workspace_repo.delete_workspace(session, workspace_id)
         await session.execute(delete(User).where(User.id == user_id))
         await session.commit()
-        assert await session.scalar(
-            select(func.count()).select_from(WorkflowRunStep).where(WorkflowRunStep.run_id == run_id)
-        ) == 0
-        assert await session.scalar(
-            select(func.count()).select_from(WorkflowTraceEvent).where(WorkflowTraceEvent.run_id == run_id)
-        ) == 0
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(WorkflowRunStep)
+                .where(WorkflowRunStep.run_id == run_id)
+            )
+            == 0
+        )
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(WorkflowTraceEvent)
+                .where(WorkflowTraceEvent.run_id == run_id)
+            )
+            == 0
+        )
 
 
 async def resume_from_database(
@@ -240,7 +254,9 @@ async def resume_from_database(
         interrupt=latest.interrupt,
         created_at=latest.created_at,
     )
-    persistence = DurableWorkflowExecutionPersistence(session, db_run, next_sequence=latest.sequence + 1)
+    persistence = DurableWorkflowExecutionPersistence(
+        session, db_run, next_sequence=latest.sequence + 1
+    )
     await WorkflowEngine(executor, observer=observer(factory)).resume(
         definition, run, checkpoint, persistence=persistence
     )
@@ -278,7 +294,9 @@ async def test_completed_workflow_observability_survives_cross_connection_reads(
             step.id: [event.kind for event in stored_events if event.step_id == step.id]
             for step in stored_steps
         }
-        assert all(kinds == ["node_started", "node_completed"] for kinds in event_kinds_by_step.values())
+        assert all(
+            kinds == ["node_started", "node_completed"] for kinds in event_kinds_by_step.values()
+        )
     finally:
         await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)
 
@@ -295,7 +313,11 @@ async def test_approval_restart_preserves_interrupted_history_and_appends_downst
         async with postgres_restart_session_factory() as session_a:
             stored_steps = await steps(session_a, run_id)
             stored_events = await events(session_a, run_id)
-            assert [step.status for step in stored_steps] == ["completed", "completed", "interrupted"]
+            assert [step.status for step in stored_steps] == [
+                "completed",
+                "completed",
+                "interrupted",
+            ]
             assert stored_steps[-1].finished_at is not None
             approval_step = stored_steps[-1]
             assert [event.kind for event in stored_events if event.step_id == approval_step.id] == [
@@ -388,7 +410,10 @@ async def test_crash_after_resolution_checkpoint_recovers_without_duplicate_obse
             assert latest.completed_node_ids == ["start", "before", "approval"]
             assert latest.pending_node_id is None and latest.interrupt is None
             assert [step.node_id for step in stored_steps] == ["start", "before", "approval"]
-            assert any(event.kind == "approval_approved" and event.step_id is None for event in stored_events)
+            assert any(
+                event.kind == "approval_approved" and event.step_id is None
+                for event in stored_events
+            )
             await resume_from_database(
                 session_c, postgres_restart_session_factory, workflow_id, run_id, phase_c
             )
@@ -439,7 +464,9 @@ async def test_process_crash_leaves_stale_running_step_with_only_started_trace(
                     WorkflowEngine(executor, observer=observer(postgres_restart_session_factory)),
                 ).execute_workflow(workflow.id, user.id, {})
             user_id, workspace_id, workflow_id = user.id, workspace.id, workflow.id
-            run_id = (await session_a.scalar(select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow.id)))
+            run_id = await session_a.scalar(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow.id)
+            )
             assert run_id is not None
 
         async with postgres_restart_session_factory() as session_b:
@@ -457,5 +484,12 @@ async def test_process_crash_leaves_stale_running_step_with_only_started_trace(
                 "node_started"
             ]
     finally:
-        if user_id is not None and workspace_id is not None and workflow_id is not None and run_id is not None:
-            await cleanup(postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id)
+        if (
+            user_id is not None
+            and workspace_id is not None
+            and workflow_id is not None
+            and run_id is not None
+        ):
+            await cleanup(
+                postgres_restart_session_factory, user_id, workspace_id, workflow_id, run_id
+            )

@@ -110,7 +110,9 @@ class WorkflowService:
             workflow_id, actor_user_id, WorkspacePermission.WORKFLOW_READ
         )
 
-    async def list_workflows(self, workspace_id: UUID, actor_user_id: UUID, skip: int = 0, limit: int = 50):
+    async def list_workflows(
+        self, workspace_id: UUID, actor_user_id: UUID, skip: int = 0, limit: int = 50
+    ):
         await self._authorization.require_permission(
             workspace_id, actor_user_id, WorkspacePermission.WORKFLOW_READ
         )
