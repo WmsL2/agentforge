@@ -174,12 +174,13 @@ async def test_publish_failure_retains_committed_pending_run(
 ) -> None:
     factory = postgres_restart_session_factory
     dispatcher = RecordingDispatcher(factory, failure=ConnectionError("broker timeout"))
-    async with factory() as db, pytest.raises(ExternalServiceError) as captured:
-        await async_service(db, dispatcher).submit_workflow(
-            submission_data.workflow_id,
-            submission_data.users["admin"],
-            {},
-        )
+    async with factory() as db:
+        with pytest.raises(ExternalServiceError) as captured:
+            await async_service(db, dispatcher).submit_workflow(
+                submission_data.workflow_id,
+                submission_data.users["admin"],
+                {},
+            )
     run_id = UUID(captured.value.details["run_id"])
     async with factory() as db:
         stored = await db.get(WorkflowRun, run_id)
@@ -247,10 +248,11 @@ async def test_owner_admin_member_are_allowed_and_outsider_is_hidden(
                 submission_data.users[role],
                 {"role": role},
             )
-    async with factory() as db, pytest.raises(NotFoundError):
-        await async_service(db, dispatcher).submit_workflow(
-            submission_data.workflow_id,
-            submission_data.users["outsider"],
-            {},
-        )
+    async with factory() as db:
+        with pytest.raises(NotFoundError):
+            await async_service(db, dispatcher).submit_workflow(
+                submission_data.workflow_id,
+                submission_data.users["outsider"],
+                {},
+            )
     assert len(dispatcher.jobs) == 3
