@@ -182,6 +182,7 @@ async def _create_pending(factory: async_sessionmaker[AsyncSession]) -> tuple[UU
     definition = _definition()
     async with factory() as db:
         db.add(Workspace(id=workspace_id, name="Atomic 6 worker"))
+        await db.flush()
         db.add(
             Workflow(
                 id=definition.id,
@@ -191,6 +192,7 @@ async def _create_pending(factory: async_sessionmaker[AsyncSession]) -> tuple[UU
                 revision=1,
             )
         )
+        await db.flush()
         db.add(
             WorkflowRun(
                 id=run_id,
@@ -201,6 +203,7 @@ async def _create_pending(factory: async_sessionmaker[AsyncSession]) -> tuple[UU
                 input={"source": "atomic6-scanner"},
             )
         )
+        await db.flush()
         await db.commit()
     return workspace_id, run_id
 
@@ -255,6 +258,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
                     hashed_password=None,
                 )
             )
+            await db.flush()
             workspace = await workspace_repo.create_workspace(
                 db, workspace_id=workspace_id, name="Atomic 6 approval", created_by_user_id=user_id
             )
@@ -271,6 +275,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
                     revision=1,
                 )
             )
+            await db.flush()
             db.add(
                 WorkflowRun(
                     id=run_id,
@@ -282,6 +287,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
                     node_outputs={"start": {}},
                 )
             )
+            await db.flush()
             db.add(
                 ApprovalRequest(
                     id=approval_id,
@@ -355,6 +361,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
                     hashed_password=None,
                 )
             )
+            await db.flush()
             workspace = await workspace_repo.create_workspace(
                 db,
                 workspace_id=workspace_id,
@@ -374,6 +381,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
                     revision=1,
                 )
             )
+            await db.flush()
             db.add(
                 WorkflowRun(
                     id=run_id,
@@ -385,6 +393,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
                     node_outputs={"start": {}},
                 )
             )
+            await db.flush()
             db.add(
                 ApprovalRequest(
                     id=approval_id,

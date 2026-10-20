@@ -69,9 +69,11 @@ def _approved_paused_recovery_candidate(expired):
     resolution checkpoint have both committed.  This deliberately does not
     make arbitrary lease-free PAUSED rows executable.
     """
-    latest_sequence = (
-        select(func.max(WorkflowCheckpoint.sequence))
+    latest_checkpoint_id = (
+        select(WorkflowCheckpoint.id)
         .where(WorkflowCheckpoint.run_id == WorkflowRun.id)
+        .order_by(WorkflowCheckpoint.sequence.desc())
+        .limit(1)
         .correlate(WorkflowRun)
         .scalar_subquery()
     )
@@ -80,7 +82,7 @@ def _approved_paused_recovery_candidate(expired):
         .join(ApprovalRequest, ApprovalRequest.run_id == WorkflowCheckpoint.run_id)
         .where(
             WorkflowCheckpoint.run_id == WorkflowRun.id,
-            WorkflowCheckpoint.sequence == latest_sequence,
+            WorkflowCheckpoint.id == latest_checkpoint_id,
             WorkflowCheckpoint.pending_node_id.is_(None),
             WorkflowCheckpoint.interrupt.is_(None),
             ApprovalRequest.status == "approved",

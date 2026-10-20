@@ -330,6 +330,20 @@ async def test_sync_approval_claim_excludes_scanner_and_second_worker_until_comp
         approving = asyncio.create_task(approve())
         await asyncio.wait_for(executor.after_started.wait(), timeout=10)
 
+        async with postgres_restart_session_factory() as session:
+            run = await session.get(WorkflowRun, run_id)
+            approval = await session.scalar(
+                select(ApprovalRequest).where(ApprovalRequest.run_id == run_id)
+            )
+            stored = await checkpoints(session, run_id)
+        assert run is not None and run.status == "running"
+        assert run.execution_claim_token is not None and run.execution_claim_generation == 1
+        assert run.execution_lease_expires_at is not None
+        assert approval is not None and approval.status == "approved"
+        assert [checkpoint.sequence for checkpoint in stored] == [1, 2, 3, 4]
+        assert stored[-1].completed_node_ids == ["start", "before", "approval"]
+        assert stored[-1].pending_node_id is None and stored[-1].interrupt is None
+
         dispatcher = RecordingRecoveryDispatcher()
         scanner = WorkflowRecoveryScanner(
             postgres_restart_session_factory,

@@ -13,6 +13,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.db.models.workflow import ApprovalRequest, Workflow, WorkflowCheckpoint, WorkflowRun
 from app.db.models.workspace import Workspace
+from app.repositories.workflow.run import claim as claim_repo
 from app.repositories.workflow.run import repository as run_repo
 from app.services.workflow.application.background.recovery_scanner import WorkflowRecoveryScanner
 
@@ -89,6 +90,7 @@ async def _create_run(
     now = datetime.now(UTC)
     async with factory() as db:
         db.add(Workspace(id=workspace_id, name=f"Atomic 6 {workspace_id.hex}"))
+        await db.flush()
         db.add(
             Workflow(
                 id=workflow_id,
@@ -98,6 +100,7 @@ async def _create_run(
                 revision=1,
             )
         )
+        await db.flush()
         values: dict[str, object] = {}
         if lease == "expired":
             values = {
@@ -122,6 +125,7 @@ async def _create_run(
                 **values,
             )
         )
+        await db.flush()
         if status == "paused":
             db.add(
                 ApprovalRequest(
@@ -208,6 +212,28 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
             )
         assert all(row.recovery_last_dispatched_at is not None for row in reserved)
         assert all(row.recovery_next_dispatch_at is not None for row in reserved)
+        async with atomic6_factory() as db:
+            paused_run = await db.get(WorkflowRun, eligible[-1])
+            approval = await db.scalar(
+                select(ApprovalRequest).where(ApprovalRequest.run_id == eligible[-1])
+            )
+            latest = await db.scalar(
+                select(WorkflowCheckpoint)
+                .where(WorkflowCheckpoint.run_id == eligible[-1])
+                .order_by(WorkflowCheckpoint.sequence.desc())
+                .limit(1)
+            )
+            assert paused_run is not None and paused_run.status == "paused"
+            assert approval is not None and approval.status == "approved"
+            assert latest is not None and latest.sequence == 1
+            assert latest.pending_node_id is None and latest.interrupt is None
+            assert "approval" in latest.completed_node_ids
+            lease = await claim_repo.claim_execution(db, eligible[-1], timedelta(seconds=30))
+            assert lease is not None
+            await db.commit()
+        async with atomic6_factory() as db:
+            claimed = await db.get(WorkflowRun, eligible[-1])
+        assert claimed is not None and claimed.status == "running"
     finally:
         await _cleanup(atomic6_factory, workspaces)
 
