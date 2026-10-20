@@ -2,9 +2,14 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
-from app.api.deps import CurrentUser, WorkflowApprovalSvc
+from app.api.deps import (
+    CurrentUser,
+    WorkflowApprovalAsyncSvc,
+    WorkflowApprovalSvc,
+    WorkflowExecutionDispatcherDep,
+)
 from app.schemas.workflow import ApprovalDecisionRequest, ApprovalRequestRead
 
 router = APIRouter()
@@ -35,6 +40,33 @@ async def approve(
     return await approval_service.approve(
         workflow_id, run_id, approval_id, current_user.id, note=data.note
     )
+
+
+@router.post(
+    "/{workflow_id}/runs/{run_id}/approvals/{approval_id}/approve/async",
+    response_model=ApprovalRequestRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def approve_async(
+    workflow_id: UUID,
+    run_id: UUID,
+    approval_id: UUID,
+    data: ApprovalDecisionRequest,
+    response: Response,
+    approval_service: WorkflowApprovalAsyncSvc,
+    dispatcher: WorkflowExecutionDispatcherDep,
+    current_user: CurrentUser,
+):
+    approval = await approval_service.approve_async(
+        workflow_id,
+        run_id,
+        approval_id,
+        current_user.id,
+        dispatcher,
+        note=data.note,
+    )
+    response.headers["Location"] = f"/api/v1/workflows/{workflow_id}/runs/{run_id}"
+    return approval
 
 
 @router.post(

@@ -29,12 +29,14 @@ class DurableWorkflowExecutionPersistence:
         *,
         completed_node_ids: tuple[str, ...],
         pending_node_id: str | None,
+        commit: bool = True,
     ) -> None:
         await self._persist_checkpoint(
             run,
             completed_node_ids=completed_node_ids,
             pending_node_id=pending_node_id,
             interrupt=None,
+            commit=commit,
         )
 
     async def persist_interruption(
@@ -44,6 +46,7 @@ class DurableWorkflowExecutionPersistence:
         completed_node_ids: tuple[str, ...],
         pending_node_id: str,
         interrupt: Mapping[str, Any],
+        commit: bool = True,
     ) -> None:
         approval = _approval_from_interrupt(
             run,
@@ -56,6 +59,7 @@ class DurableWorkflowExecutionPersistence:
             pending_node_id=pending_node_id,
             interrupt=interrupt,
             approval=approval,
+            commit=commit,
         )
 
     async def _persist_checkpoint(
@@ -66,6 +70,7 @@ class DurableWorkflowExecutionPersistence:
         pending_node_id: str | None,
         interrupt: Mapping[str, Any] | None,
         approval: ApprovalRequest | None = None,
+        commit: bool = True,
     ) -> None:
         checkpoint = WorkflowCheckpoint(
             id=uuid4(),
@@ -81,7 +86,8 @@ class DurableWorkflowExecutionPersistence:
         await checkpoint_repo.create_workflow_checkpoint(self._db, checkpoint=checkpoint)
         if approval is not None:
             await approval_repo.create_approval_request(self._db, approval=approval)
-        await self._db.commit()
+        if commit:
+            await self._db.commit()
         self._next_sequence += 1
 
 

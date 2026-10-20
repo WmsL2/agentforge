@@ -151,7 +151,7 @@ jobs:
           uv run --directory backend alembic upgrade head
           current_revision="$(uv run --directory backend alembic current)"
           echo "$current_revision"
-          test "$current_revision" = "0041_add_workflow_execution_claim_lease (head)"
+          test "$current_revision" = "0042_add_workflow_recovery_dispatch_schedule (head)"
 
       - name: Run Atomic 5 PostgreSQL and async API E2E
         run: |
@@ -172,6 +172,92 @@ jobs:
           }
           print(f"Atomic 5 E2E JUnit counts: {counts}")
           expected = {"tests": 5, "failures": 0, "errors": 0, "skipped": 0}
+          if counts != expected:
+              print(f"Expected exactly: {expected}", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
+  atomic6-recovery-approval-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentforge_v09_atomic6_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentforge_v09_atomic6_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentforge_v09_atomic6_verify
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      AGENTFORGE_RUN_POSTGRES_E2E: "1"
+      AGENTFORGE_RUN_ATOMIC6_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --directory backend --dev
+
+      - name: Verify 0041 to 0042 migration chain
+        run: |
+          uv run --directory backend alembic upgrade 0041_add_workflow_execution_claim_lease
+          uv run --directory backend alembic upgrade head
+          current_revision="$(uv run --directory backend alembic current)"
+          echo "$current_revision"
+          test "$current_revision" = "0042_add_workflow_recovery_dispatch_schedule (head)"
+
+      - name: Run Atomic 6 PostgreSQL and Celery E2E
+        run: |
+          uv run --directory backend pytest \
+            tests/integration/workflow/test_recovery_scanner_postgres.py \
+            tests/integration/workflow/test_recovery_celery_e2e.py \
+            tests/integration/workflow/test_durable_recovery_postgres.py \
+            -v -rs --junitxml=atomic6-e2e.xml
+
+          uv run --directory backend python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("atomic6-e2e.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              key: sum(int(suite.attrib.get(key, 0)) for suite in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+          print(f"Atomic 6 E2E JUnit counts: {counts}")
+          expected = {"tests": 11, "failures": 0, "errors": 0, "skipped": 0}
           if counts != expected:
               print(f"Expected exactly: {expected}", file=sys.stderr)
               raise SystemExit(1)

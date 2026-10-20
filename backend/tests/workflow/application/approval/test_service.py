@@ -119,7 +119,7 @@ def service(*, observer=None):
 
 
 @pytest.mark.anyio
-async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
+async def test_approve_claims_and_commits_resolution_before_fenced_background_execution():
     events = []
     observer = RecordingObserver(events)
     svc, db, workflow_service, engine = service(observer=observer)
@@ -139,6 +139,7 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
     resolution_outputs = {}
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.claim_repo") as claim_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
         patch(
             "app.services.workflow.application.approval.service.checkpoint_repo"
@@ -146,6 +147,9 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
         patch(
             "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
         ) as durability,
+        patch(
+            "app.services.workflow.application.approval.service.BackgroundRunExecutor"
+        ) as executor_type,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
@@ -165,13 +169,20 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
             assert kwargs == {
                 "completed_node_ids": ("start", "approval"),
                 "pending_node_id": None,
+                "commit": False,
             }
             resolution_outputs.update(decision_run.node_outputs)
             events.append("persist_node_completion")
 
         persistence.persist_node_completion = AsyncMock(side_effect=persist_node_completion)
         durability.return_value = persistence
-        engine.resume.side_effect = lambda *_, **__: events.append("engine.resume")
+        lease = SimpleNamespace(run_id=run.id)
+        claim_repo.claim_execution = AsyncMock(return_value=lease)
+        executor = MagicMock()
+        executor.execute_claimed = AsyncMock(
+            side_effect=lambda *_, **__: events.append("execute_claimed")
+        )
+        executor_type.return_value = executor
         decided_by = uuid4()
         result = await svc.approve(workflow.id, run.id, approval.id, decided_by, note="ok")
 
@@ -179,7 +190,7 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
     assert events == [
         "persist_node_completion",
         TraceEventKind.APPROVAL_APPROVED,
-        "engine.resume",
+        "execute_claimed",
     ]
     decided_approval = decided["approval"]
     observation_context, kind, payload = observer.recorded[0]
@@ -195,9 +206,9 @@ async def test_approve_uses_snapshot_commits_resolution_before_engine_resume():
     }
     approval_repo.get_approval_request_by_id_for_update.assert_awaited_once()
     durability.assert_called_once_with(db, run, next_sequence=3)
-    definition = engine.resume.await_args.args[0]
-    assert definition.nodes[2].config["value"] == "old"
-    assert engine.resume.await_args.args[2].completed_node_ids == ("start", "approval")
+    engine.resume.assert_not_awaited()
+    claim_repo.claim_execution.assert_awaited_once_with(db, run.id, ANY)
+    executor.execute_claimed.assert_awaited_once_with(ANY, lease)
     assert resolution_outputs["approval"] == {
         "decision": "approved",
         "approval_id": str(approval.id),
@@ -300,7 +311,7 @@ async def test_workflow_not_found_from_authorization_hides_approval_hierarchy(ac
 
 
 @pytest.mark.anyio
-async def test_approve_observer_failure_does_not_prevent_engine_resume():
+async def test_approve_observer_failure_does_not_prevent_background_execution():
     events = []
     svc, _, workflow_service, engine = service(
         observer=RecordingObserver(events, error=RuntimeError("trace unavailable"))
@@ -319,6 +330,7 @@ async def test_approve_observer_failure_does_not_prevent_engine_resume():
     workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.claim_repo") as claim_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
         patch(
             "app.services.workflow.application.approval.service.checkpoint_repo"
@@ -326,6 +338,9 @@ async def test_approve_observer_failure_does_not_prevent_engine_resume():
         patch(
             "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
         ) as durability,
+        patch(
+            "app.services.workflow.application.approval.service.BackgroundRunExecutor"
+        ) as executor_type,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         approval_repo.get_approval_request_by_id_for_update = AsyncMock(return_value=approval)
@@ -338,12 +353,18 @@ async def test_approve_observer_failure_does_not_prevent_engine_resume():
             side_effect=lambda *_args, **_kwargs: events.append("persist")
         )
         durability.return_value = persistence
-        engine.resume.side_effect = lambda *_args, **_kwargs: events.append("resume")
+        claim_repo.claim_execution = AsyncMock(return_value=SimpleNamespace(run_id=run.id))
+        executor = MagicMock()
+        executor.execute_claimed = AsyncMock(
+            side_effect=lambda *_args, **_kwargs: events.append("execute")
+        )
+        executor_type.return_value = executor
 
         assert await svc.approve(workflow.id, run.id, approval.id, uuid4()) is approval
 
-    assert events == ["persist", TraceEventKind.APPROVAL_APPROVED, "resume"]
-    engine.resume.assert_awaited_once()
+    assert events == ["persist", TraceEventKind.APPROVAL_APPROVED, "execute"]
+    engine.resume.assert_not_awaited()
+    executor.execute_claimed.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -506,7 +527,7 @@ async def test_missing_checkpoint_is_conflict_without_changes_or_resume():
 
 
 @pytest.mark.anyio
-async def test_downstream_failure_is_durably_persisted_after_approval():
+async def test_approval_commit_precedes_fenced_background_execution():
     svc, db, workflow_service, engine = service()
     workflow, run, approval, checkpoint = rows()
     resolved = SimpleNamespace(
@@ -522,6 +543,7 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
     workflow_service.get_authorized_workflow = AsyncMock(return_value=workflow)
     with (
         patch("app.services.workflow.application.approval.service.run_repo") as run_repo,
+        patch("app.services.workflow.application.approval.service.claim_repo") as claim_repo,
         patch("app.services.workflow.application.approval.service.approval_repo") as approval_repo,
         patch(
             "app.services.workflow.application.approval.service.checkpoint_repo"
@@ -529,6 +551,9 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
         patch(
             "app.services.workflow.application.approval.service.DurableWorkflowExecutionPersistence"
         ) as durability,
+        patch(
+            "app.services.workflow.application.approval.service.BackgroundRunExecutor"
+        ) as executor_type,
     ):
         run_repo.get_workflow_run_by_id = AsyncMock(return_value=run)
         run_repo.update_workflow_run_state = AsyncMock()
@@ -547,16 +572,14 @@ async def test_downstream_failure_is_durably_persisted_after_approval():
         persistence.persist_node_completion = AsyncMock()
         durability.return_value = persistence
 
-        async def fail_downstream(*_args, **_kwargs):
-            _args[1].status = WorkflowRunStatus.FAILED
-
-        engine.resume.side_effect = fail_downstream
+        lease = SimpleNamespace(run_id=run.id)
+        claim_repo.claim_execution = AsyncMock(return_value=lease)
+        executor = MagicMock()
+        executor.execute_claimed = AsyncMock()
+        executor_type.return_value = executor
         await svc.approve(workflow.id, run.id, approval.id, uuid4())
 
     assert decided["approval"].status.value == "approved"
-    run_repo.update_workflow_run_state.assert_awaited_once_with(db, db_run=run, run=ANY)
-    assert (
-        run_repo.update_workflow_run_state.await_args.kwargs["run"].status
-        is WorkflowRunStatus.FAILED
-    )
+    engine.resume.assert_not_awaited()
+    executor.execute_claimed.assert_awaited_once_with(ANY, lease)
     db.commit.assert_awaited_once()

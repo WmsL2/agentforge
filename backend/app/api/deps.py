@@ -200,6 +200,33 @@ def get_workflow_approval_service(
 WorkflowApprovalSvc = Annotated[WorkflowApprovalService, Depends(get_workflow_approval_service)]
 
 
+def get_workflow_approval_async_service(
+    db: DBSession,
+    workflow_service: WorkflowSvc,
+    observer: WorkflowExecutionObserverDep,
+) -> WorkflowApprovalService:
+    """Compose only validation dependencies; workers own runtime/tool startup."""
+    validation_engine = WorkflowEngine(
+        DispatchingNodeExecutor(
+            deterministic_executor=DeterministicNodeExecutor(),
+            agent_executor=AgentNodeExecutor({}, observer=observer),
+            approval_executor=ApprovalNodeExecutor(observer=observer),
+        ),
+        observer=observer,
+    )
+    return WorkflowApprovalService(
+        db=db,
+        workflow_service=workflow_service,
+        engine=validation_engine,
+        observer=observer,
+    )
+
+
+WorkflowApprovalAsyncSvc = Annotated[
+    WorkflowApprovalService, Depends(get_workflow_approval_async_service)
+]
+
+
 def get_workflow_run_service(
     db: DBSession,
     workflow_service: WorkflowSvc,

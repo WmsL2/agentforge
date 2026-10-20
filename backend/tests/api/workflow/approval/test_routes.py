@@ -7,7 +7,12 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import get_current_user, get_workflow_approval_service
+from app.api.deps import (
+    get_current_user,
+    get_workflow_approval_async_service,
+    get_workflow_approval_service,
+    get_workflow_execution_dispatcher,
+)
 from app.core.exceptions import NotFoundError
 from app.main import app
 from app.services.workflow.application.approval import WorkflowApprovalConflictError
@@ -93,6 +98,41 @@ async def test_decision_routes_pass_note_and_return_updated_schema() -> None:
         assert calls[1][2] == "Needs changes"
         assert calls[0][1] == (workflow_id, approval.run_id, approval.id, user.id)
         assert calls[1][1] == (workflow_id, approval.run_id, approval.id, user.id)
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_async_approve_returns_202_and_run_location() -> None:
+    user = SimpleNamespace(id=uuid4())
+    approval = approval_row()
+    workflow_id = uuid4()
+    dispatcher = object()
+
+    class ApprovalService:
+        async def approve_async(self, *args, note=None):
+            assert args == (workflow_id, approval.run_id, approval.id, user.id, dispatcher)
+            assert note == "Resume"
+            approval.status = "approved"
+            approval.decided_by = user.id
+            approval.decided_at = datetime(2026, 9, 15, tzinfo=UTC)
+            return approval
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_workflow_approval_async_service] = ApprovalService
+    app.dependency_overrides[get_workflow_execution_dispatcher] = lambda: dispatcher
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/workflows/{workflow_id}/runs/{approval.run_id}/approvals/{approval.id}/approve/async",
+                json={"note": "Resume"},
+            )
+        assert response.status_code == 202
+        assert (
+            response.headers["location"]
+            == f"/api/v1/workflows/{workflow_id}/runs/{approval.run_id}"
+        )
+        assert response.json()["status"] == "approved"
     finally:
         app.dependency_overrides.clear()
 
