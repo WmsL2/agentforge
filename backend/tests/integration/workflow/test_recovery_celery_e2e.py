@@ -374,7 +374,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
         outcome = await asyncio.to_thread(publisher.results[-1].get, timeout=30, propagate=True)
         assert outcome["status"] == "completed" and outcome["lease_released"] is True
         stored = await _wait_completed(factory, run_id)
-        assert stored.output == {"end": {"value": "atomic-6-approval"}}
+        assert stored.output == {"end": {"after": "atomic-6-approval"}}
         async with factory() as db:
             approval = await db.get(ApprovalRequest, approval_id)
             count = await db.scalar(
@@ -508,7 +508,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
         outcome = await asyncio.to_thread(publisher.results[-1].get, timeout=30, propagate=True)
         assert outcome["status"] == "completed" and outcome["lease_released"] is True
         completed = await _wait_completed(factory, run_id)
-        assert completed.output == {"end": {"value": "atomic-6-approval"}}
+        assert completed.output == {"end": {"after": "atomic-6-approval"}}
         assert (
             completed.execution_claim_token is None and completed.execution_lease_expires_at is None
         )

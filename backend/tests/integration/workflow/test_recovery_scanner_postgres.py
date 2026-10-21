@@ -280,7 +280,7 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
             }
             assert dict(sql_storage) == {
                 "is_sql_null": True,
-                "is_json_null": False,
+                "is_json_null": None,
                 "json_type": None,
             }
 
