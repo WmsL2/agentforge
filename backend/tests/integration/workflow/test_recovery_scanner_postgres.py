@@ -85,6 +85,7 @@ async def _create_run(
     lease: str | None = None,
     approved_resolution: bool = False,
     complete_resolution: bool = True,
+    approval_status: str | None = None,
 ) -> tuple[UUID, UUID]:
     workspace_id, workflow_id, run_id = uuid4(), uuid4(), uuid4()
     now = datetime.now(UTC)
@@ -134,7 +135,7 @@ async def _create_run(
                     workflow_revision=1,
                     node_id="approval",
                     prompt="Continue?",
-                    status="approved" if approved_resolution else "pending",
+                    status=approval_status or ("approved" if approved_resolution else "pending"),
                     decided_at=now if approved_resolution else None,
                 )
             )
@@ -184,13 +185,31 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
             )
             workspaces.append(workspace_id)
             eligible.append(run_id)
-        for status, lease, approved, complete in (
-            ("running", "valid", False, False),
-            ("paused", None, False, True),
-            ("paused", None, True, False),
-            ("completed", None, False, False),
-            ("failed", None, False, False),
-            ("cancelled", None, False, False),
+        json_null_run_id = eligible[-1]
+        workspace_id, sql_null_run_id = await _create_run(
+            atomic6_factory,
+            status="paused",
+            approved_resolution=True,
+            complete_resolution=True,
+        )
+        workspaces.append(workspace_id)
+        async with atomic6_factory() as db:
+            await db.execute(
+                text("UPDATE workflow_checkpoints SET interrupt = NULL WHERE run_id = :run_id"),
+                {"run_id": sql_null_run_id},
+            )
+            await db.commit()
+        eligible.append(sql_null_run_id)
+
+        for status, lease, approved, complete, approval_status in (
+            ("running", "valid", False, False, None),
+            ("paused", "valid", True, True, None),
+            ("paused", None, False, True, None),
+            ("paused", None, True, True, "rejected"),
+            ("paused", None, True, False, None),
+            ("completed", None, False, False, None),
+            ("failed", None, False, False, None),
+            ("cancelled", None, False, False, None),
         ):
             workspace_id, _ = await _create_run(
                 atomic6_factory,
@@ -198,6 +217,7 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
                 lease=lease,
                 approved_resolution=approved,
                 complete_resolution=complete,
+                approval_status=approval_status,
             )
             workspaces.append(workspace_id)
 
@@ -213,13 +233,64 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
         assert all(row.recovery_last_dispatched_at is not None for row in reserved)
         assert all(row.recovery_next_dispatch_at is not None for row in reserved)
         async with atomic6_factory() as db:
-            paused_run = await db.get(WorkflowRun, eligible[-1])
+            json_storage = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                        SELECT interrupt IS NULL AS is_sql_null,
+                               interrupt = 'null'::jsonb AS is_json_null,
+                               jsonb_typeof(interrupt) AS json_type
+                        FROM workflow_checkpoints
+                        WHERE run_id = :run_id
+                        ORDER BY sequence DESC
+                        LIMIT 1
+                        """
+                        ),
+                        {"run_id": json_null_run_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            sql_storage = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                        SELECT interrupt IS NULL AS is_sql_null,
+                               interrupt = 'null'::jsonb AS is_json_null,
+                               jsonb_typeof(interrupt) AS json_type
+                        FROM workflow_checkpoints
+                        WHERE run_id = :run_id
+                        ORDER BY sequence DESC
+                        LIMIT 1
+                        """
+                        ),
+                        {"run_id": sql_null_run_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert dict(json_storage) == {
+                "is_sql_null": False,
+                "is_json_null": True,
+                "json_type": "null",
+            }
+            assert dict(sql_storage) == {
+                "is_sql_null": True,
+                "is_json_null": False,
+                "json_type": None,
+            }
+
+            paused_run = await db.get(WorkflowRun, json_null_run_id)
             approval = await db.scalar(
-                select(ApprovalRequest).where(ApprovalRequest.run_id == eligible[-1])
+                select(ApprovalRequest).where(ApprovalRequest.run_id == json_null_run_id)
             )
             latest = await db.scalar(
                 select(WorkflowCheckpoint)
-                .where(WorkflowCheckpoint.run_id == eligible[-1])
+                .where(WorkflowCheckpoint.run_id == json_null_run_id)
                 .order_by(WorkflowCheckpoint.sequence.desc())
                 .limit(1)
             )
@@ -228,12 +299,20 @@ async def test_recovery_selection_accepts_only_valid_states_and_reserves_rows(
             assert latest is not None and latest.sequence == 1
             assert latest.pending_node_id is None and latest.interrupt is None
             assert "approval" in latest.completed_node_ids
-            lease = await claim_repo.claim_execution(db, eligible[-1], timedelta(seconds=30))
-            assert lease is not None
+            json_null_lease = await claim_repo.claim_execution(
+                db, json_null_run_id, timedelta(seconds=30)
+            )
+            sql_null_lease = await claim_repo.claim_execution(
+                db, sql_null_run_id, timedelta(seconds=30)
+            )
+            assert json_null_lease is not None
+            assert sql_null_lease is not None
             await db.commit()
         async with atomic6_factory() as db:
-            claimed = await db.get(WorkflowRun, eligible[-1])
-        assert claimed is not None and claimed.status == "running"
+            json_null_claimed = await db.get(WorkflowRun, json_null_run_id)
+            sql_null_claimed = await db.get(WorkflowRun, sql_null_run_id)
+        assert json_null_claimed is not None and json_null_claimed.status == "running"
+        assert sql_null_claimed is not None and sql_null_claimed.status == "running"
     finally:
         await _cleanup(atomic6_factory, workspaces)
 

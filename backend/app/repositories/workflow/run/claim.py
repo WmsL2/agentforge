@@ -4,6 +4,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, case, exists, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -88,7 +89,13 @@ def _approved_paused_recovery_candidate(expired):
             resolution_checkpoint.run_id == WorkflowRun.id,
             resolution_checkpoint.id == latest_checkpoint_id,
             resolution_checkpoint.pending_node_id.is_(None),
-            resolution_checkpoint.interrupt.is_(None),
+            # JSONB persists Python ``None`` as the JSON literal ``null`` by
+            # default.  Accept both that historical representation and a SQL
+            # NULL, while still rejecting a real interrupt payload.
+            or_(
+                resolution_checkpoint.interrupt.is_(None),
+                resolution_checkpoint.interrupt == JSONB.NULL,
+            ),
             approval.status == "approved",
             approval.workflow_revision == WorkflowRun.workflow_revision,
             resolution_checkpoint.workflow_revision == WorkflowRun.workflow_revision,
