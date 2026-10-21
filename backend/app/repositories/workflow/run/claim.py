@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.models.workflow.approval.model import ApprovalRequest
 from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
@@ -69,26 +70,29 @@ def _approved_paused_recovery_candidate(expired):
     resolution checkpoint have both committed.  This deliberately does not
     make arbitrary lease-free PAUSED rows executable.
     """
+    latest_checkpoint = aliased(WorkflowCheckpoint, name="latest_checkpoint")
+    resolution_checkpoint = aliased(WorkflowCheckpoint, name="resolution_checkpoint")
+    approval = aliased(ApprovalRequest, name="resolved_approval")
     latest_checkpoint_id = (
-        select(WorkflowCheckpoint.id)
-        .where(WorkflowCheckpoint.run_id == WorkflowRun.id)
-        .order_by(WorkflowCheckpoint.sequence.desc())
+        select(latest_checkpoint.id)
+        .where(latest_checkpoint.run_id == WorkflowRun.id)
+        .order_by(latest_checkpoint.sequence.desc())
         .limit(1)
         .correlate(WorkflowRun)
         .scalar_subquery()
     )
     approved_resolution = exists(
-        select(WorkflowCheckpoint.id)
-        .join(ApprovalRequest, ApprovalRequest.run_id == WorkflowCheckpoint.run_id)
+        select(resolution_checkpoint.id)
+        .join(approval, approval.run_id == resolution_checkpoint.run_id)
         .where(
-            WorkflowCheckpoint.run_id == WorkflowRun.id,
-            WorkflowCheckpoint.id == latest_checkpoint_id,
-            WorkflowCheckpoint.pending_node_id.is_(None),
-            WorkflowCheckpoint.interrupt.is_(None),
-            ApprovalRequest.status == "approved",
-            ApprovalRequest.workflow_revision == WorkflowRun.workflow_revision,
-            WorkflowCheckpoint.workflow_revision == WorkflowRun.workflow_revision,
-            WorkflowCheckpoint.completed_node_ids.has_key(ApprovalRequest.node_id),
+            resolution_checkpoint.run_id == WorkflowRun.id,
+            resolution_checkpoint.id == latest_checkpoint_id,
+            resolution_checkpoint.pending_node_id.is_(None),
+            resolution_checkpoint.interrupt.is_(None),
+            approval.status == "approved",
+            approval.workflow_revision == WorkflowRun.workflow_revision,
+            resolution_checkpoint.workflow_revision == WorkflowRun.workflow_revision,
+            resolution_checkpoint.completed_node_ids.has_key(approval.node_id),
         )
     )
     return and_(

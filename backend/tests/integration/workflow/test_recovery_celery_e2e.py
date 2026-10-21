@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -18,12 +18,17 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.api.deps import get_tool_registry, get_workflow_execution_dispatcher
+from app.api.deps import (
+    get_tool_registry,
+    get_workflow_execution_dispatcher,
+    get_workflow_execution_observer,
+)
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.models.user import User
 from app.db.models.workflow import ApprovalRequest, Workflow, WorkflowCheckpoint, WorkflowRun
 from app.db.models.workspace import Workspace
+from app.db.session import get_db_session
 from app.integrations.celery.workflow_dispatcher import CeleryWorkflowDispatcher
 from app.main import app
 from app.repositories import workspace as workspace_repo
@@ -36,6 +41,7 @@ from app.services.workflow import (
     WorkflowRecoveryScanner,
     serialize_workflow_graph,
 )
+from app.services.workflow.execution.observability.observer import NoOpWorkflowExecutionObserver
 from app.services.workspace.domain import WorkspaceRole
 from app.worker.celery_app import celery_app
 
@@ -109,7 +115,17 @@ async def _wait_completed(factory: async_sessionmaker[AsyncSession], run_id: UUI
         if run is not None and run.status == "completed":
             return run
         await asyncio.sleep(0.1)
-    pytest.fail(f"Atomic 6 run {run_id} did not complete.")
+    async with factory() as db:
+        run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        pytest.fail(f"Atomic 6 run {run_id} did not complete (run is missing).")
+    now = datetime.now(UTC)
+    pytest.fail(
+        "Atomic 6 run did not complete "
+        f"(status={run.status}, claim_generation={run.execution_claim_generation}, "
+        f"claim_present={run.execution_claim_token is not None}, "
+        f"lease_active={run.execution_lease_expires_at is not None and run.execution_lease_expires_at > now})."
+    )
 
 
 class _Publisher:
@@ -121,6 +137,37 @@ class _Publisher:
         result = self._app.send_task(name, kwargs=kwargs)
         self.results.append(result)
         return result
+
+
+def _override_http_dependencies(
+    factory: async_sessionmaker[AsyncSession],
+    dispatcher,
+) -> None:
+    """Bind every HTTP database access to this test's current-loop NullPool factory."""
+
+    async def get_test_db_session():
+        async with factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db_session] = get_test_db_session
+    app.dependency_overrides[get_tool_registry] = ToolRegistry
+    app.dependency_overrides[get_workflow_execution_dispatcher] = lambda: dispatcher
+    app.dependency_overrides[get_workflow_execution_observer] = NoOpWorkflowExecutionObserver
+
+
+def _clear_http_dependencies() -> None:
+    for dependency in (
+        get_db_session,
+        get_tool_registry,
+        get_workflow_execution_dispatcher,
+        get_workflow_execution_observer,
+    ):
+        app.dependency_overrides.pop(dependency, None)
 
 
 @pytest.fixture
@@ -246,7 +293,7 @@ async def test_scanner_dispatches_through_redis_to_real_worker(atomic6_worker) -
 
 @pytest.mark.anyio
 async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
-    factory, _, _ = atomic6_worker
+    factory, publisher, _ = atomic6_worker
     user_id, workspace_id, run_id, approval_id = uuid4(), uuid4(), uuid4(), uuid4()
     definition = _definition(approval=True)
     try:
@@ -314,7 +361,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
                 )
             )
             await db.commit()
-        app.dependency_overrides[get_tool_registry] = ToolRegistry
+        _override_http_dependencies(factory, CeleryWorkflowDispatcher(publisher))
         headers = {"Authorization": f"Bearer {create_access_token(user_id)}"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -324,6 +371,8 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
             )
         assert response.status_code == 202
         assert response.headers["location"] == f"/api/v1/workflows/{definition.id}/runs/{run_id}"
+        outcome = await asyncio.to_thread(publisher.results[-1].get, timeout=30, propagate=True)
+        assert outcome["status"] == "completed" and outcome["lease_released"] is True
         stored = await _wait_completed(factory, run_id)
         assert stored.output == {"end": {"value": "atomic-6-approval"}}
         async with factory() as db:
@@ -336,7 +385,7 @@ async def test_async_approval_http_reaches_real_worker(atomic6_worker) -> None:
         assert approval is not None and approval.status == "approved"
         assert count == 4
     finally:
-        app.dependency_overrides.clear()
+        _clear_http_dependencies()
         async with factory() as db:
             await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
             await db.execute(delete(User).where(User.id == user_id))
@@ -421,8 +470,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
             )
             await db.commit()
 
-        app.dependency_overrides[get_tool_registry] = ToolRegistry
-        app.dependency_overrides[get_workflow_execution_dispatcher] = FailingDispatcher
+        _override_http_dependencies(factory, FailingDispatcher())
         headers = {"Authorization": f"Bearer {create_access_token(user_id)}"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -432,7 +480,6 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
             )
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "WORKFLOW_DISPATCH_FAILED"
-        app.dependency_overrides.pop(get_workflow_execution_dispatcher)
         async with factory() as db:
             run = await db.get(WorkflowRun, run_id)
             approval = await db.get(ApprovalRequest, approval_id)
@@ -473,7 +520,7 @@ async def test_async_approval_publish_failure_commits_then_scanner_recovers(atom
             )
         assert count == 4
     finally:
-        app.dependency_overrides.clear()
+        _clear_http_dependencies()
         async with factory() as db:
             await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
             await db.execute(delete(User).where(User.id == user_id))
