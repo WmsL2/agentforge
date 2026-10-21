@@ -3,9 +3,13 @@
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from app.db.models.workflow.approval.model import ApprovalRequest
+from app.db.models.workflow.checkpoint.model import WorkflowCheckpoint
 from app.db.models.workflow.run.model import WorkflowRun
 from app.services.workflow.application.background.domain import WorkflowExecutionLease
 
@@ -42,11 +46,13 @@ async def claim_execution(
             or_(WorkflowRun.execution_claim_token.is_(None), expired),
         ),
         and_(WorkflowRun.status == "running", expired),
+        _approved_paused_recovery_candidate(expired),
     )
     result = await db.execute(
         update(WorkflowRun)
         .where(WorkflowRun.id == run_id, eligible)
         .values(
+            status=case((WorkflowRun.status == "paused", "running"), else_=WorkflowRun.status),
             execution_claim_token=uuid4(),
             execution_claim_generation=WorkflowRun.execution_claim_generation + 1,
             execution_lease_expires_at=func.clock_timestamp() + lease_duration,
@@ -56,6 +62,67 @@ async def claim_execution(
     )
     row = result.mappings().one_or_none()
     return WorkflowExecutionLease(**row) if row is not None else None
+
+
+def _approved_paused_recovery_candidate(expired):
+    """Return the narrowly-scoped PAUSED resume predicate.
+
+    A decision is recoverable only after an APPROVED approval and its later
+    resolution checkpoint have both committed.  This deliberately does not
+    make arbitrary lease-free PAUSED rows executable.
+    """
+    latest_checkpoint = aliased(WorkflowCheckpoint, name="latest_checkpoint")
+    resolution_checkpoint = aliased(WorkflowCheckpoint, name="resolution_checkpoint")
+    approval = aliased(ApprovalRequest, name="resolved_approval")
+    latest_checkpoint_id = (
+        select(latest_checkpoint.id)
+        .where(latest_checkpoint.run_id == WorkflowRun.id)
+        .order_by(latest_checkpoint.sequence.desc())
+        .limit(1)
+        .correlate(WorkflowRun)
+        .scalar_subquery()
+    )
+    approved_resolution = exists(
+        select(resolution_checkpoint.id)
+        .join(approval, approval.run_id == resolution_checkpoint.run_id)
+        .where(
+            resolution_checkpoint.run_id == WorkflowRun.id,
+            resolution_checkpoint.id == latest_checkpoint_id,
+            resolution_checkpoint.pending_node_id.is_(None),
+            # JSONB persists Python ``None`` as the JSON literal ``null`` by
+            # default.  Accept both that historical representation and a SQL
+            # NULL, while still rejecting a real interrupt payload.
+            or_(
+                resolution_checkpoint.interrupt.is_(None),
+                resolution_checkpoint.interrupt == JSONB.NULL,
+            ),
+            approval.status == "approved",
+            approval.workflow_revision == WorkflowRun.workflow_revision,
+            resolution_checkpoint.workflow_revision == WorkflowRun.workflow_revision,
+            resolution_checkpoint.completed_node_ids.has_key(approval.node_id),
+        )
+    )
+    return and_(
+        WorkflowRun.status == "paused",
+        or_(WorkflowRun.execution_claim_token.is_(None), expired),
+        approved_resolution,
+    )
+
+
+def recoverable_execution_condition():
+    """Candidate predicate shared by recovery scanning and atomic claiming."""
+    expired = and_(
+        WorkflowRun.execution_claim_token.is_not(None),
+        WorkflowRun.execution_lease_expires_at <= func.clock_timestamp(),
+    )
+    return or_(
+        and_(
+            WorkflowRun.status == "pending",
+            or_(WorkflowRun.execution_claim_token.is_(None), expired),
+        ),
+        and_(WorkflowRun.status == "running", expired),
+        _approved_paused_recovery_candidate(expired),
+    )
 
 
 async def renew_execution(

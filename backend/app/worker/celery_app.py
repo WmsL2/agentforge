@@ -4,6 +4,8 @@ from celery import Celery
 
 from app.core.config import settings
 
+WORKFLOW_RECOVERY_SCAN_TASK = "agentforge.workflow.recovery.scan"
+
 celery_app = Celery(
     "agentforge",
     broker=settings.CELERY_BROKER_URL,
@@ -11,6 +13,7 @@ celery_app = Celery(
     include=(
         "app.worker.tasks.smoke",
         "app.worker.tasks.workflow",
+        "app.worker.tasks.recovery",
     ),
 )
 
@@ -26,4 +29,9 @@ celery_app.conf.update(
     worker_concurrency=4,
 )
 
-celery_app.conf.beat_schedule = {}
+celery_app.conf.beat_schedule = {
+    "workflow-recovery-scan": {
+        "task": WORKFLOW_RECOVERY_SCAN_TASK,
+        "schedule": settings.WORKFLOW_RECOVERY_SCAN_INTERVAL_SECONDS,
+    }
+}

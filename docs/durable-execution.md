@@ -126,13 +126,24 @@ lock Approval row
   -> PENDING -> APPROVED
   -> mark APPROVAL externally completed
   -> persist resolution checkpoint
+  -> atomically claim PAUSED run as RUNNING with lease/fencing generation
   -> COMMIT
-  -> Engine.resume()
+  -> BackgroundRunExecutor.execute_claimed()
 ```
 
-The run is still PAUSED when the resolution checkpoint commits. If the process
-crashes before downstream execution begins, the database therefore retains a
-safe restart point.
+The synchronous path does not call `Engine.resume()` directly. It commits the
+decision, resolution checkpoint, and database execution claim together, then
+uses the same fenced background execution path as a worker. If the process
+crashes after commit, lease expiry leaves a safe recovery point.
+
+`POST /api/v1/workflows/{workflow_id}/runs/{run_id}/approvals/{approval_id}/approve/async`
+uses the same authorization, row lock, snapshot and checkpoint validation, but
+returns `202 Accepted` after the approval and resolution checkpoint commit and
+after publishing the Run ID to Celery. The worker atomically claims only a
+PAUSED run whose approval is APPROVED and whose latest checkpoint is that safe
+resolution state; it changes the run to RUNNING in that same claim transaction.
+If broker publication fails, the API returns 503 without rolling back the
+committed decision. The scanner can discover it later.
 
 Reject instead transitions `PENDING -> REJECTED` and `PAUSED -> CANCELLED` in
 one committed transaction. It creates no resolution checkpoint, does not call
@@ -151,13 +162,31 @@ current workflow may be revised while a paused old run remains recoverable under
 its original graph revision. Real PostgreSQL restart tests use `NullPool`, new
 sessions/connections, and real commits to verify this behavior.
 
+## Automatic recovery scan
+
+Celery Beat periodically invokes a bounded PostgreSQL recovery scan. It selects
+PENDING runs without a claim (or with an expired claim), RUNNING runs with an
+expired lease, and only the narrowly validated APPROVED PAUSED runs described
+above. It never selects waiting/rejected approvals, terminal states, or a valid
+lease. Candidates due according to their persisted `recovery_next_dispatch_at`
+are ordered by least-recent dispatch, then creation time, and selected with
+PostgreSQL `FOR UPDATE SKIP LOCKED`. The scanner writes both the last and next
+dispatch timestamps in that same short transaction before releasing locks and
+publishing.
+
+Publication can be repeated: this is at-least-once dispatch, not exactly-once
+side effects. A worker must still obtain the database-issued claim token,
+generation and lease before it can persist work. There is no transactional
+outbox, HTTP idempotency key or automatic heartbeat.
+
 ## Explicit non-goal
 
 | Capability | v0.6 status |
 |---|---|
 | Recovery primitives and durable state | Implemented |
 | PostgreSQL restart proof | Implemented |
-| Automatic recovery scan | Not implemented |
-| Background recovery worker | Not implemented |
+| Automatic recovery scan | Implemented through Celery Beat |
+| Background recovery worker | Implemented through existing Celery workers |
 
-v0.6 does not scan paused runs at startup or automatically continue them.
+The scanner does not retry nodes, guarantee exactly-once external effects, or
+replace a transactional outbox.

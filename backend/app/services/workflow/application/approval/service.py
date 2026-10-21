@@ -2,14 +2,21 @@
 
 from collections.abc import Mapping
 from contextlib import suppress
+from datetime import timedelta
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.exceptions import AppException, NotFoundError
+from app.core.config import settings
+from app.core.exceptions import AppException, ExternalServiceError, NotFoundError
+from app.db.session import async_session_maker
 from app.repositories.workflow.approval import repository as approval_repo
 from app.repositories.workflow.checkpoint import repository as checkpoint_repo
+from app.repositories.workflow.run import claim as claim_repo
 from app.repositories.workflow.run import repository as run_repo
+from app.services.workflow.application.background.contract import WorkflowExecutionDispatcher
+from app.services.workflow.application.background.domain import WorkflowExecutionJob
+from app.services.workflow.application.background.executor import BackgroundRunExecutor
 from app.services.workflow.application.definition.service import WorkflowService
 from app.services.workflow.application.run.durability import DurableWorkflowExecutionPersistence
 from app.services.workflow.definition.serialization import deserialize_workflow_graph
@@ -40,9 +47,15 @@ class WorkflowApprovalService:
         engine: WorkflowEngine,
         *,
         observer: WorkflowExecutionObserver | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        lease_duration: timedelta | None = None,
     ):
         self.db, self.workflow_service, self.engine = db, workflow_service, engine
         self._observer = observer or NoOpWorkflowExecutionObserver()
+        self._session_factory = session_factory or async_session_maker
+        self._lease_duration = lease_duration or timedelta(
+            seconds=settings.WORKFLOW_BACKGROUND_LEASE_SECONDS
+        )
 
     async def get_pending_approval(self, workflow_id: UUID, run_id: UUID, actor_user_id: UUID):
         await self._authorized_run(
@@ -81,16 +94,78 @@ class WorkflowApprovalService:
             self.db, db_run, next_sequence=checkpoint.sequence + 1
         )
         await persistence.persist_node_completion(
-            run, completed_node_ids=resolved.completed_node_ids, pending_node_id=None
+            run,
+            completed_node_ids=resolved.completed_node_ids,
+            pending_node_id=None,
+            commit=False,
         )
-        await self._record_decision(TraceEventKind.APPROVAL_APPROVED, run.id, approval)
         latest = await checkpoint_repo.get_latest_workflow_checkpoint(self.db, run.id)
         if latest is None or latest.sequence < resolved.sequence:
             raise _invalid("Approval completion checkpoint was not persisted.")
-        await self.engine.resume(definition, run, _checkpoint(latest), persistence=persistence)
-        if run.status is WorkflowRunStatus.FAILED:
-            await run_repo.update_workflow_run_state(self.db, db_run=db_run, run=run)
-            await self.db.commit()
+        lease = await claim_repo.claim_execution(self.db, run.id, self._lease_duration)
+        if lease is None:
+            raise WorkflowApprovalConflictError(
+                message="Workflow run could not be claimed for approved continuation.",
+                code="WORKFLOW_RUN_CLAIM_CONFLICT",
+            )
+        await self.db.commit()
+        await self._record_decision(TraceEventKind.APPROVAL_APPROVED, run.id, approval)
+        await BackgroundRunExecutor(
+            self._session_factory,
+            self.engine,
+            lease_duration=self._lease_duration,
+        ).execute_claimed(WorkflowExecutionJob(run.id), lease)
+        return updated
+
+    async def approve_async(
+        self,
+        workflow_id: UUID,
+        run_id: UUID,
+        approval_id: UUID,
+        actor_user_id: UUID,
+        dispatcher: WorkflowExecutionDispatcher,
+        *,
+        note: str | None = None,
+    ):
+        """Durably decide an approval before publishing a worker resume job.
+
+        The durable decision/checkpoint commit is intentionally complete before
+        touching the broker.  A failed publish leaves a scanner-recoverable
+        PAUSED run and never invents a successful HTTP response.
+        """
+        workflow, db_run = await self._authorized_run(
+            workflow_id, run_id, actor_user_id, WorkspacePermission.APPROVAL_DECIDE
+        )
+        db_approval, approval = await self._locked_pending(db_run, approval_id, run_id)
+        run, definition, checkpoint = await self._state(workflow, db_run, approval)
+        approval.approve(decided_by=actor_user_id, note=note)
+        resolved = _resolved(definition, checkpoint, approval)
+        try:
+            self.engine.validate_resume(definition, run, resolved)
+        except ValueError as exc:
+            raise _invalid(exc) from exc
+        run.node_outputs = dict(resolved.node_outputs)
+        updated = await approval_repo.update_approval_request_state(
+            self.db, db_approval=db_approval, approval=approval
+        )
+        persistence = DurableWorkflowExecutionPersistence(
+            self.db, db_run, next_sequence=checkpoint.sequence + 1
+        )
+        await persistence.persist_node_completion(
+            run, completed_node_ids=resolved.completed_node_ids, pending_node_id=None
+        )
+        latest = await checkpoint_repo.get_latest_workflow_checkpoint(self.db, run.id)
+        if latest is None or latest.sequence < resolved.sequence:
+            raise _invalid("Approval completion checkpoint was not persisted.")
+        await self._record_decision(TraceEventKind.APPROVAL_APPROVED, run.id, approval)
+        try:
+            await dispatcher.dispatch(WorkflowExecutionJob(run.id))
+        except Exception as exc:
+            raise ExternalServiceError(
+                message="Workflow approval was committed but background dispatch failed.",
+                code="WORKFLOW_DISPATCH_FAILED",
+                details={"run_id": str(run.id)},
+            ) from exc
         return updated
 
     async def reject(

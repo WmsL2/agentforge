@@ -44,7 +44,10 @@ async def test_conditional_updates_return_database_values_without_committing(ope
     sql = str(compiled)
     assert sql.startswith("UPDATE workflow_runs SET")
     assert "RETURNING" in sql and "clock_timestamp()" in sql
-    assert "status=" not in sql.split(" WHERE ")[0]
+    if operation == "claim":
+        assert "status=CASE" in sql.split(" WHERE ")[0]
+    else:
+        assert "status=" not in sql.split(" WHERE ")[0]
     if operation == "claim":
         assert "execution_claim_generation +" in sql
         assert "execution_claim_token IS NOT NULL" in sql

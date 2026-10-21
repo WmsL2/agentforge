@@ -1,12 +1,14 @@
 """Workflow-run database read and state-update primitives."""
 
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, nullsfirst, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.workflow.run.model import WorkflowRun as DBWorkflowRun
+from app.repositories.workflow.run.claim import recoverable_execution_condition
 from app.services.workflow.execution.run.domain import WorkflowRun as DomainWorkflowRun
 from app.services.workflow.execution.run.serialization.serializer import (
     serialize_workflow_run_state,
@@ -60,6 +62,48 @@ async def count_workflow_runs_by_workflow(db: AsyncSession, workflow_id: UUID) -
             select(func.count(DBWorkflowRun.id)).where(DBWorkflowRun.workflow_id == workflow_id)
         )
     ) or 0
+
+
+async def list_recoverable_workflow_run_ids_for_update(
+    db: AsyncSession, *, limit: int, redispatch_delay: timedelta
+) -> list[UUID]:
+    """Reserve one fair bounded batch of database-clock recovery candidates.
+
+    Reservation makes a selected row ineligible until its next dispatch time,
+    so a permanently recoverable early row cannot starve later candidates.
+    The scanner still releases locks before publication. A later duplicate
+    delivery is safe because execution must win its atomic database claim.
+    """
+    database_now = func.clock_timestamp()
+    result = await db.execute(
+        select(DBWorkflowRun.id)
+        .where(
+            recoverable_execution_condition(),
+            or_(
+                DBWorkflowRun.recovery_next_dispatch_at.is_(None),
+                DBWorkflowRun.recovery_next_dispatch_at <= database_now,
+            ),
+        )
+        .order_by(
+            nullsfirst(DBWorkflowRun.recovery_last_dispatched_at.asc()),
+            DBWorkflowRun.created_at.asc(),
+            DBWorkflowRun.id.asc(),
+        )
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+    run_ids = list(result.scalars())
+    if run_ids:
+        await db.execute(
+            update(DBWorkflowRun)
+            .where(DBWorkflowRun.id.in_(run_ids))
+            .values(
+                recovery_last_dispatched_at=database_now,
+                recovery_next_dispatch_at=database_now + redispatch_delay,
+            )
+            .execution_options(synchronize_session=False)
+        )
+    return run_ids
 
 
 async def update_workflow_run_state(

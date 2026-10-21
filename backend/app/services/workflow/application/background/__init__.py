@@ -17,6 +17,10 @@ from app.services.workflow.application.background.durability import (
     FencedDurableWorkflowExecutionPersistence,
 )
 from app.services.workflow.application.background.executor import BackgroundRunExecutor
+from app.services.workflow.application.background.recovery_scanner import (
+    RecoveryScanResult,
+    WorkflowRecoveryScanner,
+)
 
 __all__ = [
     "BackgroundRunExecutionResult",
@@ -24,10 +28,12 @@ __all__ = [
     "BackgroundRunExecutor",
     "BackgroundRunStateError",
     "FencedDurableWorkflowExecutionPersistence",
+    "RecoveryScanResult",
     "WorkflowCheckpointSequenceError",
     "WorkflowExecutionClaimService",
     "WorkflowExecutionDispatcher",
     "WorkflowExecutionJob",
     "WorkflowExecutionLease",
     "WorkflowExecutionLeaseLostError",
+    "WorkflowRecoveryScanner",
 ]

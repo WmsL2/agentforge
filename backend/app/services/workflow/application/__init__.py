@@ -7,12 +7,14 @@ from app.services.workflow.application.background import (
     BackgroundRunExecutor,
     BackgroundRunStateError,
     FencedDurableWorkflowExecutionPersistence,
+    RecoveryScanResult,
     WorkflowCheckpointSequenceError,
     WorkflowExecutionClaimService,
     WorkflowExecutionDispatcher,
     WorkflowExecutionJob,
     WorkflowExecutionLease,
     WorkflowExecutionLeaseLostError,
+    WorkflowRecoveryScanner,
 )
 from app.services.workflow.application.definition import WorkflowService
 from app.services.workflow.application.observability import SQLAlchemyWorkflowExecutionObserver
@@ -24,6 +26,7 @@ __all__ = [
     "BackgroundRunExecutor",
     "BackgroundRunStateError",
     "FencedDurableWorkflowExecutionPersistence",
+    "RecoveryScanResult",
     "SQLAlchemyWorkflowExecutionObserver",
     "WorkflowApprovalService",
     "WorkflowAsyncRunService",
@@ -33,6 +36,7 @@ __all__ = [
     "WorkflowExecutionJob",
     "WorkflowExecutionLease",
     "WorkflowExecutionLeaseLostError",
+    "WorkflowRecoveryScanner",
     "WorkflowRunService",
     "WorkflowService",
 ]

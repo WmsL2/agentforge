@@ -56,6 +56,14 @@ class BackgroundRunExecutor:
             return BackgroundRunExecutionResult(
                 job.run_id, BackgroundRunExecutionStatus.NOT_CLAIMED
             )
+        return await self.execute_claimed(job, lease)
+
+    async def execute_claimed(
+        self, job: WorkflowExecutionJob, lease: WorkflowExecutionLease
+    ) -> BackgroundRunExecutionResult:
+        """Execute an already committed claim through the normal fenced path."""
+        if job.run_id != lease.run_id:
+            raise BackgroundRunStateError("Claimed lease does not match the execution job.")
 
         try:
             definition, run, checkpoint = await self._load(lease)

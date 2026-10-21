@@ -38,7 +38,7 @@ from app.services.workflow import (
 from app.worker.celery_app import celery_app
 
 DATABASE = "agentforge_v09_atomic4_verify"
-HEAD = "0041_add_workflow_execution_claim_lease"
+HEAD = "0042_add_workflow_recovery_dispatch_schedule"
 BACKEND_ROOT = Path(__file__).parents[3]
 
 

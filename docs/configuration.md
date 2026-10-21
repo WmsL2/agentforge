@@ -139,6 +139,14 @@ OAuth, persisted connections, and frontend MCP management are not configured.
 | `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery broker URL |
 | `CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery result backend URL |
 | `WORKFLOW_BACKGROUND_LEASE_SECONDS` | `900` | Workflow execution claim lease duration; must be greater than zero |
+| `WORKFLOW_RECOVERY_SCAN_INTERVAL_SECONDS` | `60` | Celery Beat recovery scan cadence; must be greater than zero |
+| `WORKFLOW_RECOVERY_BATCH_SIZE` | `100` | Maximum recoverable runs selected per scan; must be greater than zero |
+| `WORKFLOW_RECOVERY_REDISPATCH_DELAY_SECONDS` | `60` | Minimum database-clock delay before the same recoverable run can be selected again; must be greater than zero |
+
+Celery Beat, not each Celery worker, publishes the periodic recovery scan task.
+The scanner only discovers and re-dispatches bounded PostgreSQL candidates; it
+does not execute workflow nodes itself. Its durable last/next-dispatch schedule
+prevents an earlier permanently recoverable row from starving later candidates.
 
 ## CORS
 
