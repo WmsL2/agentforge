@@ -263,6 +263,80 @@ jobs:
               raise SystemExit(1)
           PY
 
+  atomic7-postgres-release-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentforge_v09_atomic7_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentforge_v09_atomic7_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentforge_v09_atomic7_verify
+      AGENTFORGE_RUN_POSTGRES_E2E: "1"
+      AGENTFORGE_RUN_ATOMIC7_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --directory backend --dev
+
+      - name: Verify 0040 to 0042 migration chain
+        run: |
+          uv run --directory backend alembic upgrade 0040_harden_workflow_workspace_scope
+          test "$(uv run --directory backend alembic current)" = "0040_harden_workflow_workspace_scope"
+          uv run --directory backend alembic upgrade 0041_add_workflow_execution_claim_lease
+          test "$(uv run --directory backend alembic current)" = "0041_add_workflow_execution_claim_lease"
+          uv run --directory backend alembic upgrade 0042_add_workflow_recovery_dispatch_schedule
+          test "$(uv run --directory backend alembic current)" = "0042_add_workflow_recovery_dispatch_schedule (head)"
+          test "$(uv run --directory backend alembic heads | wc -l)" -eq 1
+
+      - name: Run Atomic 7 PostgreSQL release proofs
+        run: |
+          uv run --directory backend pytest \
+            tests/integration/workflow/test_atomic7_postgres_proofs.py \
+            -v -rs --junitxml=atomic7-e2e.xml
+
+          uv run --directory backend python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("atomic7-e2e.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              key: sum(int(suite.attrib.get(key, 0)) for suite in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+          print(f"Atomic 7 E2E JUnit counts: {counts}")
+          expected = {"tests": 6, "failures": 0, "errors": 0, "skipped": 0}
+          if counts != expected:
+              print(f"Expected exactly: {expected}", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
   test-frontend:
     runs-on: ubuntu-latest
 
