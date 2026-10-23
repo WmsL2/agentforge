@@ -365,7 +365,8 @@ async def test_final_migration_schema_exposes_claim_and_recovery_contract(atomic
         "recovery_last_dispatched_at",
         "recovery_next_dispatch_at",
     }.issubset(columns)
-    assert {"execution_claim_generation_nonnegative", "execution_claim_lease_pair"}.issubset(
-        constraints
-    )
+    assert {
+        "workflow_runs_execution_claim_generation_nonnegative_check",
+        "workflow_runs_execution_claim_lease_pair_check",
+    }.issubset(constraints)
     assert "workflow_runs_recovery_dispatch_idx" in indexes
