@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.8 将 Workflow、Run、Observability 与 Approval 收紧到 Workspace RBAC 边界。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.9 在 Workspace RBAC 边界之上提供可验证的后台工作流执行、执行权租约与恢复能力。
 
 ---
 
@@ -54,14 +54,39 @@ v0.1 建设并验证了稳定的工程基础，包括：
   ADMIN / MEMBER roles, `WorkspacePermission`, non-null Workflow workspace
   scope, Workspace-scoped CRUD/run/observability/approval authorization,
   404 anti-enumeration for non-members, and opt-in PostgreSQL security proofs.
+- **v0.9 — Background Execution & Recovery:** asynchronous run submission,
+  Celery background execution, PostgreSQL claim / lease / fencing, recovery
+  scanning, asynchronous approval resume, and real PostgreSQL / Redis / Celery
+  E2E proof gates.
+
+## v0.9 — Background Execution & Recovery
+
+v0.9 keeps the v0.6 durable checkpoint model and v0.8 Workspace RBAC boundary,
+then adds safe background execution for accepted runs. A worker must atomically
+obtain a PostgreSQL-issued claim token, generation and lease before it writes
+state. Fencing rejects stale holders after expiry or takeover. Recovery scanning
+uses bounded, fair `FOR UPDATE SKIP LOCKED` selection and may redeliver work;
+this is at-least-once dispatch, not exactly-once external side effects.
+
+- `POST /runs/async` commits a PENDING run before publishing it to Celery.
+- Approved asynchronous approvals commit their decision and resolution
+  checkpoint before dispatch; a publication failure returns a safe error while
+  preserving the recoverable database state.
+- PostgreSQL-backed CI verifies Claim / Lease / Fencing, recovery behavior, and
+  Atomic 5 and Atomic 6 Redis/Celery flows with isolated disposable services.
+- Run snapshots and append-only checkpoints remain the recovery truth; current
+  Workflow edits never rewrite an existing Run definition.
+
+Read [Durable Execution & Human-in-the-Loop](docs/durable-execution.md) for the
+durability contract and [v0.9 Release Notes draft](docs/release-v0.9.md) for
+configuration and deployment checks.
 
 ## v0.8 — Workspace & RBAC
 
-Current main combines the v0.2 Workflow Core, v0.3 Agent Runtime, v0.4 Tool
-Platform, v0.5 MCP integration, v0.6 durable workflow execution, and v0.7
-execution observability with v0.8 Workspace RBAC. Authentication establishes
-identity; Workspace membership and role-derived permissions authorize resource
-access. A global application admin does not bypass Workspace membership.
+v0.8 introduced the Workspace RBAC boundary retained by v0.9. Authentication
+establishes identity; Workspace membership and role-derived permissions
+authorize resource access. A global application admin does not bypass Workspace
+membership.
 
 ```text
 WorkflowRun
@@ -127,26 +152,25 @@ Detailed documents: [Workflow Core](docs/workflow-core.md),
 After a service process ends, Python objects disappear but PostgreSQL durable
 state remains. A new Session, Engine, and Service can deserialize the
 `WorkflowRun`, its `definition_snapshot`, and the latest `WorkflowCheckpoint`
-to resume without re-running completed nodes. v0.6 provides these recovery
-primitives and proves them with real PostgreSQL restart tests; it does not
-provide an automatic startup recovery scanner.
+to resume without re-running completed nodes. v0.6 provided these recovery
+primitives and real PostgreSQL restart tests. v0.9 now supplies the automatic
+recovery scanner and background worker while preserving this recovery model.
 
-### v0.6 Non-goals and future roadmap
+### v0.6 historical non-goals
 
-v0.6 does not implement automatic recovery scanning, a background workflow
-worker, retry or timeout frameworks, conditional/loop/parallel execution, a
-Workflow TOOL Node or tool-call approval, LangGraph internal durable-thread
-integration, token/cost accounting, an observability dashboard, Workspace/RBAC,
-a frontend Workflow Editor, or MCP HTTP/OAuth. RunStep and Trace execution
-history are implemented in v0.7.
+At the v0.6 boundary, automatic recovery scanning, a background workflow worker
+and Workspace/RBAC had not yet shipped. v0.7 added RunStep and Trace history,
+v0.8 added Workspace/RBAC, and v0.9 added the scanner and background worker.
+Retry or timeout frameworks, conditional/loop/parallel execution, a Workflow
+TOOL Node or tool-call approval, LangGraph internal durable-thread integration,
+token/cost accounting, an observability dashboard, a frontend Workflow Editor,
+and MCP HTTP/OAuth remain outside v0.9.
 
 ```text
 Observability Dashboard / Telemetry / Token and Cost Accounting
 Tool Policy and Workflow TOOL Node
 Retry / Timeout / Idempotency
 Condition / Loop / Parallel
-Background Workflow Worker
-Workspace / RBAC
 Frontend Workflow Editor
 MCP HTTP / OAuth
 ```
@@ -1069,13 +1093,15 @@ Agent Runtime
 Tool Platform / MCP Integration
 Durable Checkpoints / Pause / Resume / Human Approval
 RunStep / Trace Execution Observability
+Workspace / RBAC
+Background Execution / Claim / Lease / Fencing / Recovery
 ```
 
 后续将继续自研：
 
 ```text
 Observability Dashboard / Telemetry Ecosystem
-Workspace / RBAC
+Frontend Workflow Editor
 ```
 
 可以理解为：

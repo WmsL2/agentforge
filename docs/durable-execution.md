@@ -1,4 +1,17 @@
-# Durable Execution & Human-in-the-Loop — v0.6
+# Durable Execution & Human-in-the-Loop
+
+## Version boundary
+
+v0.6 established durable run persistence, append-only checkpoints, manual
+approval decisions and restart recovery primitives. It did not ship a
+background worker, lease ownership or automatic recovery scanning.
+
+v0.9 builds on those durable records without changing their meaning: it adds
+background execution, PostgreSQL Claim / Lease / Fencing, the fair recovery
+scanner, asynchronous run submission and asynchronous approval resume. The
+latest checkpoint and immutable `definition_snapshot` remain the recovery truth.
+Redis/Celery delivery is at-least-once; PostgreSQL ownership prevents stale
+workers from persisting after a lease takeover.
 
 ## Asynchronous run submission
 
@@ -29,9 +42,10 @@ AgentForge WorkflowEngine
 ```
 
 > **Current main note:** v0.7 adds `RunStep` and `TraceEvent` execution
-> observability, and v0.8 adds Workspace-scoped authorization, on top of this
-> recovery model. `WorkflowCheckpoint` remains the recovery truth and resume
-> still starts from the latest checkpoint. See
+> observability, v0.8 adds Workspace-scoped authorization, and v0.9 adds
+> background execution and fenced recovery on top of this recovery model.
+> `WorkflowCheckpoint` remains the recovery truth and resume still starts from
+> the latest checkpoint. See
 > [Execution Observability](execution-observability.md).
 
 ## Run lifecycle
@@ -179,14 +193,14 @@ side effects. A worker must still obtain the database-issued claim token,
 generation and lease before it can persist work. There is no transactional
 outbox, HTTP idempotency key or automatic heartbeat.
 
-## Explicit non-goal
+## v0.6 historical non-goals and v0.9 current limits
 
 | Capability | v0.6 status |
 |---|---|
 | Recovery primitives and durable state | Implemented |
 | PostgreSQL restart proof | Implemented |
-| Automatic recovery scan | Implemented through Celery Beat |
-| Background recovery worker | Implemented through existing Celery workers |
+| Automatic recovery scan | Not in v0.6; implemented in v0.9 through Celery Beat |
+| Background recovery worker | Not in v0.6; implemented in v0.9 through existing Celery workers |
 
-The scanner does not retry nodes, guarantee exactly-once external effects, or
-replace a transactional outbox.
+v0.9 still does not add retries, automatic heartbeats, a transactional outbox,
+HTTP idempotency keys, or exactly-once external side effects.
