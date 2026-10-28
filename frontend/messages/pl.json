@@ -98,6 +98,7 @@
     "addMember": "Dodaj członka",
     "addMemberDescription": "Dodaj istniejącego użytkownika za pomocą ID. Roli właściciela nie można tu przypisać.",
     "removeMember": "Usuń członka",
+    "removeMemberDescription": "Usunąć użytkownika {userId} z tej przestrzeni?",
     "memberAdded": "Dodano członka",
     "memberUpdated": "Zmieniono rolę członka",
     "memberRemoved": "Usunięto członka",

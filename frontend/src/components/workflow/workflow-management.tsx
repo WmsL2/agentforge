@@ -291,7 +291,7 @@ function WorkflowList({
 }) {
   const t = useTranslations("workflows");
   const pathname = usePathname();
-  const mutations = useWorkflowMutations(userId, workspace.id, page * PAGE_SIZE, PAGE_SIZE);
+  const mutations = useWorkflowMutations(userId, workspace.id);
   const [editing, setEditing] = useState<WorkflowRead | null>(null);
   const [deleting, setDeleting] = useState<WorkflowRead | null>(null);
   const total = query.data?.total ?? 0;
@@ -377,7 +377,11 @@ function WorkflowList({
           <h2 className="font-display text-lg font-semibold">{t("workflowList")}</h2>
           <p className="text-muted-foreground text-sm">{t("workflowCount", { count: total })}</p>
         </div>
-        <CreateWorkflowButton userId={userId} workspaceId={workspace.id} page={page} />
+        <CreateWorkflowButton
+          userId={userId}
+          workspaceId={workspace.id}
+          onCreated={() => onPageChange(0)}
+        />
       </div>
       <DataTable
         columns={columns}
@@ -546,8 +550,10 @@ function WorkspacePanel({
                 try {
                   await memberMutations.remove.mutateAsync(member.user_id);
                   toast.success(t("memberRemoved"));
+                  return true;
                 } catch (error) {
                   toast.error(errorMessage(error, t));
+                  return false;
                 }
               }}
             />
@@ -622,10 +628,11 @@ function MemberRow({
   canManage: boolean;
   busy: boolean;
   onRole: (role: "admin" | "member") => Promise<void>;
-  onRemove: () => Promise<void>;
+  onRemove: () => Promise<boolean>;
 }) {
   const t = useTranslations("workflows");
   const owner = member.role === "owner";
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   return (
     <div className="border-border space-y-2 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-2">
@@ -638,30 +645,44 @@ function MemberRow({
         {t("joined", { date: new Date(member.created_at).toLocaleDateString() })}
       </p>
       {canManage && !owner && (
-        <div className="flex gap-2">
-          <Select
-            value={member.role}
-            disabled={busy}
-            onValueChange={(value) => void onRole(value as "admin" | "member")}
-          >
-            <SelectTrigger aria-label={t("memberRole")} className="h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">{t("roles.admin")}</SelectItem>
-              <SelectItem value="member">{t("roles.member")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            aria-label={t("removeMember")}
-            onClick={() => void onRemove()}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        <>
+          <div className="flex gap-2">
+            <Select
+              value={member.role}
+              disabled={busy}
+              onValueChange={(value) => void onRole(value as "admin" | "member")}
+            >
+              <SelectTrigger aria-label={t("memberRole")} className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">{t("roles.admin")}</SelectItem>
+                <SelectItem value="member">{t("roles.member")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              aria-label={t("removeMember")}
+              onClick={() => setConfirmingRemoval(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <ConfirmDialog
+            open={confirmingRemoval}
+            onOpenChange={setConfirmingRemoval}
+            title={t("removeMember")}
+            description={t("removeMemberDescription", { userId: member.user_id })}
+            destructive
+            confirmLabel={t("removeMember")}
+            loading={busy}
+            onConfirm={async () => {
+              if (await onRemove()) setConfirmingRemoval(false);
+            }}
+          />
+        </>
       )}
       {owner && <p className="text-muted-foreground text-xs">{t("ownerProtected")}</p>}
     </div>
@@ -701,14 +722,14 @@ function CreateWorkspaceButton({ userId }: { userId: string }) {
 function CreateWorkflowButton({
   userId,
   workspaceId,
-  page,
+  onCreated,
 }: {
   userId: string;
   workspaceId: string;
-  page: number;
+  onCreated: () => void;
 }) {
   const t = useTranslations("workflows");
-  const mutations = useWorkflowMutations(userId, workspaceId, page * PAGE_SIZE, PAGE_SIZE);
+  const mutations = useWorkflowMutations(userId, workspaceId);
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -730,6 +751,7 @@ function CreateWorkflowButton({
             });
             toast.success(t("workflowCreated"));
             setOpen(false);
+            onCreated();
           } catch (error) {
             toast.error(errorMessage(error, t));
           }

@@ -98,6 +98,7 @@
     "addMember": "Add member",
     "addMemberDescription": "Add an existing user by their user ID. Owner cannot be assigned here.",
     "removeMember": "Remove member",
+    "removeMemberDescription": "Remove user {userId} from this workspace?",
     "memberAdded": "Member added",
     "memberUpdated": "Member role updated",
     "memberRemoved": "Member removed",
