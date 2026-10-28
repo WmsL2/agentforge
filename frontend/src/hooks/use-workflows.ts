@@ -27,22 +27,12 @@ export function useWorkflow(userId: string | undefined, workflowId: string | und
   });
 }
 
-export function useWorkflowMutations(
-  userId: string,
-  workspaceId: string,
-  skip: number,
-  limit: number,
-) {
+export function useWorkflowMutations(userId: string, workspaceId: string) {
   const queryClient = useQueryClient();
-  const listKey = qk.workflows.list(userId, workspaceId, skip, limit);
 
   const create = useMutation({
     mutationFn: (payload: WorkflowCreate) => workflowApi.createWorkflow(workspaceId, payload),
-    onSuccess: (workflow) => {
-      queryClient.setQueryData<WorkflowList>(listKey, (current) => ({
-        items: current ? [workflow, ...current.items] : [workflow],
-        total: (current?.total ?? 0) + 1,
-      }));
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.workflows.workspace(userId, workspaceId) });
     },
   });

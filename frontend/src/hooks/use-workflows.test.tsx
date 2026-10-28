@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,11 +54,25 @@ describe("workflow query cache", () => {
     );
   });
 
-  it("adds a created workflow to the active page cache", async () => {
-    const key = qk.workflows.list("user-1", "workspace-1", 0, 10);
-    queryClient.setQueryData<WorkflowList>(key, { items: [], total: 0 });
+  it("invalidates only the matching workspace without inserting into a full page", async () => {
+    const firstPageKey = qk.workflows.list("user-1", "workspace-1", 0, 10);
+    const secondPageKey = qk.workflows.list("user-1", "workspace-1", 10, 10);
+    const otherWorkspaceKey = qk.workflows.list("user-1", "workspace-2", 0, 10);
+    const otherUserKey = qk.workflows.list("user-2", "workspace-1", 0, 10);
+    const fullPage = {
+      items: Array.from({ length: 10 }, (_, index) => ({
+        ...workflow,
+        id: `flow-${index}`,
+      })),
+      total: 20,
+    } satisfies WorkflowList;
+    queryClient.setQueryData(firstPageKey, fullPage);
+    queryClient.setQueryData(secondPageKey, fullPage);
+    queryClient.setQueryData(otherWorkspaceKey, fullPage);
+    queryClient.setQueryData(otherUserKey, fullPage);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     vi.mocked(workflowApi.createWorkflow).mockResolvedValue(workflow);
-    const { result } = renderHook(() => useWorkflowMutations("user-1", "workspace-1", 0, 10), {
+    const { result } = renderHook(() => useWorkflowMutations("user-1", "workspace-1"), {
       wrapper,
     });
 
@@ -69,11 +83,33 @@ describe("workflow query cache", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(queryClient.getQueryData<WorkflowList>(key)).toEqual({
-        items: [workflow],
-        total: 1,
-      });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: qk.workflows.workspace("user-1", "workspace-1"),
     });
+    expect(queryClient.getQueryData<WorkflowList>(firstPageKey)?.items).toHaveLength(10);
+    expect(queryClient.getQueryData<WorkflowList>(secondPageKey)?.items).toHaveLength(10);
+    expect(queryClient.getQueryData<WorkflowList>(otherWorkspaceKey)).toEqual(fullPage);
+    expect(queryClient.getQueryData<WorkflowList>(otherUserKey)).toEqual(fullPage);
+  });
+
+  it("does not invalidate or alter pagination when creation fails", async () => {
+    const key = qk.workflows.list("user-1", "workspace-1", 10, 10);
+    const cached = { items: [workflow], total: 11 } satisfies WorkflowList;
+    queryClient.setQueryData(key, cached);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    vi.mocked(workflowApi.createWorkflow).mockRejectedValue(new Error("create failed"));
+    const { result } = renderHook(() => useWorkflowMutations("user-1", "workspace-1"), {
+      wrapper,
+    });
+
+    await expect(
+      result.current.create.mutateAsync({
+        name: "Created flow",
+        definition: workflow.definition,
+      }),
+    ).rejects.toThrow("create failed");
+
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<WorkflowList>(key)).toEqual(cached);
   });
 });

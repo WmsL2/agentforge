@@ -8,7 +8,7 @@ import { APP_NAME, ROUTES } from "@/lib/constants";
 import { LayoutDashboard, MessageSquare, UserCircle, ShieldAlert, Workflow } from "lucide-react";
 import { useSidebarStore, useAuthStore } from "@/stores";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui";
-import { localizeHref } from "@/lib/active-route";
+import { isRouteActive, localizeHref } from "@/lib/active-route";
 
 const navigation = [
   { nameKey: "dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
@@ -25,12 +25,13 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex-1 space-y-1 p-4">
       {navigation.map((item) => {
-        const isActive = pathname === item.href;
+        const isActive = isRouteActive(pathname, item.href);
         return (
           <Link
             key={item.nameKey}
             href={localizeHref(pathname, item.href)}
             onClick={onNavigate}
+            aria-current={isActive ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
               "min-h-[44px]",
@@ -48,10 +49,11 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         <Link
           href={localizeHref(pathname, ROUTES.ADMIN)}
           onClick={onNavigate}
+          aria-current={isRouteActive(pathname, ROUTES.ADMIN) ? "page" : undefined}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
             "min-h-[44px]",
-            pathname.startsWith("/admin")
+            isRouteActive(pathname, ROUTES.ADMIN)
               ? "bg-secondary text-secondary-foreground"
               : "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground",
           )}

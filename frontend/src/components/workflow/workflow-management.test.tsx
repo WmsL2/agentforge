@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   useWorkspaceMutations: vi.fn(),
   useMemberMutations: vi.fn(),
   useWorkflowMutations: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastInfo: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -36,7 +39,7 @@ vi.mock("@/hooks", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  toast: { success: mocks.toastSuccess, error: mocks.toastError, info: mocks.toastInfo },
 }));
 
 import { WorkflowManagement } from "./workflow-management";
@@ -95,6 +98,14 @@ const owner: WorkspaceMemberRead = {
   updated_at: null,
 };
 
+const adminMember: WorkspaceMemberRead = {
+  workspace_id: "workspace-1",
+  user_id: "user-2",
+  role: "admin",
+  created_at: "2026-10-28T00:00:00Z",
+  updated_at: null,
+};
+
 function query<T>(data: T) {
   return {
     data,
@@ -116,12 +127,16 @@ function mutations() {
   };
 }
 
-function renderPage() {
-  return render(
+function page() {
+  return (
     <NextIntlClientProvider locale="en" messages={{ workflows: messages.workflows }}>
       <WorkflowManagement userId="user-1" />
-    </NextIntlClientProvider>,
+    </NextIntlClientProvider>
   );
+}
+
+function renderPage() {
+  return render(page());
 }
 
 describe("WorkflowManagement", () => {
@@ -139,6 +154,9 @@ describe("WorkflowManagement", () => {
     mocks.pathname = "/workflows";
     mocks.push.mockReset();
     mocks.replace.mockReset();
+    mocks.toastSuccess.mockReset();
+    mocks.toastError.mockReset();
+    mocks.toastInfo.mockReset();
     mocks.useWorkspaces.mockReturnValue(query(workspaces));
     mocks.useWorkspaceMembers.mockReturnValue(query([owner]));
     mocks.useWorkflows.mockReturnValue(query({ items: [workflow], total: 1 }));
@@ -198,6 +216,74 @@ describe("WorkflowManagement", () => {
     expect(screen.getByRole("button", { name: "Delete workspace" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Add member/i })).toBeInTheDocument();
     expect(screen.getByText("Owner membership is protected.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove member" })).not.toBeInTheDocument();
+  });
+
+  it("opens member removal confirmation and Cancel does not call the mutation", async () => {
+    const memberMutations = mutations();
+    mocks.useWorkspaceMembers.mockReturnValue(query([owner, adminMember]));
+    mocks.useMemberMutations.mockReturnValue(memberMutations);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+
+    expect(screen.getByRole("dialog", { name: "Remove member" })).toBeInTheDocument();
+    expect(screen.getByText("Remove user user-2 from this workspace?")).toBeInTheDocument();
+    expect(memberMutations.remove.mutateAsync).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(memberMutations.remove.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("removes a member only after confirmation", async () => {
+    const memberMutations = mutations();
+    memberMutations.remove.mutateAsync.mockResolvedValue(undefined);
+    mocks.useWorkspaceMembers.mockReturnValue(query([owner, adminMember]));
+    mocks.useMemberMutations.mockReturnValue(memberMutations);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+
+    await waitFor(() =>
+      expect(memberMutations.remove.mutateAsync).toHaveBeenCalledWith("user-2"),
+    );
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("Member removed");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Remove member" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the member removal dialog open and reports mutation failures", async () => {
+    const memberMutations = mutations();
+    memberMutations.remove.mutateAsync.mockRejectedValue(new Error("remove failed"));
+    mocks.useWorkspaceMembers.mockReturnValue(query([owner, adminMember]));
+    mocks.useMemberMutations.mockReturnValue(memberMutations);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(mocks.toastSuccess).not.toHaveBeenCalledWith("Member removed");
+    expect(screen.getByRole("dialog", { name: "Remove member" })).toBeInTheDocument();
+  });
+
+  it("disables member removal confirmation while the mutation is pending", async () => {
+    const memberMutations = mutations();
+    mocks.useWorkspaceMembers.mockReturnValue(query([owner, adminMember]));
+    mocks.useMemberMutations.mockReturnValue(memberMutations);
+    const user = userEvent.setup();
+    const view = renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Remove member" }));
+    memberMutations.remove.isPending = true;
+    view.rerender(page());
+
+    expect(screen.getByRole("button", { name: "…" })).toBeDisabled();
+    expect(memberMutations.remove.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("requires the workspace name before deleting a workspace", async () => {
@@ -249,6 +335,43 @@ describe("WorkflowManagement", () => {
         edges: [{ source: "start", target: "end", condition: null }],
       },
     });
+  });
+
+  it("returns to the first page after creating a workflow on a later page", async () => {
+    const workflowMutations = mutations();
+    workflowMutations.create.mutateAsync.mockResolvedValue(workflow);
+    mocks.useWorkflows.mockReturnValue(query({ items: [workflow], total: 21 }));
+    mocks.useWorkflowMutations.mockReturnValue(workflowMutations);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(mocks.useWorkflows).toHaveBeenLastCalledWith("user-1", "workspace-1", 10, 10);
+    await user.click(screen.getByRole("button", { name: "Create workflow" }));
+    await user.type(await screen.findByLabelText(/^Name/), "New flow");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mocks.useWorkflows).toHaveBeenLastCalledWith("user-1", "workspace-1", 0, 10),
+    );
+  });
+
+  it("keeps the current page when workflow creation fails", async () => {
+    const workflowMutations = mutations();
+    workflowMutations.create.mutateAsync.mockRejectedValue(new Error("create failed"));
+    mocks.useWorkflows.mockReturnValue(query({ items: [workflow], total: 21 }));
+    mocks.useWorkflowMutations.mockReturnValue(workflowMutations);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Create workflow" }));
+    await user.type(await screen.findByLabelText(/^Name/), "New flow");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(mocks.useWorkflows).toHaveBeenLastCalledWith("user-1", "workspace-1", 10, 10);
+    expect(screen.getByRole("dialog", { name: "Create workflow" })).toBeInTheDocument();
   });
 
   it("updates a workflow and opens its delete confirmation", async () => {
