@@ -112,6 +112,79 @@ export const qk = {
       ] as const,
   },
 
+  workspaces: {
+    all: (userId: string) =>
+      ["workspaces", userId] as const,
+
+    list: (userId: string) =>
+      ["workspaces", userId, "list"] as const,
+
+    detail: (
+      userId: string,
+      workspaceId: string,
+    ) =>
+      [
+        "workspaces",
+        userId,
+        "detail",
+        workspaceId,
+      ] as const,
+
+    members: (
+      userId: string,
+      workspaceId: string,
+    ) =>
+      [
+        "workspaces",
+        userId,
+        "members",
+        workspaceId,
+      ] as const,
+  },
+
+  workflows: {
+    all: (userId: string) =>
+      ["workflows", userId] as const,
+
+    workspace: (
+      userId: string,
+      workspaceId: string,
+    ) =>
+      [
+        "workflows",
+        userId,
+        "workspace",
+        workspaceId,
+      ] as const,
+
+    list: (
+      userId: string,
+      workspaceId: string,
+      skip: number,
+      limit: number,
+    ) =>
+      [
+        "workflows",
+        userId,
+        "workspace",
+        workspaceId,
+        "list",
+        skip,
+        limit,
+      ] as const,
+
+    detail: (
+      userId: string,
+      workflowId: string,
+    ) =>
+      [
+        "workflows",
+        userId,
+        "detail",
+        workflowId,
+      ] as const,
+  },
+
   kb: {
     all: () =>
       ["kb"] as const,

@@ -11,10 +11,12 @@ import {
   MessageSquare,
   Search,
   Settings,
+  Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
+import { localizeHref } from "@/lib/active-route";
 import { cn } from "@/lib/utils";
 
 interface TabItem {
@@ -46,6 +48,12 @@ export function MobileTabBar() {
       label: t("home"),
       href: ROUTES.DASHBOARD,
       icon: LayoutDashboard,
+      startsWith: true,
+    },
+    {
+      label: t("workflows"),
+      href: ROUTES.WORKFLOWS,
+      icon: Workflow,
       startsWith: true,
     },
     {
@@ -141,7 +149,7 @@ export function MobileTabBar() {
         return (
           <Link
             key={item.label}
-            href={item.href!}
+            href={localizeHref(pathname, item.href!)}
             aria-label={item.label}
             aria-current={
               active ? "page" : undefined

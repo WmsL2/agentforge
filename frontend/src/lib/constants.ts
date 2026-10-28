@@ -21,6 +21,7 @@ export const ROUTES = {
     "/forgot-password",
   DASHBOARD: "/dashboard",
   CHAT: "/chat",
+  WORKFLOWS: "/workflows",
   PROFILE: "/profile",
   SETTINGS: "/settings",
   SETTINGS_PROFILE:
