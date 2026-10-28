@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import { defaultLocale } from "@/i18n";
 import { SITE } from "@/lib/seo";

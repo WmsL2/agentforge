@@ -2,24 +2,34 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { useState, type ComponentType } from "react";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, GitBranch, Network } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Button, Card, CardContent } from "@/components/ui";
 import { useWorkflow } from "@/hooks";
 import { ApiError, getApiErrorMessage } from "@/lib/api-client";
 import { localizeHref } from "@/lib/active-route";
 import { ROUTES } from "@/lib/constants";
 
-export function WorkflowDetail({ userId }: { userId: string }) {
+import { WorkflowCanvasEditor, type WorkflowCanvasEditorProps } from "./workflow-canvas-editor";
+
+export function WorkflowDetail({
+  userId,
+  CanvasEditorComponent = WorkflowCanvasEditor,
+}: {
+  userId: string;
+  CanvasEditorComponent?: ComponentType<WorkflowCanvasEditorProps>;
+}) {
   const t = useTranslations("workflows");
   const params = useParams<{ workflowId: string }>();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const workflowId = params.workflowId;
   const query = useWorkflow(userId, workflowId);
+  const [dirty, setDirty] = useState(false);
 
   if (query.isLoading) return <LoadingState variant="skeleton-card" />;
   if (query.isError) {
@@ -52,7 +62,12 @@ export function WorkflowDetail({ userId }: { userId: string }) {
         breadcrumbs={[{ label: t("title"), href: backHref }, { label: workflow.name }]}
         actions={
           <Button variant="outline" asChild>
-            <Link href={backHref}>
+            <Link
+              href={backHref}
+              onClick={(event) => {
+                if (dirty && !window.confirm(t("canvas.leaveConfirm"))) event.preventDefault();
+              }}
+            >
               <ArrowLeft className="h-4 w-4" />
               {t("backToWorkflows")}
             </Link>
@@ -79,18 +94,13 @@ export function WorkflowDetail({ userId }: { userId: string }) {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>{t("definitionSummary")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {workflow.definition.nodes.map((node) => (
-              <Badge key={node.id} variant="outline">
-                {node.id}: {node.kind}
-              </Badge>
-            ))}
-          </div>
-          <p className="text-muted-foreground text-sm">{t("editorComingSoon")}</p>
+        <CardContent className="pt-6">
+          <CanvasEditorComponent
+            key={workflow.id}
+            workflow={workflow}
+            userId={userId}
+            onDirtyChange={setDirty}
+          />
         </CardContent>
       </Card>
     </div>
