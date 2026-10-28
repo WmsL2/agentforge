@@ -14,6 +14,15 @@ export function stripLocale(pathname: string): string {
   return pathname || "/";
 }
 
+/** Preserve the active locale prefix for dashboard navigation links. */
+export function localizeHref(pathname: string, href: string): string {
+  const segment = pathname.split("/")[1];
+  if (segment && (locales as readonly string[]).includes(segment)) {
+    return `/${segment}${href === "/" ? "" : href}`;
+  }
+  return href;
+}
+
 /**
  * Whether `href` matches the current path.
  * - `exact`: only an exact match (after stripping locale).

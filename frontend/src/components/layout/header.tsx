@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   Activity,
@@ -15,6 +16,7 @@ import {
   ShieldCheck,
   Users,
   UserCircle,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui";
 import { useAuth } from "@/hooks";
-import { useActiveRoute } from "@/lib/active-route";
+import { localizeHref, useActiveRoute } from "@/lib/active-route";
 import { APP_NAME, ROUTES } from "@/lib/constants";
 import { cn, isAppAdmin } from "@/lib/utils";
 import {
@@ -78,6 +80,12 @@ const NAV: NavEntry[] = [
     icon: MessageSquare,
   },
   {
+    kind: "link",
+    labelKey: "workflows",
+    href: ROUTES.WORKFLOWS,
+    icon: Workflow,
+  },
+  {
     kind: "menu",
     labelKey: "admin",
     icon: ShieldCheck,
@@ -113,6 +121,7 @@ function NavMenu({
   entry: Extract<NavEntry, { kind: "menu" }>;
 }) {
   const isActive = useActiveRoute();
+  const pathname = usePathname();
   const t = useTranslations("nav");
 
   const active = entry.items.some((item) =>
@@ -147,7 +156,7 @@ function NavMenu({
             asChild
           >
             <Link
-              href={item.href}
+              href={localizeHref(pathname, item.href)}
               className="flex items-start gap-2.5"
             >
               <item.icon className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
@@ -185,6 +194,7 @@ export function Header() {
   const { toggle } = useSidebarStore();
 
   const isActive = useActiveRoute();
+  const pathname = usePathname();
   const t = useTranslations("nav");
   const tc = useTranslations("common");
 
@@ -237,7 +247,7 @@ export function Header() {
               entry.kind === "link" ? (
                 <Link
                   key={entry.href}
-                  href={entry.href}
+                  href={localizeHref(pathname, entry.href)}
                   aria-current={
                     isActive(entry.href)
                       ? "page"

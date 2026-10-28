@@ -5,13 +5,15 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn, isAppAdmin } from "@/lib/utils";
 import { APP_NAME, ROUTES } from "@/lib/constants";
-import { LayoutDashboard, MessageSquare, UserCircle, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, MessageSquare, UserCircle, ShieldAlert, Workflow } from "lucide-react";
 import { useSidebarStore, useAuthStore } from "@/stores";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui";
+import { localizeHref } from "@/lib/active-route";
 
 const navigation = [
   { nameKey: "dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { nameKey: "chat", href: ROUTES.CHAT, icon: MessageSquare },
+  { nameKey: "workflows", href: ROUTES.WORKFLOWS, icon: Workflow },
   { nameKey: "profile", href: ROUTES.PROFILE, icon: UserCircle },
 ];
 
@@ -27,7 +29,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         return (
           <Link
             key={item.nameKey}
-            href={item.href}
+            href={localizeHref(pathname, item.href)}
             onClick={onNavigate}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
@@ -44,7 +46,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
       })}
       {isAppAdmin(user) && (
         <Link
-          href={ROUTES.ADMIN}
+          href={localizeHref(pathname, ROUTES.ADMIN)}
           onClick={onNavigate}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
