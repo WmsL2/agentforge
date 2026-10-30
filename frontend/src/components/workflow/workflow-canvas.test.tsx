@@ -35,6 +35,21 @@ vi.mock("@xyflow/react", async (importOriginal) => {
       <div>
         <p>nodes:{nodes.map((node) => node.id).join(",")}</p>
         <p>edges:{edges.map((edge) => edge.id).join(",")}</p>
+        <p>positions:{nodes.map((node) => `${node.id}@${node.position.x}`).join(",")}</p>
+        <p>
+          selected-nodes:
+          {nodes
+            .filter((node) => node.selected)
+            .map((node) => node.id)
+            .join(",")}
+        </p>
+        <p>
+          selected-edges:
+          {edges
+            .filter((edge) => edge.selected)
+            .map((edge) => edge.id)
+            .join(",")}
+        </p>
         {nodes.map((node) => (
           <div key={node.id}>
             <button
@@ -51,15 +66,22 @@ vi.mock("@xyflow/react", async (importOriginal) => {
             >
               move node {node.id}
             </button>
+            <button onClick={() => onNodesChange([{ type: "remove", id: node.id }])}>
+              remove node event {node.id}
+            </button>
           </div>
         ))}
         {edges.map((edge) => (
-          <button
-            key={edge.id}
-            onClick={() => onEdgesChange([{ type: "select", id: edge.id, selected: true }])}
-          >
-            select edge {edge.id}
-          </button>
+          <div key={edge.id}>
+            <button
+              onClick={() => onEdgesChange([{ type: "select", id: edge.id, selected: true }])}
+            >
+              select edge {edge.id}
+            </button>
+            <button onClick={() => onEdgesChange([{ type: "remove", id: edge.id }])}>
+              remove edge event {edge.id}
+            </button>
+          </div>
         ))}
         <button
           onClick={() =>
@@ -92,7 +114,7 @@ vi.mock("@xyflow/react", async (importOriginal) => {
 
 import { WorkflowCanvas } from "./workflow-canvas";
 
-function Harness() {
+function Harness({ editable = true }: { editable?: boolean }) {
   const [graph, setGraph] = useState(() => toCanvasGraph(createDefaultWorkflowGraph()));
   const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<ConnectionProblem | null>(null);
@@ -102,7 +124,7 @@ function Harness() {
       <p>problem:{problem ?? "none"}</p>
       <WorkflowCanvas
         graph={graph}
-        editable
+        editable={editable}
         onChange={(next: CanvasGraph, marksDirty: boolean) => {
           setGraph(next);
           if (marksDirty) setDirty(true);
@@ -161,5 +183,24 @@ describe("WorkflowCanvas interactions", () => {
     expect(screen.getByRole("button", { name: "Delete node" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "select node end" }));
     expect(screen.getByRole("button", { name: "Delete node" })).toBeDisabled();
+  });
+
+  it("allows selection but ignores node and edge mutations while read-only", async () => {
+    const user = userEvent.setup();
+    render(<Harness editable={false} />);
+
+    await user.click(screen.getByRole("button", { name: "move node start" }));
+    await user.click(screen.getByRole("button", { name: "remove node event end" }));
+    await user.click(screen.getByRole("button", { name: "remove edge event start-to-end" }));
+    expect(screen.getByText("positions:start@0,end@240")).toBeInTheDocument();
+    expect(screen.getByText("nodes:start,end")).toBeInTheDocument();
+    expect(screen.getByText("edges:start-to-end")).toBeInTheDocument();
+    expect(screen.getByText("dirty:false")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "select node start" }));
+    await user.click(screen.getByRole("button", { name: "select edge start-to-end" }));
+    expect(screen.getByText("selected-nodes:start")).toBeInTheDocument();
+    expect(screen.getByText("selected-edges:start-to-end")).toBeInTheDocument();
+    expect(screen.getByText("dirty:false")).toBeInTheDocument();
   });
 });

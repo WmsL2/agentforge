@@ -103,8 +103,11 @@ export function WorkflowCanvas({
 
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
+      const editableChanges = editable
+        ? changes
+        : changes.filter((change) => change.type === "select");
       let remainingEnds = graph.nodes.filter((node) => node.data.kind === "end").length;
-      const allowed = changes.filter((change) => {
+      const allowed = editableChanges.filter((change) => {
         if (change.type !== "remove") return true;
         const node = graph.nodes.find((item) => item.id === change.id);
         if (!node || node.data.kind === "start") return false;
@@ -121,11 +124,11 @@ export function WorkflowCanvas({
         ? graph.edges.filter((edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target))
         : graph.edges;
       const dirty = allowed.some(
-        (change) => change.type === "position" || change.type === "remove" || change.type === "add",
+        (change) => change.type !== "select" && change.type !== "dimensions",
       );
       onChange({ nodes: nextNodes, edges: nextEdges }, dirty);
     },
-    [graph, onChange],
+    [editable, graph, onChange],
   );
 
   const onEdgesChange = useCallback(
