@@ -37,6 +37,15 @@ vi.mock("@xyflow/react", async (importOriginal) => {
         <p>edges:{edges.map((edge) => edge.id).join(",")}</p>
         <p>positions:{nodes.map((node) => `${node.id}@${node.position.x}`).join(",")}</p>
         <p>
+          measured:
+          {nodes
+            .map(
+              (node) =>
+                `${node.id}@${node.measured?.width ?? "unset"}x${node.measured?.height ?? "unset"}`,
+            )
+            .join(",")}
+        </p>
+        <p>
           selected-nodes:
           {nodes
             .filter((node) => node.selected)
@@ -68,6 +77,20 @@ vi.mock("@xyflow/react", async (importOriginal) => {
             </button>
             <button onClick={() => onNodesChange([{ type: "remove", id: node.id }])}>
               remove node event {node.id}
+            </button>
+            <button
+              onClick={() =>
+                onNodesChange([
+                  {
+                    type: "dimensions",
+                    id: node.id,
+                    dimensions: { width: 180, height: 72 },
+                    setAttributes: true,
+                  },
+                ])
+              }
+            >
+              measure node {node.id}
             </button>
           </div>
         ))}
@@ -164,6 +187,20 @@ describe("WorkflowCanvas interactions", () => {
     expect(screen.getByText("edges:start-to-end")).toBeInTheDocument();
   });
 
+  it("retains measured dimensions without marking the graph dirty", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "measure node start" }));
+    expect(screen.getByText(/measured:start@180x72/)).toBeInTheDocument();
+    expect(screen.getByText("dirty:false")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "select node start" }));
+    expect(screen.getByText("selected-nodes:start")).toBeInTheDocument();
+    expect(screen.getByText(/measured:start@180x72/)).toBeInTheDocument();
+    expect(screen.getByText("dirty:false")).toBeInTheDocument();
+  });
+
   it("deletes selected edges and rejects illegal connections", async () => {
     const user = userEvent.setup();
     render(<Harness />);
@@ -192,7 +229,9 @@ describe("WorkflowCanvas interactions", () => {
     await user.click(screen.getByRole("button", { name: "move node start" }));
     await user.click(screen.getByRole("button", { name: "remove node event end" }));
     await user.click(screen.getByRole("button", { name: "remove edge event start-to-end" }));
+    await user.click(screen.getByRole("button", { name: "measure node start" }));
     expect(screen.getByText("positions:start@0,end@240")).toBeInTheDocument();
+    expect(screen.getByText(/measured:start@180x72/)).toBeInTheDocument();
     expect(screen.getByText("nodes:start,end")).toBeInTheDocument();
     expect(screen.getByText("edges:start-to-end")).toBeInTheDocument();
     expect(screen.getByText("dirty:false")).toBeInTheDocument();

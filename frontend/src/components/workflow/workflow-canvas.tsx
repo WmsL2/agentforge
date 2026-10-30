@@ -105,7 +105,7 @@ export function WorkflowCanvas({
     (changes: NodeChange<CanvasNode>[]) => {
       const editableChanges = editable
         ? changes
-        : changes.filter((change) => change.type === "select");
+        : changes.filter((change) => change.type === "select" || change.type === "dimensions");
       let remainingEnds = graph.nodes.filter((node) => node.data.kind === "end").length;
       const allowed = editableChanges.filter((change) => {
         if (change.type !== "remove") return true;

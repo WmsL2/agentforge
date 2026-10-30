@@ -30,11 +30,19 @@ interface EditorRequest {
   revision: number;
 }
 
-function withSelection(current: CanvasGraph, next: CanvasGraph): CanvasGraph {
-  const nextNodes = new Map(next.nodes.map((node) => [node.id, node.selected]));
+function withPresentationState(current: CanvasGraph, next: CanvasGraph): CanvasGraph {
+  const nextNodes = new Map(next.nodes.map((node) => [node.id, node]));
   const nextEdges = new Map(next.edges.map((edge) => [edge.id, edge.selected]));
   return {
-    nodes: current.nodes.map((node) => ({ ...node, selected: nextNodes.get(node.id) })),
+    nodes: current.nodes.map((node) => {
+      const nextNode = nextNodes.get(node.id);
+      if (!nextNode) return node;
+      return {
+        ...node,
+        selected: nextNode.selected,
+        measured: nextNode.measured ?? node.measured,
+      };
+    }),
     edges: current.edges.map((edge) => ({ ...edge, selected: nextEdges.get(edge.id) })),
   };
 }
@@ -199,7 +207,7 @@ export function WorkflowCanvasEditor({
   const changeCanvas = useCallback(
     (next: CanvasGraph, marksDirty: boolean) => {
       if (marksDirty && (!canEdit || operationRef.current !== "idle")) return;
-      setCanvas((current) => (marksDirty ? next : withSelection(current, next)));
+      setCanvas((current) => (marksDirty ? next : withPresentationState(current, next)));
       if (marksDirty) {
         setDirty(true);
         setValidation(null);

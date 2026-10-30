@@ -25,6 +25,27 @@ function FakeWorkflowCanvas({ graph, editable, onChange }: WorkflowCanvasProps) 
     <div>
       <p>editable:{String(editable)}</p>
       <p>canvas:{graph.nodes.map((node) => `${node.id}@${node.position.x}`).join(",")}</p>
+      <p>
+        measured:
+        {graph.nodes
+          .map(
+            (node) =>
+              `${node.id}@${node.measured?.width ?? "unset"}x${node.measured?.height ?? "unset"}`,
+          )
+          .join(",")}
+      </p>
+      <p>
+        selected:
+        {graph.nodes
+          .filter((node) => node.selected)
+          .map((node) => node.id)
+          .join(",")}
+      </p>
+      <p>config:{String(graph.nodes[0]?.data.config.spoofed ?? "clean")}</p>
+      <p>metadata:{String(graph.nodes[0]?.data.metadata.spoofed ?? "clean")}</p>
+      <p>
+        structure:{graph.nodes.length} nodes/{graph.edges.length} edges
+      </p>
       <button
         disabled={!editable}
         onClick={() =>
@@ -56,7 +77,64 @@ function FakeWorkflowCanvas({ graph, editable, onChange }: WorkflowCanvasProps) 
       >
         force business change
       </button>
-      <button onClick={() => onChange(graph, false)}>select only</button>
+      <button
+        onClick={() =>
+          onChange(
+            {
+              ...graph,
+              nodes: graph.nodes.map((node, index) =>
+                index === 0 ? { ...node, measured: { width: 160, height: 80 } } : node,
+              ),
+            },
+            false,
+          )
+        }
+      >
+        measure node
+      </button>
+      <button
+        onClick={() =>
+          onChange(
+            {
+              nodes: [
+                ...graph.nodes.map((node, index) =>
+                  index === 0
+                    ? {
+                        ...node,
+                        position: { x: 444, y: 555 },
+                        data: {
+                          ...node.data,
+                          config: { ...node.data.config, spoofed: true },
+                          metadata: { ...node.data.metadata, spoofed: true },
+                        },
+                      }
+                    : node,
+                ),
+                { ...graph.nodes[0]!, id: "spoofed-node" },
+              ],
+              edges: [],
+            },
+            false,
+          )
+        }
+      >
+        spoof non-dirty business change
+      </button>
+      <button
+        onClick={() =>
+          onChange(
+            {
+              ...graph,
+              nodes: graph.nodes.map((node, index) =>
+                index === 0 ? { ...node, selected: true } : node,
+              ),
+            },
+            false,
+          )
+        }
+      >
+        select only
+      </button>
     </div>
   );
 }
@@ -342,6 +420,27 @@ describe("WorkflowCanvasEditor lifecycle", () => {
     expect(screen.getByText(/start@999/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(screen.getByText(/start@0/)).toBeInTheDocument();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("keeps measured dimensions and selection while rejecting non-dirty business changes", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.click(screen.getByRole("button", { name: "measure node" }));
+    expect(screen.getByText(/measured:start@160x80/)).toBeInTheDocument();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "select only" }));
+    expect(screen.getByText("selected:start")).toBeInTheDocument();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "spoof non-dirty business change" }));
+    expect(screen.getByText(/canvas:start@0,end@240/)).toBeInTheDocument();
+    expect(screen.getByText("config:clean")).toBeInTheDocument();
+    expect(screen.getByText("metadata:clean")).toBeInTheDocument();
+    expect(screen.getByText("structure:2 nodes/1 edges")).toBeInTheDocument();
+    expect(screen.getByText(/measured:start@160x80/)).toBeInTheDocument();
     expect(screen.getByText("Saved")).toBeInTheDocument();
   });
 
