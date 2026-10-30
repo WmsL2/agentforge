@@ -22,6 +22,31 @@ export interface WorkflowCanvasEditorProps {
   CanvasComponent?: ComponentType<WorkflowCanvasProps>;
 }
 
+type EditorOperation = "idle" | "validating" | "saving";
+
+interface EditorRequest {
+  id: number;
+  workflowId: string;
+  revision: number;
+}
+
+function withPresentationState(current: CanvasGraph, next: CanvasGraph): CanvasGraph {
+  const nextNodes = new Map(next.nodes.map((node) => [node.id, node]));
+  const nextEdges = new Map(next.edges.map((edge) => [edge.id, edge.selected]));
+  return {
+    nodes: current.nodes.map((node) => {
+      const nextNode = nextNodes.get(node.id);
+      if (!nextNode) return node;
+      return {
+        ...node,
+        selected: nextNode.selected,
+        measured: nextNode.measured ?? node.measured,
+      };
+    }),
+    edges: current.edges.map((edge) => ({ ...edge, selected: nextEdges.get(edge.id) })),
+  };
+}
+
 function requestError(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return getApiErrorMessage(error.data, error.message || fallback);
   return error instanceof Error ? error.message : fallback;
@@ -43,13 +68,27 @@ export function WorkflowCanvasEditor({
   const [validation, setValidation] = useState<WorkflowValidationRead | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
+  const [operation, setOperation] = useState<EditorOperation>("idle");
   const [remoteRevision, setRemoteRevision] = useState<number | null>(null);
   const workflowIdRef = useRef(workflow.id);
+  const latestWorkflowRef = useRef(workflow);
+  const mountedRef = useRef(true);
+  const operationRef = useRef<EditorOperation>("idle");
+  const requestIdRef = useRef(0);
+  latestWorkflowRef.current = workflow;
 
   const membership = members.data?.find((member) => member.user_id === userId);
   const canEdit = members.isSuccess && Boolean(membership);
   const permissionLoading = members.isLoading;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+      operationRef.current = "idle";
+    };
+  }, []);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -68,6 +107,9 @@ export function WorkflowCanvasEditor({
   useEffect(() => {
     if (workflow.id !== workflowIdRef.current) {
       workflowIdRef.current = workflow.id;
+      requestIdRef.current += 1;
+      operationRef.current = "idle";
+      setOperation("idle");
       setSavedWorkflow(workflow);
       setCanvas(toCanvasGraph(workflow.definition));
       setDirty(false);
@@ -93,21 +135,64 @@ export function WorkflowCanvasEditor({
     [canvas, savedWorkflow.definition],
   );
 
+  const beginOperation = useCallback(
+    (next: Exclude<EditorOperation, "idle">): EditorRequest | null => {
+      if (operationRef.current !== "idle") return null;
+      operationRef.current = next;
+      setOperation(next);
+      return {
+        id: ++requestIdRef.current,
+        workflowId: savedWorkflow.id,
+        revision: savedWorkflow.revision,
+      };
+    },
+    [savedWorkflow.id, savedWorkflow.revision],
+  );
+
+  const finishOperation = useCallback((request: EditorRequest) => {
+    if (!mountedRef.current || requestIdRef.current !== request.id) return;
+    operationRef.current = "idle";
+    setOperation("idle");
+  }, []);
+
+  const isCurrentRequest = useCallback((request: EditorRequest, checkRevision = true) => {
+    const latest = latestWorkflowRef.current;
+    return (
+      mountedRef.current &&
+      requestIdRef.current === request.id &&
+      latest.id === request.workflowId &&
+      (!checkRevision || latest.revision === request.revision)
+    );
+  }, []);
+
+  const validateSnapshot = useCallback(
+    async (graph: ReturnType<typeof currentGraph>, request: EditorRequest) => {
+      try {
+        const result = await workflowApi.validateWorkflow(graph);
+        if (!isCurrentRequest(request)) return null;
+        setValidation(result);
+        return result;
+      } catch (error) {
+        if (!isCurrentRequest(request)) return null;
+        setValidation(null);
+        setValidationError(requestError(error, t("validationServiceFailed")));
+        return null;
+      }
+    },
+    [isCurrentRequest, t],
+  );
+
   const runValidation = useCallback(async (): Promise<WorkflowValidationRead | null> => {
-    setIsValidating(true);
+    const request = beginOperation("validating");
+    if (!request) return null;
+    const graph = currentGraph();
     setValidationError(null);
     try {
-      const result = await workflowApi.validateWorkflow(currentGraph());
-      setValidation(result);
-      return result;
-    } catch (error) {
-      setValidation(null);
-      setValidationError(requestError(error, t("validationServiceFailed")));
-      return null;
+      return await validateSnapshot(graph, request);
     } finally {
-      setIsValidating(false);
+      finishOperation(request);
     }
-  }, [currentGraph, t]);
+  }, [beginOperation, currentGraph, finishOperation, validateSnapshot]);
 
   const issues = useMemo(() => validation?.issues ?? [], [validation]);
   const invalidNodeIds = useMemo(
@@ -119,27 +204,41 @@ export function WorkflowCanvasEditor({
     [issues],
   );
 
-  const changeCanvas = useCallback((next: CanvasGraph, marksDirty: boolean) => {
-    setCanvas(next);
-    if (marksDirty) {
-      setDirty(true);
-      setValidation(null);
-      setValidationError(null);
-      setSaveError(null);
-    }
-  }, []);
+  const changeCanvas = useCallback(
+    (next: CanvasGraph, marksDirty: boolean) => {
+      if (marksDirty && (!canEdit || operationRef.current !== "idle")) return;
+      setCanvas((current) => (marksDirty ? next : withPresentationState(current, next)));
+      if (marksDirty) {
+        setDirty(true);
+        setValidation(null);
+        setValidationError(null);
+        setSaveError(null);
+      }
+    },
+    [canEdit],
+  );
 
   const save = async () => {
-    if (!canEdit || !dirty || remoteRevision !== null) return;
-    setSaveError(null);
-    const result = await runValidation();
-    if (!result?.is_valid) return;
+    if (
+      !canEdit ||
+      !dirty ||
+      remoteRevision !== null ||
+      latestWorkflowRef.current.revision !== savedWorkflow.revision
+    )
+      return;
+    const request = beginOperation("saving");
+    if (!request) return;
     const graph = currentGraph();
+    setSaveError(null);
+    setValidationError(null);
     try {
+      const result = await validateSnapshot(graph, request);
+      if (!result?.is_valid || !isCurrentRequest(request)) return;
       const updated = await mutations.update.mutateAsync({
         workflowId: savedWorkflow.id,
         payload: { definition: graph },
       });
+      if (!isCurrentRequest(request, false)) return;
       setSavedWorkflow(updated);
       setCanvas(toCanvasGraph(updated.definition));
       setDirty(false);
@@ -147,11 +246,15 @@ export function WorkflowCanvasEditor({
       setValidation(result);
       onSaved?.(updated);
     } catch (error) {
+      if (!isCurrentRequest(request, false)) return;
       setSaveError(requestError(error, t("saveFailed")));
+    } finally {
+      finishOperation(request);
     }
   };
 
   const discard = () => {
+    if (operationRef.current !== "idle") return;
     setCanvas(toCanvasGraph(savedWorkflow.definition));
     setDirty(false);
     setValidation(null);
@@ -160,6 +263,7 @@ export function WorkflowCanvasEditor({
   };
 
   const reloadServerVersion = () => {
+    if (operationRef.current !== "idle") return;
     setSavedWorkflow(workflow);
     setCanvas(toCanvasGraph(workflow.definition));
     setDirty(false);
@@ -170,6 +274,7 @@ export function WorkflowCanvasEditor({
   };
 
   const rejectConnection = (problem: ConnectionProblem) => {
+    if (operationRef.current !== "idle") return;
     setValidation(null);
     setValidationError(t(`connectionProblems.${problem}`));
   };
@@ -194,12 +299,17 @@ export function WorkflowCanvasEditor({
           <Button
             type="button"
             variant="outline"
-            disabled={isValidating}
+            disabled={operation !== "idle"}
             onClick={() => void runValidation()}
           >
-            {isValidating ? t("validating") : t("validate")}
+            {operation === "validating" ? t("validating") : t("validate")}
           </Button>
-          <Button type="button" variant="outline" disabled={!dirty} onClick={discard}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!dirty || operation !== "idle"}
+            onClick={discard}
+          >
             <RotateCcw className="h-4 w-4" />
             {t("discard")}
           </Button>
@@ -209,13 +319,13 @@ export function WorkflowCanvasEditor({
               !canEdit ||
               !dirty ||
               remoteRevision !== null ||
-              isValidating ||
+              operation !== "idle" ||
               mutations.update.isPending
             }
             onClick={() => void save()}
           >
             <Save className="h-4 w-4" />
-            {mutations.update.isPending ? t("saving") : t("save")}
+            {operation === "saving" || mutations.update.isPending ? t("saving") : t("save")}
           </Button>
         </div>
       </div>
@@ -234,7 +344,13 @@ export function WorkflowCanvasEditor({
       {remoteRevision !== null && (
         <StatusMessage destructive icon={<AlertTriangle className="h-4 w-4" />}>
           <span>{t("remoteRevision", { revision: remoteRevision })}</span>
-          <Button type="button" size="sm" variant="outline" onClick={reloadServerVersion}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={operation !== "idle"}
+            onClick={reloadServerVersion}
+          >
             {t("reload")}
           </Button>
         </StatusMessage>
@@ -263,7 +379,7 @@ export function WorkflowCanvasEditor({
 
       <CanvasComponent
         graph={canvas}
-        editable={canEdit && !mutations.update.isPending}
+        editable={canEdit && operation === "idle" && !mutations.update.isPending}
         invalidNodeIds={invalidNodeIds}
         invalidEdgeIds={invalidEdgeIds}
         onChange={changeCanvas}
