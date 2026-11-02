@@ -1,13 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import { toCanvasGraph } from "./canvas-adapter";
-import { canDeleteNode, connectionProblem, nextValueNode, removeNode } from "./canvas-rules";
+import {
+  canDeleteNode,
+  connectionProblem,
+  nextNode,
+  nextValueNode,
+  removeNode,
+} from "./canvas-rules";
 import { createDefaultWorkflowGraph } from "./default-graph";
 
 describe("workflow canvas graph rules", () => {
   it("adds VALUE nodes with engine-compatible configuration", () => {
     const node = nextValueNode(toCanvasGraph(createDefaultWorkflowGraph()));
     expect(node).toMatchObject({ id: "value-1", data: { kind: "value", config: { value: null } } });
+  });
+
+  it("adds uniquely identified AGENT and APPROVAL nodes with backend-compatible defaults", () => {
+    const canvas = toCanvasGraph(createDefaultWorkflowGraph());
+    canvas.nodes.push(nextNode(canvas, "agent"));
+    canvas.nodes.push(nextNode(canvas, "agent"));
+    canvas.nodes.push(nextNode(canvas, "approval"));
+
+    expect(canvas.nodes.slice(-3)).toMatchObject([
+      { id: "agent-1", data: { kind: "agent", config: { runner: "langgraph", instruction: "" } } },
+      { id: "agent-2", data: { kind: "agent", config: { runner: "langgraph", instruction: "" } } },
+      { id: "approval-1", data: { kind: "approval", config: { prompt: "" } } },
+    ]);
   });
 
   it("protects START and the final END", () => {

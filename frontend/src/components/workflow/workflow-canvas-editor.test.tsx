@@ -135,6 +135,40 @@ function FakeWorkflowCanvas({ graph, editable, onChange }: WorkflowCanvasProps) 
       >
         select only
       </button>
+      {graph.nodes.map((node) => (
+        <button
+          key={node.id}
+          onClick={() =>
+            onChange(
+              {
+                ...graph,
+                nodes: graph.nodes.map((item) => ({ ...item, selected: item.id === node.id })),
+              },
+              false,
+            )
+          }
+        >
+          select canvas node {node.id}
+        </button>
+      ))}
+      <button
+        onClick={() =>
+          onChange(
+            {
+              nodes: graph.nodes.filter((node) => !node.selected),
+              edges: graph.edges.filter(
+                (edge) =>
+                  !graph.nodes.some(
+                    (node) => node.selected && (edge.source === node.id || edge.target === node.id),
+                  ),
+              ),
+            },
+            true,
+          )
+        }
+      >
+        remove selected canvas node
+      </button>
     </div>
   );
 }
@@ -151,6 +185,37 @@ const workflow: WorkflowRead = {
   revision: 1,
   created_at: "2026-10-28T00:00:00Z",
   updated_at: null,
+};
+
+const configuredWorkflow: WorkflowRead = {
+  ...workflow,
+  definition: {
+    ...createDefaultWorkflowGraph(),
+    nodes: [
+      { id: "start", kind: "start", config: {}, metadata: {} },
+      { id: "value-1", kind: "value", config: { value: 1, keep: true }, metadata: { v: 1 } },
+      {
+        id: "agent-1",
+        kind: "agent",
+        config: { runner: "langgraph", instruction: "Original" },
+        metadata: { a: 1 },
+      },
+      { id: "approval-1", kind: "approval", config: { prompt: "Approve?" }, metadata: {} },
+      { id: "end", kind: "end", config: {}, metadata: {} },
+    ],
+    edges: [
+      { id: "start-value", source: "start", target: "value-1", condition: null, metadata: {} },
+      { id: "value-agent", source: "value-1", target: "agent-1", condition: null, metadata: {} },
+      {
+        id: "agent-approval",
+        source: "agent-1",
+        target: "approval-1",
+        condition: null,
+        metadata: {},
+      },
+      { id: "approval-end", source: "approval-1", target: "end", condition: null, metadata: {} },
+    ],
+  },
 };
 
 function deferred<T>() {
@@ -421,6 +486,194 @@ describe("WorkflowCanvasEditor lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(screen.getByText(/start@0/)).toBeInTheDocument();
     expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("keeps per-node drafts across selection and blocks stale graph validation and save", async () => {
+    const onDirtyChange = vi.fn();
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow, onDirtyChange });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "42" } });
+    expect(
+      screen.getByText(/Apply or discard the pending node configuration/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Validate" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save graph" })).toBeDisabled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    await user.click(screen.getByRole("button", { name: "select canvas node agent-1" }));
+    fireEvent.change(screen.getByLabelText(/Instruction/), { target: { value: "Draft agent" } });
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    expect(screen.getByLabelText(/JSON value/)).toHaveValue("42");
+    await user.click(screen.getByRole("button", { name: "select canvas node agent-1" }));
+    expect(screen.getByLabelText(/Instruction/)).toHaveValue("Draft agent");
+  });
+
+  it("includes unapplied node drafts in the beforeunload guard", async () => {
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "42" } });
+    const event = new Event("beforeunload", { cancelable: true });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("requires confirmation before discarding drafts and clears graph plus drafts together", async () => {
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "2" } });
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.getByLabelText(/JSON value/)).toHaveValue("2");
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    expect(screen.getByLabelText(/JSON value/)).toHaveValue("1");
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies config immutably, preserves metadata and persists the applied JSON type", async () => {
+    const mutations = mutation();
+    mutations.update.mutateAsync.mockImplementation(async ({ payload }) => ({
+      ...configuredWorkflow,
+      revision: 2,
+      definition: payload.definition,
+    }));
+    mocks.useWorkflowMutations.mockReturnValue(mutations);
+    const validate = vi.spyOn(workflowApi, "validateWorkflow").mockResolvedValue({
+      is_valid: true,
+      issues: [],
+    });
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), {
+      target: { value: '{"nested":[1,true,null]}' },
+    });
+    await user.click(screen.getByRole("button", { name: "Apply configuration" }));
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save graph" }));
+
+    await waitFor(() => expect(mutations.update.mutateAsync).toHaveBeenCalledOnce());
+    const validated = validate.mock.calls[0]?.[0];
+    const patched = mutations.update.mutateAsync.mock.calls[0]?.[0].payload.definition;
+    expect(patched).toEqual(validated);
+    expect(
+      patched.nodes.find(
+        (node: WorkflowRead["definition"]["nodes"][number]) => node.id === "value-1",
+      ),
+    ).toMatchObject({
+      config: { value: { nested: [1, true, null] }, keep: true },
+      metadata: { v: 1, agentforge_canvas: { position: { x: 240, y: 0 } } },
+    });
+  });
+
+  it("does not dirty when an applied draft resolves to the existing config", async () => {
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "1.0" } });
+    await user.click(screen.getByRole("button", { name: "Apply configuration" }));
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save graph" })).toBeDisabled();
+  });
+
+  it("protects a node draft from silent deletion and clears the inspector after confirmed deletion", async () => {
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node agent-1" }));
+    fireEvent.change(screen.getByLabelText(/Instruction/), { target: { value: "Draft" } });
+    await user.click(screen.getByRole("button", { name: "remove selected canvas node" }));
+    expect(screen.getByDisplayValue("agent-1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "remove selected canvas node" }));
+    expect(screen.getByText(/Select a node to inspect/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "select canvas node agent-1" }),
+    ).not.toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets node drafts when switching workflows", async () => {
+    const onDirtyChange = vi.fn();
+    const user = userEvent.setup();
+    const view = renderEditor({ workflow: configuredWorkflow, onDirtyChange });
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "99" } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={{ workflows: messages.workflows }}>
+        <WorkflowCanvasEditor
+          workflow={{ ...workflow, id: "workflow-2" }}
+          userId="user-1"
+          CanvasComponent={FakeWorkflowCanvas}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(await screen.findByText(/Select a node to inspect/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pending node configuration/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("disables configuration changes while validation is pending", async () => {
+    const validation = deferred<{ is_valid: boolean; issues: [] }>();
+    vi.spyOn(workflowApi, "validateWorkflow").mockReturnValue(validation.promise);
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+    await user.click(screen.getByRole("button", { name: "select canvas node agent-1" }));
+    await user.click(screen.getByRole("button", { name: "Validate" }));
+
+    expect(screen.getByLabelText(/Instruction/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply configuration" })).toBeDisabled();
+    await act(async () => validation.resolve({ is_valid: true, issues: [] }));
+    expect(screen.getByLabelText(/Instruction/)).toBeEnabled();
+  });
+
+  it("locks the inspector during PATCH and retains applied configuration after failure", async () => {
+    const patch = deferred<WorkflowRead>();
+    const mutations = mutation();
+    mutations.update.mutateAsync.mockReturnValue(patch.promise);
+    mocks.useWorkflowMutations.mockReturnValue(mutations);
+    vi.spyOn(workflowApi, "validateWorkflow").mockResolvedValue({ is_valid: true, issues: [] });
+    const user = userEvent.setup();
+    renderEditor({ workflow: configuredWorkflow });
+
+    await user.click(screen.getByRole("button", { name: "select canvas node value-1" }));
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: "2" } });
+    await user.click(screen.getByRole("button", { name: "Apply configuration" }));
+    await user.click(screen.getByRole("button", { name: "Save graph" }));
+
+    await waitFor(() => expect(mutations.update.mutateAsync).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText(/JSON value/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply configuration" })).toBeDisabled();
+
+    await act(async () => patch.reject(new ApiError(503, "Service unavailable")));
+    expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText(/JSON value/)).toBeEnabled();
+    expect(screen.getByLabelText(/JSON value/)).toHaveValue("2");
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   });
 
   it("keeps measured dimensions and selection while rejecting non-dirty business changes", async () => {

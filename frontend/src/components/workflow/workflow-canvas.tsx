@@ -25,7 +25,7 @@ import type { CanvasEdge, CanvasGraph, CanvasNode } from "@/lib/workflow/canvas-
 import {
   canDeleteNode,
   connectionProblem,
-  nextValueNode,
+  nextNode,
   removeNode,
   type ConnectionProblem,
 } from "@/lib/workflow/canvas-rules";
@@ -40,6 +40,8 @@ export interface WorkflowCanvasProps {
   onConnectionRejected: (problem: ConnectionProblem) => void;
   labels: {
     addValue: string;
+    addAgent: string;
+    addApproval: string;
     deleteNode: string;
     deleteEdge: string;
   };
@@ -161,19 +163,28 @@ export function WorkflowCanvas({
     [editable, graph, onChange, onConnectionRejected],
   );
 
+  const addNode = useCallback(
+    (kind: "value" | "agent" | "approval") => {
+      if (!editable) return;
+      onChange({ ...graph, nodes: [...graph.nodes, nextNode(graph, kind)] }, true);
+    },
+    [editable, graph, onChange],
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          disabled={!editable}
-          onClick={() =>
-            onChange({ ...graph, nodes: [...graph.nodes, nextValueNode(graph)] }, true)
-          }
-        >
+        <Button type="button" size="sm" disabled={!editable} onClick={() => addNode("value")}>
           <Plus className="h-4 w-4" />
           {labels.addValue}
+        </Button>
+        <Button type="button" size="sm" disabled={!editable} onClick={() => addNode("agent")}>
+          <Plus className="h-4 w-4" />
+          {labels.addAgent}
+        </Button>
+        <Button type="button" size="sm" disabled={!editable} onClick={() => addNode("approval")}>
+          <Plus className="h-4 w-4" />
+          {labels.addApproval}
         </Button>
         <Button
           type="button"
