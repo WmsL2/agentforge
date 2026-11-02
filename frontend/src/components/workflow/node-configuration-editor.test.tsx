@@ -113,6 +113,61 @@ describe("NodeConfigurationEditor", () => {
     expect(screen.getByRole("button", { name: "Apply configuration" })).toBeDisabled();
   });
 
+  it.each([
+    ["overflow", "1e400", "JSON numbers must remain finite after parsing."],
+    [
+      "unsafe positive integer",
+      "9007199254740992",
+      "JSON integers must stay within the safe integer range.",
+    ],
+    [
+      "unsafe negative integer",
+      "-9007199254740992",
+      "JSON integers must stay within the safe integer range.",
+    ],
+    [
+      "rounded decimal",
+      "9007199254740991.1",
+      "A JSON number would change value when parsed. Enter a safely representable number.",
+    ],
+    [
+      "nested object overflow",
+      '{"nested":{"amount":1e400}}',
+      "JSON numbers must remain finite after parsing.",
+    ],
+    [
+      "nested array unsafe integer",
+      "[1,[9007199254740993]]",
+      "JSON integers must stay within the safe integer range.",
+    ],
+  ])("rejects %s without clearing the VALUE draft", (_case, text, message) => {
+    const onApply = vi.fn();
+    render(<Harness selected={node("value", { value: 1 })} onApply={onApply} />);
+
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: text } });
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByLabelText(/JSON value/)).toHaveValue(text);
+    expect(screen.getByRole("button", { name: "Apply configuration" })).toBeDisabled();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["maximum safe integer", "9007199254740991", 9007199254740991],
+    ["minimum safe integer", "-9007199254740991", -9007199254740991],
+    ["finite exponent", "1.25e3", 1250],
+    ["negative zero", "-0", -0],
+  ])("applies the %s boundary without changing its value", async (_case, text, expected) => {
+    const onApply = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness selected={node("value", { value: null })} onApply={onApply} />);
+
+    fireEvent.change(screen.getByLabelText(/JSON value/), { target: { value: text } });
+    await user.click(screen.getByRole("button", { name: "Apply configuration" }));
+
+    expect(onApply).toHaveBeenCalledWith("value-1", { value: expected });
+  });
+
   it("validates AGENT instruction, fixes runner, adds and clears optional model", async () => {
     const onApply = vi.fn();
     const user = userEvent.setup();
