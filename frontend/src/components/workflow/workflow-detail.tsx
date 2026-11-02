@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type MouseEvent } from "react";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, GitBranch, Network } from "lucide-react";
 
@@ -52,6 +52,9 @@ export function WorkflowDetail({
   const workflow = query.data!;
   const workspaceId = searchParams.get("workspace_id") ?? workflow.workspace_id;
   const backHref = `${localizeHref(pathname, ROUTES.WORKFLOWS)}?workspace_id=${encodeURIComponent(workspaceId)}`;
+  const confirmNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (dirty && !window.confirm(t("canvas.leaveConfirm"))) event.preventDefault();
+  };
 
   return (
     <div className="space-y-6 pb-8">
@@ -59,15 +62,13 @@ export function WorkflowDetail({
         eyebrow={t("detailEyebrow")}
         title={workflow.name}
         description={workflow.description || t("noDescription")}
-        breadcrumbs={[{ label: t("title"), href: backHref }, { label: workflow.name }]}
+        breadcrumbs={[
+          { label: t("title"), href: backHref, onClick: confirmNavigation },
+          { label: workflow.name },
+        ]}
         actions={
           <Button variant="outline" asChild>
-            <Link
-              href={backHref}
-              onClick={(event) => {
-                if (dirty && !window.confirm(t("canvas.leaveConfirm"))) event.preventDefault();
-              }}
-            >
+            <Link href={backHref} onClick={confirmNavigation}>
               <ArrowLeft className="h-4 w-4" />
               {t("backToWorkflows")}
             </Link>

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 export interface Crumb {
   label: string;
   href?: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
 interface PageHeaderProps {
@@ -43,7 +44,11 @@ export function PageHeader({
               return (
                 <li key={`${c.label}-${i}`} className="flex items-center gap-1.5">
                   {c.href && !last ? (
-                    <Link href={c.href} className="hover:text-foreground transition-colors">
+                    <Link
+                      href={c.href}
+                      className="hover:text-foreground transition-colors"
+                      onClick={c.onClick}
+                    >
                       {c.label}
                     </Link>
                   ) : (
