@@ -8,6 +8,7 @@ import enMessages from "../../../messages/en.json";
 import plMessages from "../../../messages/pl.json";
 import { createDefaultWorkflowGraph } from "@/lib/workflow/default-graph";
 import type { WorkflowCanvasEditorProps } from "./workflow-canvas-editor";
+import type { WorkflowExecutionPanelProps } from "./workflow-execution-panel";
 
 const mocks = vi.hoisted(() => ({ useWorkflow: vi.fn() }));
 
@@ -62,6 +63,10 @@ function StatefulEditor({ onDirtyChange }: WorkflowCanvasEditorProps) {
   );
 }
 
+function FakeExecutionPanel({ workflow }: WorkflowExecutionPanelProps) {
+  return <div>execution:{workflow.id}</div>;
+}
+
 describe("localized workflow detail", () => {
   it("renders the canvas and preserves the Polish workspace return context", () => {
     mocks.useWorkflow.mockReturnValue({
@@ -72,7 +77,11 @@ describe("localized workflow detail", () => {
 
     render(
       <NextIntlClientProvider locale="pl" messages={{ workflows: plMessages.workflows }}>
-        <WorkflowDetail userId="user-1" CanvasEditorComponent={() => <div>canvas editor</div>} />
+        <WorkflowDetail
+          userId="user-1"
+          CanvasEditorComponent={() => <div>canvas editor</div>}
+          ExecutionPanelComponent={FakeExecutionPanel}
+        />
       </NextIntlClientProvider>,
     );
 
@@ -89,7 +98,11 @@ describe("localized workflow detail", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(
       <NextIntlClientProvider locale="en" messages={{ workflows: enMessages.workflows }}>
-        <WorkflowDetail userId="user-1" CanvasEditorComponent={StatefulEditor} />
+        <WorkflowDetail
+          userId="user-1"
+          CanvasEditorComponent={StatefulEditor}
+          ExecutionPanelComponent={FakeExecutionPanel}
+        />
       </NextIntlClientProvider>,
     );
 
@@ -112,7 +125,11 @@ describe("localized workflow detail", () => {
     const user = userEvent.setup();
     render(
       <NextIntlClientProvider locale="en" messages={{ workflows: enMessages.workflows }}>
-        <WorkflowDetail userId="user-1" CanvasEditorComponent={StatefulEditor} />
+        <WorkflowDetail
+          userId="user-1"
+          CanvasEditorComponent={StatefulEditor}
+          ExecutionPanelComponent={FakeExecutionPanel}
+        />
       </NextIntlClientProvider>,
     );
 

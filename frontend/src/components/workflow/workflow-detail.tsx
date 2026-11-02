@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
-import { useState, type ComponentType, type MouseEvent } from "react";
+import { useEffect, useState, type ComponentType, type MouseEvent } from "react";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, GitBranch, Network } from "lucide-react";
 
@@ -14,14 +14,30 @@ import { ApiError, getApiErrorMessage } from "@/lib/api-client";
 import { localizeHref } from "@/lib/active-route";
 import { ROUTES } from "@/lib/constants";
 
-import { WorkflowCanvasEditor, type WorkflowCanvasEditorProps } from "./workflow-canvas-editor";
+import {
+  WorkflowCanvasEditor,
+  type WorkflowCanvasEditorProps,
+  type WorkflowEditorState,
+} from "./workflow-canvas-editor";
+import {
+  WorkflowExecutionPanel,
+  type WorkflowExecutionPanelProps,
+} from "./workflow-execution-panel";
+
+const INITIAL_EDITOR_STATE: WorkflowEditorState = {
+  hasUnsavedChanges: false,
+  operation: "validating",
+  hasRevisionConflict: false,
+};
 
 export function WorkflowDetail({
   userId,
   CanvasEditorComponent = WorkflowCanvasEditor,
+  ExecutionPanelComponent = WorkflowExecutionPanel,
 }: {
   userId: string;
   CanvasEditorComponent?: ComponentType<WorkflowCanvasEditorProps>;
+  ExecutionPanelComponent?: ComponentType<WorkflowExecutionPanelProps>;
 }) {
   const t = useTranslations("workflows");
   const params = useParams<{ workflowId: string }>();
@@ -30,6 +46,11 @@ export function WorkflowDetail({
   const workflowId = params.workflowId;
   const query = useWorkflow(userId, workflowId);
   const [dirty, setDirty] = useState(false);
+  const [editorState, setEditorState] = useState<WorkflowEditorState>(INITIAL_EDITOR_STATE);
+
+  useEffect(() => {
+    setEditorState(INITIAL_EDITOR_STATE);
+  }, [workflowId]);
 
   if (query.isLoading) return <LoadingState variant="skeleton-card" />;
   if (query.isError) {
@@ -101,9 +122,12 @@ export function WorkflowDetail({
             workflow={workflow}
             userId={userId}
             onDirtyChange={setDirty}
+            onStateChange={setEditorState}
           />
         </CardContent>
       </Card>
+
+      <ExecutionPanelComponent workflow={workflow} userId={userId} editorState={editorState} />
     </div>
   );
 }

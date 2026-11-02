@@ -23,12 +23,19 @@ export interface WorkflowCanvasEditorProps {
   workflow: WorkflowRead;
   userId: string;
   onDirtyChange?: (dirty: boolean) => void;
+  onStateChange?: (state: WorkflowEditorState) => void;
   onSaved?: (workflow: WorkflowRead) => void;
   CanvasComponent?: ComponentType<WorkflowCanvasProps>;
   NodeEditorComponent?: ComponentType<NodeConfigurationEditorProps>;
 }
 
-type EditorOperation = "idle" | "validating" | "saving";
+export type EditorOperation = "idle" | "validating" | "saving";
+
+export interface WorkflowEditorState {
+  hasUnsavedChanges: boolean;
+  operation: EditorOperation;
+  hasRevisionConflict: boolean;
+}
 
 interface EditorRequest {
   id: number;
@@ -78,6 +85,7 @@ export function WorkflowCanvasEditor({
   workflow,
   userId,
   onDirtyChange,
+  onStateChange,
   onSaved,
   CanvasComponent = WorkflowCanvas,
   NodeEditorComponent = NodeConfigurationEditor,
@@ -120,6 +128,14 @@ export function WorkflowCanvasEditor({
   useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
   }, [hasUnsavedChanges, onDirtyChange]);
+
+  useEffect(() => {
+    onStateChange?.({
+      hasUnsavedChanges,
+      operation,
+      hasRevisionConflict: remoteRevision !== null,
+    });
+  }, [hasUnsavedChanges, onStateChange, operation, remoteRevision]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {

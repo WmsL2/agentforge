@@ -286,6 +286,44 @@ describe("WorkflowCanvasEditor lifecycle", () => {
     expect(screen.getByRole("button", { name: "Save graph" })).toBeEnabled();
   });
 
+  it("reports unsaved, operation, and revision-conflict state to execution consumers", async () => {
+    const onStateChange = vi.fn();
+    const user = userEvent.setup();
+    const view = renderEditor({ onStateChange });
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith({
+        hasUnsavedChanges: false,
+        operation: "idle",
+        hasRevisionConflict: false,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "edit graph" }));
+    expect(onStateChange).toHaveBeenLastCalledWith({
+      hasUnsavedChanges: true,
+      operation: "idle",
+      hasRevisionConflict: false,
+    });
+
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={{ workflows: messages.workflows }}>
+        <WorkflowCanvasEditor
+          workflow={{ ...workflow, revision: 2 }}
+          userId="user-1"
+          CanvasComponent={FakeWorkflowCanvas}
+          onStateChange={onStateChange}
+        />
+      </NextIntlClientProvider>,
+    );
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith({
+        hasUnsavedChanges: true,
+        operation: "idle",
+        hasRevisionConflict: true,
+      }),
+    );
+  });
+
   it("stays read-only for a non-member or failed permission request", () => {
     mocks.useWorkspaceMembers.mockReturnValue(members(null));
     const view = renderEditor();
@@ -318,19 +356,32 @@ describe("WorkflowCanvasEditor lifecycle", () => {
     mocks.useWorkflowMutations.mockReturnValue(mutations);
     vi.spyOn(workflowApi, "validateWorkflow").mockResolvedValue({ is_valid: true, issues: [] });
     const onSaved = vi.fn();
+    const onStateChange = vi.fn();
     const user = userEvent.setup();
-    renderEditor({ onSaved });
+    renderEditor({ onSaved, onStateChange });
 
     await user.click(screen.getByRole("button", { name: "edit graph" }));
     await user.click(screen.getByRole("button", { name: "Save graph" }));
 
     await waitFor(() => expect(mutations.update.mutateAsync).toHaveBeenCalledOnce());
+    expect(onStateChange).toHaveBeenCalledWith({
+      hasUnsavedChanges: true,
+      operation: "saving",
+      hasRevisionConflict: false,
+    });
     expect(mutations.update.mutateAsync.mock.calls[0]?.[0]).toMatchObject({
       workflowId: "workflow-1",
       payload: { definition: { entry_node_id: "start", schema_version: 1 } },
     });
     expect(onSaved).toHaveBeenCalledWith(updated);
     expect(screen.getByText("Saved")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith({
+        hasUnsavedChanges: false,
+        operation: "idle",
+        hasRevisionConflict: false,
+      }),
+    );
   });
 
   it("locks editing and prevents duplicate requests while validation is pending", async () => {
