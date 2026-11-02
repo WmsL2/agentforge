@@ -12,6 +12,11 @@ import type { ConnectionProblem } from "@/lib/workflow/canvas-rules";
 import { workflowApi } from "@/lib/workflow/workflow-api";
 import type { WorkflowRead, WorkflowValidationRead } from "@/types";
 
+import {
+  NodeConfigurationEditor,
+  type NodeConfigurationDraft,
+  type NodeConfigurationEditorProps,
+} from "./node-configuration-editor";
 import { WorkflowCanvas, type WorkflowCanvasProps } from "./workflow-canvas";
 
 export interface WorkflowCanvasEditorProps {
@@ -20,6 +25,7 @@ export interface WorkflowCanvasEditorProps {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: (workflow: WorkflowRead) => void;
   CanvasComponent?: ComponentType<WorkflowCanvasProps>;
+  NodeEditorComponent?: ComponentType<NodeConfigurationEditorProps>;
 }
 
 type EditorOperation = "idle" | "validating" | "saving";
@@ -52,12 +58,29 @@ function requestError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function comparableJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(comparableJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, comparableJson(item)]),
+    );
+  }
+  return value;
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(comparableJson(left)) === JSON.stringify(comparableJson(right));
+}
+
 export function WorkflowCanvasEditor({
   workflow,
   userId,
   onDirtyChange,
   onSaved,
   CanvasComponent = WorkflowCanvas,
+  NodeEditorComponent = NodeConfigurationEditor,
 }: WorkflowCanvasEditorProps) {
   const t = useTranslations("workflows.canvas");
   const members = useWorkspaceMembers(userId, workflow.workspace_id);
@@ -70,6 +93,7 @@ export function WorkflowCanvasEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [operation, setOperation] = useState<EditorOperation>("idle");
   const [remoteRevision, setRemoteRevision] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, NodeConfigurationDraft>>({});
   const workflowIdRef = useRef(workflow.id);
   const latestWorkflowRef = useRef(workflow);
   const mountedRef = useRef(true);
@@ -80,6 +104,9 @@ export function WorkflowCanvasEditor({
   const membership = members.data?.find((member) => member.user_id === userId);
   const canEdit = members.isSuccess && Boolean(membership);
   const permissionLoading = members.isLoading;
+  const hasDrafts = Object.keys(drafts).length > 0;
+  const hasUnsavedChanges = dirty || hasDrafts;
+  const selectedNode = canvas.nodes.find((node) => node.selected) ?? null;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -91,18 +118,18 @@ export function WorkflowCanvasEditor({
   }, []);
 
   useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onDirtyChange]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [dirty]);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (workflow.id !== workflowIdRef.current) {
@@ -117,10 +144,11 @@ export function WorkflowCanvasEditor({
       setValidationError(null);
       setSaveError(null);
       setRemoteRevision(null);
+      setDrafts({});
       return;
     }
     if (workflow.revision === savedWorkflow.revision) return;
-    if (dirty) {
+    if (hasUnsavedChanges) {
       setRemoteRevision(workflow.revision);
       return;
     }
@@ -128,7 +156,7 @@ export function WorkflowCanvasEditor({
     setCanvas(toCanvasGraph(workflow.definition));
     setValidation(null);
     setRemoteRevision(null);
-  }, [dirty, savedWorkflow.revision, workflow]);
+  }, [hasUnsavedChanges, savedWorkflow.revision, workflow]);
 
   const currentGraph = useCallback(
     () => fromCanvasGraph(savedWorkflow.definition, canvas),
@@ -183,6 +211,7 @@ export function WorkflowCanvasEditor({
   );
 
   const runValidation = useCallback(async (): Promise<WorkflowValidationRead | null> => {
+    if (hasDrafts) return null;
     const request = beginOperation("validating");
     if (!request) return null;
     const graph = currentGraph();
@@ -192,7 +221,7 @@ export function WorkflowCanvasEditor({
     } finally {
       finishOperation(request);
     }
-  }, [beginOperation, currentGraph, finishOperation, validateSnapshot]);
+  }, [beginOperation, currentGraph, finishOperation, hasDrafts, validateSnapshot]);
 
   const issues = useMemo(() => validation?.issues ?? [], [validation]);
   const invalidNodeIds = useMemo(
@@ -207,6 +236,19 @@ export function WorkflowCanvasEditor({
   const changeCanvas = useCallback(
     (next: CanvasGraph, marksDirty: boolean) => {
       if (marksDirty && (!canEdit || operationRef.current !== "idle")) return;
+      if (marksDirty) {
+        const removedDraftIds = Object.keys(drafts).filter(
+          (nodeId) => !next.nodes.some((node) => node.id === nodeId),
+        );
+        if (removedDraftIds.length && !window.confirm(t("discardNodeDraftConfirm"))) return;
+        if (removedDraftIds.length) {
+          setDrafts((current) =>
+            Object.fromEntries(
+              Object.entries(current).filter(([nodeId]) => !removedDraftIds.includes(nodeId)),
+            ),
+          );
+        }
+      }
       setCanvas((current) => (marksDirty ? next : withPresentationState(current, next)));
       if (marksDirty) {
         setDirty(true);
@@ -215,13 +257,54 @@ export function WorkflowCanvasEditor({
         setSaveError(null);
       }
     },
+    [canEdit, drafts, t],
+  );
+
+  const changeDraft = useCallback(
+    (nodeId: string, draft: NodeConfigurationDraft | null) => {
+      if (!canEdit || operationRef.current !== "idle") return;
+      setDrafts((current) => {
+        if (!draft) {
+          const { [nodeId]: _removed, ...remaining } = current;
+          return remaining;
+        }
+        return { ...current, [nodeId]: draft };
+      });
+    },
     [canEdit],
+  );
+
+  const applyNodeConfig = useCallback(
+    (nodeId: string, config: Record<string, unknown>) => {
+      if (!canEdit || operationRef.current !== "idle") return;
+      const node = canvas.nodes.find((item) => item.id === nodeId);
+      if (!node) return;
+      setDrafts((current) => {
+        const { [nodeId]: _removed, ...remaining } = current;
+        return remaining;
+      });
+      if (sameJson(node.data.config, config)) return;
+      setCanvas((current) => ({
+        ...current,
+        nodes: current.nodes.map((item) =>
+          item.id === nodeId
+            ? { ...item, data: { ...item.data, config: structuredClone(config) } }
+            : item,
+        ),
+      }));
+      setDirty(true);
+      setValidation(null);
+      setValidationError(null);
+      setSaveError(null);
+    },
+    [canEdit, canvas.nodes],
   );
 
   const save = async () => {
     if (
       !canEdit ||
       !dirty ||
+      hasDrafts ||
       remoteRevision !== null ||
       latestWorkflowRef.current.revision !== savedWorkflow.revision
     )
@@ -255,7 +338,9 @@ export function WorkflowCanvasEditor({
 
   const discard = () => {
     if (operationRef.current !== "idle") return;
+    if (hasDrafts && !window.confirm(t("discardDraftsConfirm"))) return;
     setCanvas(toCanvasGraph(savedWorkflow.definition));
+    setDrafts({});
     setDirty(false);
     setValidation(null);
     setValidationError(null);
@@ -264,8 +349,10 @@ export function WorkflowCanvasEditor({
 
   const reloadServerVersion = () => {
     if (operationRef.current !== "idle") return;
+    if (hasDrafts && !window.confirm(t("discardDraftsConfirm"))) return;
     setSavedWorkflow(workflow);
     setCanvas(toCanvasGraph(workflow.definition));
+    setDrafts({});
     setDirty(false);
     setValidation(null);
     setValidationError(null);
@@ -285,7 +372,7 @@ export function WorkflowCanvasEditor({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-display text-lg font-semibold">{t("title")}</h2>
-            {dirty ? (
+            {hasUnsavedChanges ? (
               <span className="rounded-full bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                 {t("unsaved")}
               </span>
@@ -299,7 +386,7 @@ export function WorkflowCanvasEditor({
           <Button
             type="button"
             variant="outline"
-            disabled={operation !== "idle"}
+            disabled={operation !== "idle" || hasDrafts}
             onClick={() => void runValidation()}
           >
             {operation === "validating" ? t("validating") : t("validate")}
@@ -307,7 +394,7 @@ export function WorkflowCanvasEditor({
           <Button
             type="button"
             variant="outline"
-            disabled={!dirty || operation !== "idle"}
+            disabled={!hasUnsavedChanges || operation !== "idle"}
             onClick={discard}
           >
             <RotateCcw className="h-4 w-4" />
@@ -318,6 +405,7 @@ export function WorkflowCanvasEditor({
             disabled={
               !canEdit ||
               !dirty ||
+              hasDrafts ||
               remoteRevision !== null ||
               operation !== "idle" ||
               mutations.update.isPending
@@ -377,19 +465,39 @@ export function WorkflowCanvasEditor({
       {validationError && <StatusMessage destructive>{validationError}</StatusMessage>}
       {saveError && <StatusMessage destructive>{saveError}</StatusMessage>}
 
-      <CanvasComponent
-        graph={canvas}
-        editable={canEdit && operation === "idle" && !mutations.update.isPending}
-        invalidNodeIds={invalidNodeIds}
-        invalidEdgeIds={invalidEdgeIds}
-        onChange={changeCanvas}
-        onConnectionRejected={rejectConnection}
-        labels={{
-          addValue: t("addValue"),
-          deleteNode: t("deleteNode"),
-          deleteEdge: t("deleteEdge"),
-        }}
-      />
+      {hasDrafts && (
+        <StatusMessage destructive icon={<AlertTriangle className="h-4 w-4" />}>
+          {t("pendingDrafts")}
+        </StatusMessage>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <CanvasComponent
+          graph={canvas}
+          editable={canEdit && operation === "idle" && !mutations.update.isPending}
+          invalidNodeIds={invalidNodeIds}
+          invalidEdgeIds={invalidEdgeIds}
+          onChange={changeCanvas}
+          onConnectionRejected={rejectConnection}
+          labels={{
+            addValue: t("addValue"),
+            addAgent: t("addAgent"),
+            addApproval: t("addApproval"),
+            deleteNode: t("deleteNode"),
+            deleteEdge: t("deleteEdge"),
+          }}
+        />
+        <aside aria-label={t("inspector.title")}>
+          <NodeEditorComponent
+            node={selectedNode}
+            draft={selectedNode ? drafts[selectedNode.id] : undefined}
+            editable={canEdit}
+            disabled={operation !== "idle" || mutations.update.isPending}
+            onDraftChange={changeDraft}
+            onApply={applyNodeConfig}
+          />
+        </aside>
+      </div>
     </section>
   );
 }

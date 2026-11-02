@@ -153,7 +153,13 @@ function Harness({ editable = true }: { editable?: boolean }) {
           if (marksDirty) setDirty(true);
         }}
         onConnectionRejected={setProblem}
-        labels={{ addValue: "Add VALUE", deleteNode: "Delete node", deleteEdge: "Delete edge" }}
+        labels={{
+          addValue: "Add VALUE",
+          addAgent: "Add AGENT",
+          addApproval: "Add APPROVAL",
+          deleteNode: "Delete node",
+          deleteEdge: "Delete edge",
+        }}
       />
     </>
   );
@@ -185,6 +191,19 @@ describe("WorkflowCanvas interactions", () => {
     await user.click(screen.getByRole("button", { name: "Delete node" }));
     expect(screen.getByText("nodes:start,end")).toBeInTheDocument();
     expect(screen.getByText("edges:start-to-end")).toBeInTheDocument();
+  });
+
+  it("adds AGENT and APPROVAL nodes with unique IDs and no automatic edges", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Add AGENT" }));
+    await user.click(screen.getByRole("button", { name: "Add AGENT" }));
+    await user.click(screen.getByRole("button", { name: "Add APPROVAL" }));
+
+    expect(screen.getByText("nodes:start,end,agent-1,agent-2,approval-1")).toBeInTheDocument();
+    expect(screen.getByText("edges:start-to-end")).toBeInTheDocument();
+    expect(screen.getByText("dirty:true")).toBeInTheDocument();
   });
 
   it("retains measured dimensions without marking the graph dirty", async () => {

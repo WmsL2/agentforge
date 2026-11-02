@@ -1,5 +1,7 @@
 import type { Connection } from "@xyflow/react";
 
+import type { WorkflowNodeKind } from "@/types";
+
 import type { CanvasEdge, CanvasGraph, CanvasNode } from "./canvas-adapter";
 
 export type ConnectionProblem =
@@ -41,15 +43,27 @@ export function connectionProblem(
   return null;
 }
 
-export function nextValueNode(graph: CanvasGraph): CanvasNode {
+type CreatableNodeKind = "value" | "agent" | "approval";
+
+function initialConfig(kind: CreatableNodeKind): Record<string, unknown> {
+  if (kind === "agent") return { runner: "langgraph", instruction: "" };
+  if (kind === "approval") return { prompt: "" };
+  return { value: null };
+}
+
+export function nextNode(graph: CanvasGraph, kind: CreatableNodeKind): CanvasNode {
   let number = 1;
-  while (graph.nodes.some((node) => node.id === `value-${number}`)) number += 1;
+  while (graph.nodes.some((node) => node.id === `${kind}-${number}`)) number += 1;
   return {
-    id: `value-${number}`,
+    id: `${kind}-${number}`,
     type: "workflowNode",
     position: { x: graph.nodes.length * 240, y: 140 },
-    data: { kind: "value", config: { value: null }, metadata: {} },
+    data: { kind: kind as WorkflowNodeKind, config: initialConfig(kind), metadata: {} },
   };
+}
+
+export function nextValueNode(graph: CanvasGraph): CanvasNode {
+  return nextNode(graph, "value");
 }
 
 export function canDeleteNode(graph: CanvasGraph, nodeId: string): boolean {
