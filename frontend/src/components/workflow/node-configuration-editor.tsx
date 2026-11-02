@@ -14,6 +14,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { CanvasNode } from "@/lib/workflow/canvas-adapter";
+import { parseSafeJson } from "@/lib/json-value";
 import type { JsonObject } from "@/types";
 
 export type NodeConfigurationDraft =
@@ -32,54 +33,6 @@ export interface NodeConfigurationEditorProps {
 
 const AGENT_FIELDS = new Set(["runner", "instruction", "model"]);
 const APPROVAL_FIELDS = new Set(["prompt"]);
-const JSON_NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
-
-type JsonNumberProblem = "nonFinite" | "unsafeInteger" | "precisionLoss";
-
-function decimalSignature(token: string): string {
-  const [mantissa = "", exponentText] = token.toLowerCase().split("e");
-  const negative = mantissa.startsWith("-");
-  const unsigned = negative ? mantissa.slice(1) : mantissa;
-  const [integer, fraction = ""] = unsigned.split(".");
-  let digits = `${integer}${fraction}`.replace(/^0+/, "") || "0";
-  let exponent = Number(exponentText ?? 0) - fraction.length;
-  while (digits.length > 1 && digits.endsWith("0")) {
-    digits = digits.slice(0, -1);
-    exponent += 1;
-  }
-  const sign = negative && digits !== "0" ? "-" : "";
-  return `${sign}${digits}e${exponent}`;
-}
-
-function jsonNumberProblem(json: string): JsonNumberProblem | null {
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < json.length; index += 1) {
-    const character = json.charAt(index);
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-    if (character !== "-" && (character < "0" || character > "9")) continue;
-    JSON_NUMBER.lastIndex = index;
-    const match = JSON_NUMBER.exec(json);
-    if (!match) continue;
-    const token = match[0];
-    const value = Number(token);
-    if (!Number.isFinite(value)) return "nonFinite";
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) return "unsafeInteger";
-    if (decimalSignature(token) !== decimalSignature(String(value))) return "precisionLoss";
-    index += token.length - 1;
-  }
-  return null;
-}
-
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "";
 }
@@ -149,15 +102,12 @@ export function NodeConfigurationEditor({
   let error: string | null = null;
   let parsedValue: unknown;
   if (currentDraft?.kind === "value" && currentDraft.hasValue) {
-    try {
-      parsedValue = JSON.parse(currentDraft.valueText);
-      const numberProblem = jsonNumberProblem(currentDraft.valueText);
-      if (numberProblem === "nonFinite") error = t("nonFiniteNumber");
-      else if (numberProblem === "unsafeInteger") error = t("unsafeInteger");
-      else if (numberProblem === "precisionLoss") error = t("numericPrecisionLoss");
-    } catch {
-      error = t("invalidJson");
-    }
+    const result = parseSafeJson(currentDraft.valueText);
+    if (result.ok) parsedValue = result.value;
+    else if (result.problem === "nonFinite") error = t("nonFiniteNumber");
+    else if (result.problem === "unsafeInteger") error = t("unsafeInteger");
+    else if (result.problem === "precisionLoss") error = t("numericPrecisionLoss");
+    else error = t("invalidJson");
   } else if (currentDraft?.kind === "agent") {
     if (!currentDraft.instruction.trim()) error = t("instructionRequired");
     else if (currentDraft.model && !currentDraft.model.trim()) error = t("modelInvalid");

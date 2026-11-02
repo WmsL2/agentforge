@@ -12,3 +12,11 @@ export {
   useWorkspaces,
 } from "./use-workspaces";
 export { useWorkflow, useWorkflowMutations, useWorkflows } from "./use-workflows";
+export {
+  usePendingWorkflowApproval,
+  useWorkflowRun,
+  useWorkflowRunMutations,
+  useWorkflowRuns,
+  useWorkflowRunSteps,
+  useWorkflowTrace,
+} from "./use-workflow-runs";
