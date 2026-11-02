@@ -139,14 +139,25 @@ function renderPanel(
   },
   selectedWorkflow = workflow,
 ) {
-  return render(
+  return render(panel(editorState, selectedWorkflow));
+}
+
+function panel(
+  editorState: WorkflowEditorState = {
+    hasUnsavedChanges: false,
+    operation: "idle" as const,
+    hasRevisionConflict: false,
+  },
+  selectedWorkflow = workflow,
+) {
+  return (
     <NextIntlClientProvider locale="en" messages={{ workflows: messages.workflows }}>
       <WorkflowExecutionPanel
         workflow={selectedWorkflow}
         userId="user-1"
         editorState={editorState}
       />
-    </NextIntlClientProvider>,
+    </NextIntlClientProvider>
   );
 }
 
@@ -372,6 +383,77 @@ describe("WorkflowExecutionPanel", () => {
     expect(await screen.findByText(/asynchronous resume/i)).toBeInTheDocument();
   });
 
+  it.each(["approved", "rejected"] as const)(
+    "does not offer another decision for an approval that is already %s",
+    (status) => {
+      selectedRun = run("paused");
+      mocks.usePendingWorkflowApproval.mockReturnValue(query({ ...approval(), status }));
+      renderPanel();
+      fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+
+      expect(screen.getByText("Approve this run?")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Approve and resume" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+      expect(mutations.decide).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not allow approval when membership loading failed", () => {
+    selectedRun = run("paused");
+    mocks.useWorkspaceMembers.mockReturnValue({
+      ...members("owner"),
+      isSuccess: false,
+      isError: true,
+    });
+    mocks.usePendingWorkflowApproval.mockReturnValue(query(approval()));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+
+    expect(mocks.usePendingWorkflowApproval).toHaveBeenLastCalledWith(
+      "user-1",
+      workflow.id,
+      "run-1",
+      false,
+    );
+    expect(screen.queryByRole("button", { name: "Approve and resume" })).not.toBeInTheDocument();
+    expect(mutations.decide).not.toHaveBeenCalled();
+  });
+
+  it("does not submit a stale cached approval after the pending query fails", () => {
+    selectedRun = run("paused");
+    mocks.usePendingWorkflowApproval.mockReturnValue({
+      ...query(approval()),
+      isError: true,
+      error: new ApiError(404, "not found"),
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+
+    expect(screen.getByText("No pending approval is available.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and resume" })).not.toBeInTheDocument();
+    expect(mutations.decide).not.toHaveBeenCalled();
+  });
+
+  it("removes approval actions when permission changes during a pending decision", async () => {
+    selectedRun = run("paused");
+    mocks.usePendingWorkflowApproval.mockReturnValue(query(approval()));
+    const pending = deferred<ApprovalRequestRead>();
+    mutations.decide.mockReturnValue(pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const view = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve and resume" }));
+    expect(mutations.decide).toHaveBeenCalledOnce();
+
+    mocks.useWorkspaceMembers.mockReturnValue(members("member"));
+    view.rerender(panel());
+    expect(screen.queryByRole("button", { name: "Approve and resume" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+
+    await act(async () => pending.resolve({ ...approval(), status: "approved" }));
+    expect(mutations.decide).toHaveBeenCalledOnce();
+  });
+
   it("enforces the 2000 character approval note boundary", () => {
     selectedRun = run("paused");
     mocks.usePendingWorkflowApproval.mockReturnValue(query(approval()));
@@ -483,6 +565,262 @@ describe("WorkflowExecutionPanel", () => {
       .map((element) => element.textContent ?? "");
     expect(renderedJson.some((value) => value.endsWith("…") && value.length <= 20_002)).toBe(true);
     expect(renderedJson.some((value) => value.includes("x".repeat(21000)))).toBe(false);
+  });
+
+  it("ignores workflow A submission results and preserves workflow B's newer lock", async () => {
+    const workflowB = { ...workflow, id: "workflow-2", name: "Workflow B" };
+    const pendingA = deferred<WorkflowRunRead>();
+    const pendingB = deferred<WorkflowRunRead>();
+    const mutationsA = mutationSet();
+    const mutationsB = mutationSet();
+    mutationsA.submit.mutateAsync.mockReturnValue(pendingA.promise);
+    mutationsB.submit.mutateAsync.mockReturnValue(pendingB.promise);
+    mocks.useWorkflowRunMutations.mockImplementation((_user: string, workflowId: string) =>
+      workflowId === workflow.id ? mutationsA : mutationsB,
+    );
+    mocks.useWorkflowRuns.mockReturnValue(query({ items: [], total: 0 }));
+
+    const view = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(mutationsA.submit.mutateAsync).toHaveBeenCalledOnce();
+
+    view.rerender(panel(undefined, workflowB));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Workflow input (JSON object)")).toHaveValue("{}"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(mutationsB.submit.mutateAsync).toHaveBeenCalledOnce();
+
+    await act(async () => pendingA.resolve(run("pending", "run-a")));
+    expect(screen.queryByText(/Run accepted for saved revision/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("run-a")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(mutationsB.submit.mutateAsync).toHaveBeenCalledOnce();
+
+    await act(async () =>
+      pendingB.resolve({
+        ...run("pending", "run-b"),
+        workflow_id: workflowB.id,
+      }),
+    );
+    expect(await screen.findByText(/Run accepted for saved revision r7/i)).toBeInTheDocument();
+  });
+
+  it("does not expose workflow A dispatch failure state after switching to B", async () => {
+    const workflowB = { ...workflow, id: "workflow-2", name: "Workflow B" };
+    const pendingA = deferred<WorkflowRunRead>();
+    const mutationsA = mutationSet();
+    const mutationsB = mutationSet();
+    mutationsA.submit.mutateAsync.mockReturnValue(pendingA.promise);
+    mocks.useWorkflowRunMutations.mockImplementation((_user: string, workflowId: string) =>
+      workflowId === workflow.id ? mutationsA : mutationsB,
+    );
+    mocks.useWorkflowRuns.mockReturnValue(query({ items: [], total: 0 }));
+
+    const view = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    view.rerender(panel(undefined, workflowB));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Workflow input (JSON object)")).toHaveValue("{}"),
+    );
+
+    await act(async () =>
+      pendingA.reject(
+        new ApiError(503, "dispatch failed", {
+          error: {
+            code: "WORKFLOW_DISPATCH_FAILED",
+            message: "dispatch failed",
+            details: { run_id: "run-a" },
+          },
+        }),
+      ),
+    );
+
+    expect(mutationsA.refreshRun).toHaveBeenCalledWith("run-a");
+    expect(screen.queryByText(/Run run-a was created/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Selected run")).not.toBeInTheDocument();
+  });
+
+  it("ignores an old workflow approval response after switching workflows", async () => {
+    const workflowB = { ...workflow, id: "workflow-2", name: "Workflow B" };
+    const decisionA = deferred<ApprovalRequestRead>();
+    const mutationsA = mutationSet();
+    const mutationsB = mutationSet();
+    mutationsA.decide.mockReturnValue(decisionA.promise);
+    mocks.useWorkflowRunMutations.mockImplementation((_user: string, workflowId: string) =>
+      workflowId === workflow.id ? mutationsA : mutationsB,
+    );
+    mocks.useWorkflowRuns.mockImplementation((_user: string, workflowId: string) =>
+      query({
+        items: [
+          {
+            id: workflowId === workflow.id ? "run-a" : "run-b",
+            workflow_id: workflowId,
+            workflow_revision: 7,
+            status: "paused" as const,
+            error: null,
+            started_at: "2026-11-01T00:00:01Z",
+            finished_at: null,
+            created_at: "2026-11-01T00:00:00Z",
+            updated_at: null,
+          },
+        ],
+        total: 1,
+      }),
+    );
+    mocks.useWorkflowRun.mockImplementation((_user: string, workflowId: string, runId?: string) =>
+      query(
+        runId
+          ? {
+              ...run("paused", runId),
+              workflow_id: workflowId,
+            }
+          : undefined,
+      ),
+    );
+    mocks.usePendingWorkflowApproval.mockImplementation(
+      (_user: string, _workflowId: string, runId?: string) =>
+        query(runId ? { ...approval(), id: `approval-${runId}`, run_id: runId } : undefined),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const view = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-a/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve and resume" }));
+    expect(mutationsA.decide).toHaveBeenCalledOnce();
+
+    view.rerender(panel(undefined, workflowB));
+    await waitFor(() => expect(screen.getByRole("button", { name: /run-b/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /run-b/i }));
+    expect(screen.getByRole("button", { name: "Approve and resume" })).toBeEnabled();
+
+    await act(async () => decisionA.resolve({ ...approval(), status: "approved" }));
+    expect(screen.queryByText(/asynchronous resume/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve and resume" })).toBeEnabled();
+  });
+
+  it.each([
+    ["running", "completed"],
+    ["running", "failed"],
+    ["paused", "cancelled"],
+  ] as const)(
+    "performs one final related-data refresh for %s to %s",
+    async (initialStatus, terminalStatus) => {
+      const runQuery = query(run(initialStatus));
+      const stepsQuery = query<RunStepRead[]>([]);
+      const traceQuery = query<TraceEventRead[]>([]);
+      const historyQuery = query({
+        items: [
+          {
+            id: "run-1",
+            workflow_id: workflow.id,
+            workflow_revision: 7,
+            status: initialStatus,
+            error: null,
+            started_at: "2026-11-01T00:00:01Z",
+            finished_at: null,
+            created_at: "2026-11-01T00:00:00Z",
+            updated_at: null,
+          },
+        ],
+        total: 1,
+      });
+      mocks.useWorkflowRun.mockImplementation((_user: string, _workflow: string, runId?: string) =>
+        runId ? runQuery : query(),
+      );
+      mocks.useWorkflowRunSteps.mockReturnValue(stepsQuery);
+      mocks.useWorkflowTrace.mockReturnValue(traceQuery);
+      mocks.useWorkflowRuns.mockReturnValue(historyQuery);
+
+      const view = renderPanel();
+      fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+      runQuery.data = run(terminalStatus);
+      view.rerender(panel());
+
+      await waitFor(() => {
+        expect(stepsQuery.refetch).toHaveBeenCalledOnce();
+        expect(traceQuery.refetch).toHaveBeenCalledOnce();
+        expect(historyQuery.refetch).toHaveBeenCalledOnce();
+      });
+      view.rerender(panel());
+      expect(stepsQuery.refetch).toHaveBeenCalledOnce();
+      expect(traceQuery.refetch).toHaveBeenCalledOnce();
+      expect(historyQuery.refetch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not run a terminal refresh for a different selected run", () => {
+    const runQueries = {
+      "run-1": query(run("running", "run-1")),
+      "run-2": query(run("completed", "run-2")),
+    };
+    const stepsQuery = query<RunStepRead[]>([]);
+    const traceQuery = query<TraceEventRead[]>([]);
+    const historyQuery = query({
+      items: [
+        {
+          id: "run-1",
+          workflow_id: workflow.id,
+          workflow_revision: 7,
+          status: "running" as const,
+          error: null,
+          started_at: "2026-11-01T00:00:01Z",
+          finished_at: null,
+          created_at: "2026-11-01T00:00:00Z",
+          updated_at: null,
+        },
+        {
+          id: "run-2",
+          workflow_id: workflow.id,
+          workflow_revision: 7,
+          status: "completed" as const,
+          error: null,
+          started_at: "2026-11-01T00:00:01Z",
+          finished_at: "2026-11-01T00:00:02Z",
+          created_at: "2026-11-01T00:00:00Z",
+          updated_at: null,
+        },
+      ],
+      total: 2,
+    });
+    mocks.useWorkflowRun.mockImplementation((_user: string, _workflow: string, runId?: string) =>
+      query(runId ? runQueries[runId as keyof typeof runQueries].data : undefined),
+    );
+    mocks.useWorkflowRunSteps.mockReturnValue(stepsQuery);
+    mocks.useWorkflowTrace.mockReturnValue(traceQuery);
+    mocks.useWorkflowRuns.mockReturnValue(historyQuery);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run-2/i }));
+
+    expect(stepsQuery.refetch).not.toHaveBeenCalled();
+    expect(traceQuery.refetch).not.toHaveBeenCalled();
+    expect(historyQuery.refetch).not.toHaveBeenCalled();
+  });
+
+  it("hides related data and approval controls for a workflow-mismatched run", () => {
+    selectedRun = { ...run("paused"), workflow_id: "workflow-other" };
+    mocks.useWorkflowRunSteps.mockReturnValue(
+      query([{ id: "secret-step" }] as unknown as RunStepRead[]),
+    );
+    mocks.useWorkflowTrace.mockReturnValue(
+      query([{ id: "secret-trace", kind: "tool_started" }] as unknown as TraceEventRead[]),
+    );
+    mocks.usePendingWorkflowApproval.mockReturnValue(query(approval()));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /run-1/i }));
+
+    expect(screen.getByText(/does not belong to this workflow/i)).toBeInTheDocument();
+    expect(screen.queryByText("secret-step")).not.toBeInTheDocument();
+    expect(screen.queryByText("tool_started")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and resume" })).not.toBeInTheDocument();
+    expect(mocks.useWorkflowRunSteps).toHaveBeenLastCalledWith(
+      "user-1",
+      workflow.id,
+      undefined,
+      undefined,
+    );
   });
 
   it("clears the selected run and input when switching workflows", async () => {

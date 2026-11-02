@@ -29,6 +29,13 @@ import {
 
 const PAGE_SIZE = 10;
 const MAX_JSON_DISPLAY = 20_000;
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+interface RequestIdentity {
+  workflowId: string;
+  generation: number;
+  requestId: number;
+}
 
 export interface WorkflowExecutionPanelProps {
   workflow: WorkflowRead;
@@ -131,44 +138,104 @@ export function WorkflowExecutionPanel({
   const t = useTranslations("workflows.execution");
   const [inputText, setInputText] = useState("{}");
   const [page, setPage] = useState(0);
-  const [selectedRunId, setSelectedRunId] = useState<string>();
+  const [selectedRun, setSelectedRun] = useState<{ workflowId: string; runId: string }>();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitIssues, setSubmitIssues] = useState<string[]>([]);
   const [dispatchWarning, setDispatchWarning] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const submissionLock = useRef(false);
-  const approvalLock = useRef(false);
+  const workflowIdentityRef = useRef({ workflowId: workflow.id, generation: 0 });
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(false);
+  const submissionLock = useRef<RequestIdentity | null>(null);
+  const approvalLock = useRef<RequestIdentity | null>(null);
+  const previousRunRef = useRef<{
+    workflowId: string;
+    runId: string;
+    status: WorkflowRunRead["status"];
+  } | null>(null);
+
+  if (workflowIdentityRef.current.workflowId !== workflow.id) {
+    workflowIdentityRef.current = {
+      workflowId: workflow.id,
+      generation: workflowIdentityRef.current.generation + 1,
+    };
+    submissionLock.current = null;
+    approvalLock.current = null;
+  }
+
+  const selectedRunId = selectedRun?.workflowId === workflow.id ? selectedRun.runId : undefined;
+
+  const beginRequest = (): RequestIdentity => ({
+    ...workflowIdentityRef.current,
+    requestId: ++requestIdRef.current,
+  });
+  const isCurrentRequest = (request: RequestIdentity) =>
+    mountedRef.current &&
+    workflowIdentityRef.current.workflowId === request.workflowId &&
+    workflowIdentityRef.current.generation === request.generation;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      workflowIdentityRef.current = {
+        ...workflowIdentityRef.current,
+        generation: workflowIdentityRef.current.generation + 1,
+      };
+    };
+  }, []);
 
   useEffect(() => {
     setInputText("{}");
     setPage(0);
-    setSelectedRunId(undefined);
+    setSelectedRun(undefined);
     setSubmitError(null);
     setSubmitIssues([]);
     setDispatchWarning(null);
     setNote("");
     setActionMessage(null);
-    submissionLock.current = false;
-    approvalLock.current = false;
+    previousRunRef.current = null;
   }, [workflow.id]);
 
   const members = useWorkspaceMembers(userId, workflow.workspace_id);
   const membership = members.data?.find((member) => member.user_id === userId);
   const canRun = members.isSuccess && Boolean(membership);
-  const canDecide = membership?.role === "owner" || membership?.role === "admin";
+  const canDecide =
+    members.isSuccess && (membership?.role === "owner" || membership?.role === "admin");
   const history = useWorkflowRuns(userId, workflow.id, page * PAGE_SIZE, PAGE_SIZE);
   const run = useWorkflowRun(userId, workflow.id, selectedRunId);
-  const selectedStatus = run.data?.status;
-  const steps = useWorkflowRunSteps(userId, workflow.id, selectedRunId, selectedStatus);
-  const trace = useWorkflowTrace(userId, workflow.id, selectedRunId, selectedStatus);
+  const selectedMismatch = Boolean(run.data && run.data.workflow_id !== workflow.id);
+  const relatedRunId = selectedMismatch ? undefined : selectedRunId;
+  const selectedStatus = selectedMismatch ? undefined : run.data?.status;
+  const steps = useWorkflowRunSteps(userId, workflow.id, relatedRunId, selectedStatus);
+  const trace = useWorkflowTrace(userId, workflow.id, relatedRunId, selectedStatus);
   const approval = usePendingWorkflowApproval(
     userId,
     workflow.id,
-    selectedRunId,
+    relatedRunId,
     Boolean(canDecide && selectedStatus === "paused"),
   );
   const mutations = useWorkflowRunMutations(userId, workflow.id);
+
+  useEffect(() => {
+    if (!relatedRunId || !selectedStatus) {
+      previousRunRef.current = null;
+      return;
+    }
+    const previous = previousRunRef.current;
+    const current = { workflowId: workflow.id, runId: relatedRunId, status: selectedStatus };
+    previousRunRef.current = current;
+    if (
+      !previous ||
+      previous.workflowId !== current.workflowId ||
+      previous.runId !== current.runId ||
+      TERMINAL_STATUSES.has(previous.status) ||
+      !TERMINAL_STATUSES.has(current.status)
+    )
+      return;
+    void Promise.all([steps.refetch(), trace.refetch(), history.refetch()]);
+  }, [history, relatedRunId, selectedStatus, steps, trace, workflow.id]);
 
   const inputResult = useMemo(() => parseSafeJson(inputText), [inputText]);
   const inputProblem = inputResult.ok
@@ -194,32 +261,36 @@ export function WorkflowExecutionPanel({
     if (submissionLock.current || mutations.submit.isPending || runBlockReason || inputProblem)
       return;
     if (!inputResult.ok || !isJsonObject(inputResult.value)) return;
-    submissionLock.current = true;
+    const request = beginRequest();
+    submissionLock.current = request;
     setSubmitError(null);
     setSubmitIssues([]);
     setDispatchWarning(null);
     try {
       const created = await mutations.submit.mutateAsync(inputResult.value as JsonObject);
-      if (created.workflow_id !== workflow.id) {
+      if (!isCurrentRequest(request)) return;
+      if (created.workflow_id !== request.workflowId) {
         setSubmitError(t("workflowMismatch"));
         return;
       }
-      setSelectedRunId(created.id);
+      setSelectedRun({ workflowId: request.workflowId, runId: created.id });
       setActionMessage(t("submitted", { revision: created.workflow_revision }));
     } catch (error) {
       const recoveredRunId = dispatchRunId(error);
       if (recoveredRunId) {
-        setSelectedRunId(recoveredRunId);
-        setDispatchWarning(t("dispatchUnconfirmed", { runId: recoveredRunId }));
         await mutations.refreshRun(recoveredRunId);
+        if (!isCurrentRequest(request)) return;
+        setSelectedRun({ workflowId: request.workflowId, runId: recoveredRunId });
+        setDispatchWarning(t("dispatchUnconfirmed", { runId: recoveredRunId }));
       } else {
+        if (!isCurrentRequest(request)) return;
         setSubmitIssues(structuredIssues(error));
         setSubmitError(
           displayError(error, t("submitFailed"), t("forbidden"), t("workflowNotFound")),
         );
       }
     } finally {
-      submissionLock.current = false;
+      if (submissionLock.current === request) submissionLock.current = null;
     }
   };
 
@@ -230,33 +301,58 @@ export function WorkflowExecutionPanel({
   };
 
   const decide = async (kind: "approve" | "reject") => {
-    if (!approval.data || approvalLock.current || note.length > 2000) return;
+    if (
+      !canDecide ||
+      selectedStatus !== "paused" ||
+      selectedMismatch ||
+      approval.isLoading ||
+      approval.isError ||
+      !approval.data ||
+      approval.data.status !== "pending" ||
+      approval.data.run_id !== selectedRunId ||
+      approvalLock.current ||
+      note.length > 2000
+    )
+      return;
     if (!window.confirm(kind === "approve" ? t("confirmApprove") : t("confirmReject"))) return;
-    approvalLock.current = true;
+    const request = beginRequest();
+    approvalLock.current = request;
+    const runId = selectedRunId;
+    const approvalId = approval.data.id;
     setActionMessage(null);
     try {
-      await mutations.decide(kind, selectedRunId!, approval.data.id, note.trim() || null);
+      await mutations.decide(kind, runId, approvalId, note.trim() || null);
+      if (!isCurrentRequest(request)) return;
       setActionMessage(kind === "approve" ? t("approvalAccepted") : t("rejectionAccepted"));
       setNote("");
     } catch (error) {
       const recoveredRunId = dispatchRunId(error);
       if (recoveredRunId) {
-        setDispatchWarning(t("approvalDispatchUnconfirmed", { runId: recoveredRunId }));
         await mutations.refreshRun(recoveredRunId);
+        if (!isCurrentRequest(request)) return;
+        setDispatchWarning(t("approvalDispatchUnconfirmed", { runId: recoveredRunId }));
       } else {
+        if (!isCurrentRequest(request)) return;
         setActionMessage(
           displayError(error, t("approvalFailed"), t("forbidden"), t("approvalNotFound")),
         );
-        if (error instanceof ApiError && error.status === 409)
-          await mutations.refreshRun(selectedRunId!);
+        if (error instanceof ApiError && error.status === 409) await mutations.refreshRun(runId);
       }
     } finally {
-      approvalLock.current = false;
+      if (approvalLock.current === request) approvalLock.current = null;
     }
   };
 
-  const selectedMismatch = run.data && run.data.workflow_id !== workflow.id;
   const approvalPending = mutations.approve.isPending || mutations.reject.isPending;
+  const approvalActionable = Boolean(
+    canDecide &&
+    selectedStatus === "paused" &&
+    !selectedMismatch &&
+    !approval.isLoading &&
+    !approval.isError &&
+    approval.data?.status === "pending" &&
+    approval.data.run_id === selectedRunId,
+  );
 
   return (
     <section className="space-y-4" aria-label={t("title")}>
@@ -350,7 +446,7 @@ export function WorkflowExecutionPanel({
                   aria-pressed={selectedRunId === item.id}
                   className="hover:bg-muted/50 w-full rounded-lg border p-3 text-left"
                   onClick={() => {
-                    setSelectedRunId(item.id);
+                    setSelectedRun({ workflowId: workflow.id, runId: item.id });
                     setActionMessage(null);
                     setDispatchWarning(null);
                   }}
@@ -434,60 +530,62 @@ export function WorkflowExecutionPanel({
 
             <div>
               <h3 className="mb-2 font-semibold">{t("stepsTitle")}</h3>
-              {steps.isLoading && <p>{t("loadingSteps")}</p>}
-              {steps.isError && (
+              {!selectedMismatch && steps.isLoading && <p>{t("loadingSteps")}</p>}
+              {!selectedMismatch && steps.isError && (
                 <p role="alert" className="text-destructive">
                   {t("stepsFailed")}
                 </p>
               )}
-              {steps.data?.length === 0 && (
+              {!selectedMismatch && steps.data?.length === 0 && (
                 <p className="text-muted-foreground">{t("stepsEmpty")}</p>
               )}
               <div className="space-y-2">
-                {steps.data?.map((step) => (
-                  <div className="rounded-lg border p-3" key={step.id}>
-                    <p className="font-medium">
-                      #{step.sequence} · {step.node_id} · {step.node_kind} · {step.status}
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {timestamp(step.started_at)} → {timestamp(step.finished_at)} ·{" "}
-                      {step.duration_ms === null ? "—" : `${step.duration_ms} ms`}
-                    </p>
-                    {step.error && (
-                      <p className="text-destructive text-sm">
-                        {step.error.code}: {step.error.message}
+                {!selectedMismatch &&
+                  steps.data?.map((step) => (
+                    <div className="rounded-lg border p-3" key={step.id}>
+                      <p className="font-medium">
+                        #{step.sequence} · {step.node_id} · {step.node_kind} · {step.status}
                       </p>
-                    )}
-                    <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                      <JsonView label={t("input")} value={step.input} copyLabel={t("copy")} />
-                      <JsonView label={t("output")} value={step.output} copyLabel={t("copy")} />
+                      <p className="text-muted-foreground text-xs">
+                        {timestamp(step.started_at)} → {timestamp(step.finished_at)} ·{" "}
+                        {step.duration_ms === null ? "—" : `${step.duration_ms} ms`}
+                      </p>
+                      {step.error && (
+                        <p className="text-destructive text-sm">
+                          {step.error.code}: {step.error.message}
+                        </p>
+                      )}
+                      <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                        <JsonView label={t("input")} value={step.input} copyLabel={t("copy")} />
+                        <JsonView label={t("output")} value={step.output} copyLabel={t("copy")} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
 
             <div>
               <h3 className="mb-2 font-semibold">{t("traceTitle")}</h3>
-              {trace.isLoading && <p>{t("loadingTrace")}</p>}
-              {trace.isError && (
+              {!selectedMismatch && trace.isLoading && <p>{t("loadingTrace")}</p>}
+              {!selectedMismatch && trace.isError && (
                 <p role="alert" className="text-destructive">
                   {t("traceFailed")}
                 </p>
               )}
-              {trace.data?.length === 0 && (
+              {!selectedMismatch && trace.data?.length === 0 && (
                 <p className="text-muted-foreground">{t("traceEmpty")}</p>
               )}
               <div className="space-y-2">
-                {trace.data?.map((event) => (
-                  <div className="rounded-lg border p-3" key={event.id}>
-                    <p className="font-medium">{event.kind}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {timestamp(event.created_at)} · {t("stepId")}: {event.step_id ?? "—"}
-                    </p>
-                    <JsonView label={t("payload")} value={event.payload} copyLabel={t("copy")} />
-                  </div>
-                ))}
+                {!selectedMismatch &&
+                  trace.data?.map((event) => (
+                    <div className="rounded-lg border p-3" key={event.id}>
+                      <p className="font-medium">{event.kind}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {timestamp(event.created_at)} · {t("stepId")}: {event.step_id ?? "—"}
+                      </p>
+                      <JsonView label={t("payload")} value={event.payload} copyLabel={t("copy")} />
+                    </div>
+                  ))}
               </div>
             </div>
 
@@ -515,40 +613,44 @@ export function WorkflowExecutionPanel({
                         )}
                   </p>
                 )}
-                {approval.data && (
+                {!approval.isError && approval.data && approval.data.run_id === selectedRunId && (
                   <>
                     <p>{approval.data.prompt}</p>
-                    <FormField
-                      label={t("note")}
-                      htmlFor="approval-note"
-                      description={t("noteCount", { count: note.length })}
-                      error={note.length > 2000 ? t("noteTooLong") : null}
-                    >
-                      <Textarea
-                        value={note}
-                        maxLength={2001}
-                        rows={4}
-                        disabled={approvalPending}
-                        onChange={(event) => setNote(event.target.value)}
-                      />
-                    </FormField>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        disabled={approvalPending || note.length > 2000}
-                        onClick={() => void decide("approve")}
-                      >
-                        {t("approve")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        disabled={approvalPending || note.length > 2000}
-                        onClick={() => void decide("reject")}
-                      >
-                        {t("reject")}
-                      </Button>
-                    </div>
+                    {approvalActionable && (
+                      <>
+                        <FormField
+                          label={t("note")}
+                          htmlFor="approval-note"
+                          description={t("noteCount", { count: note.length })}
+                          error={note.length > 2000 ? t("noteTooLong") : null}
+                        >
+                          <Textarea
+                            value={note}
+                            maxLength={2001}
+                            rows={4}
+                            disabled={approvalPending}
+                            onChange={(event) => setNote(event.target.value)}
+                          />
+                        </FormField>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            disabled={approvalPending || note.length > 2000}
+                            onClick={() => void decide("approve")}
+                          >
+                            {t("approve")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={approvalPending || note.length > 2000}
+                            onClick={() => void decide("reject")}
+                          >
+                            {t("reject")}
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
