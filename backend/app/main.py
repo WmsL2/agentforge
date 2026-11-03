@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi_pagination import add_pagination
 from starlette.middleware.cors import CORSMiddleware
 
+from app import __version__
 from app.api.exception_handlers import register_exception_handlers
 from app.api.router import api_router
 from app.composition.tool_platform import open_tool_platform
@@ -119,7 +120,7 @@ Enterprise Agent Workflow Platform
 - [Swagger UI](/docs) - Interactive API documentation
 - [ReDoc](/redoc) - Alternative documentation view
         """.strip(),
-        version="0.8.0",
+        version=__version__,
         openapi_url=openapi_url,
         docs_url=docs_url,
         redoc_url=redoc_url,

@@ -10,6 +10,7 @@ from alembic import command
 from alembic.config import Config
 from tabulate import tabulate
 
+from app import __version__
 from app.commands import register_commands
 from app.main import app
 from app.core.exceptions import AlreadyExistsError, NotFoundError
@@ -20,7 +21,7 @@ from app.services.user import UserService
 
 
 @click.group()
-@click.version_option(version="0.8.0", prog_name="agentforge")
+@click.version_option(version=__version__, prog_name="agentforge")
 def cli():
     """agentforge management CLI."""
     pass
