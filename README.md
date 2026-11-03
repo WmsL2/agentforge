@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。当前正式发布版本为 v0.9.0；v0.10.0 正在准备中，目标是在既有 Workspace RBAC 和后台执行能力之上提供完整的 Workflow Frontend。准备状态不代表已经创建 Git tag 或 GitHub Release。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。此版本线的 Backend、Frontend 与运行时展示元数据统一为 v0.10.0；版本对齐时上一正式 GitHub Release 为 v0.9.0。元数据本身不代表已经创建 Git tag 或 GitHub Release。
 
 ---
 
@@ -58,13 +58,13 @@ v0.1 建设并验证了稳定的工程基础，包括：
   Celery background execution, PostgreSQL claim / lease / fencing, recovery
   scanning, asynchronous approval resume, and real PostgreSQL / Redis / Celery
   E2E proof gates.
-- **v0.10 — Workflow Frontend (in preparation):** cookie-authenticated frontend
+- **v0.10 — Workflow Frontend:** cookie-authenticated frontend
   API integration, Workspace and Workflow management, a React Flow canvas,
   node configuration, saved-revision execution, Run Inspector, human approval,
-  and controlled-API Chromium integration coverage. v0.10.0 is not released by
-  this documentation change.
+  and controlled-API Chromium integration coverage. Publication status is
+  determined by the repository's tags and GitHub Releases, not this description.
 
-## v0.10 — Workflow Frontend (Release Preparation)
+## v0.10 — Workflow Frontend
 
 v0.10 brings the existing Workspace, Workflow, execution and approval backend
 contracts into the Next.js application without replacing the durable execution
@@ -86,7 +86,7 @@ model introduced in v0.6-v0.9.
   with controlled Workflow API responses. It is distinct from the backend CI
   jobs that use real PostgreSQL, Redis and Celery.
 
-See the [v0.10 Release Notes draft](docs/release-v0.10.md) for the reviewed
+See the [v0.10 Release Notes](docs/release-v0.10.md) for the reviewed
 scope, verification matrix, known limitations and deployment checks.
 
 ## v0.9 — Background Execution & Recovery

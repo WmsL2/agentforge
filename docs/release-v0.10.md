@@ -1,8 +1,9 @@
-# AgentForge v0.10 Release Notes — Draft
+# AgentForge v0.10 Release Notes
 
-> Release-preparation document only. The current formal release remains
-> v0.9.0. This document does not create a branch, tag, GitHub Release or deploy
-> v0.10.0.
+> This document describes the v0.10.0 release line. At version-alignment time,
+> the latest formal GitHub Release was v0.9.0. This document does not create a
+> branch, tag, GitHub Release or deployment; consult repository tags and GitHub
+> Releases for current publication status.
 
 ## 1. v0.10 Overview
 
@@ -15,13 +16,11 @@ PostgreSQL checkpoint, claim, lease, fencing or Celery recovery model.
 The release-preparation scope is frontend-focused. No new database migration or
 backend execution contract is introduced by v0.10.
 
-Version metadata has intentionally not been changed during documentation
-preparation. `backend/pyproject.toml` remains `0.9.0`; the private
-`frontend/package.json` remains `0.8.0`, last changed during v0.8 release
-preparation. The repository does not provide enough evidence to decide whether
-the private frontend field must track the repository release or is independently
-versioned. An authorized release owner must resolve that policy before treating
-either field as v0.10 release evidence.
+The repository uses one full-stack release version for this release line.
+`backend/pyproject.toml`, the installed Python distribution, `app.__version__`,
+FastAPI application metadata, CLI `--version` output and the private
+`frontend/package.json` are aligned to `0.10.0`. Automated regression tests keep
+these surfaces synchronized. Version metadata alone is not publication evidence.
 
 ## 2. Frontend API Integration
 
@@ -210,14 +209,34 @@ An existing storage-state file was not treated as sufficient evidence of a
 current authenticated environment. This is an explicit verification gap, not a
 browser-test success result.
 
+### Local version-alignment evidence
+
+On 2026-11-03, starting from Git commit
+`97b31e27c0f14703df9a6bc521cbef68e618b107`, local version-alignment validation
+confirmed Python distribution metadata, `app.__version__`, FastAPI application
+metadata, CLI output and the frontend package version as `0.10.0`.
+
+- the targeted version suite passed 3 tests;
+- the full backend suite passed 919 tests and skipped 89 explicitly gated tests;
+- backend Ruff and format checks passed, while `ty check` completed with two
+  pre-existing warnings;
+- the frontend unit and coverage runs each passed 215 tests in 20 files; and
+- the frontend production build completed successfully.
+
+`backend/uv.lock` changed only the editable AgentForge root package from
+`0.9.0` to `0.10.0`. `frontend/bun.lock` did not change because its workspace
+record does not store the private root package version; frozen installation
+completed without dependency changes.
+
 Release reviewers must use the latest CI run as the authoritative remote result.
 Counts recorded by local release preparation describe only that checkout and
 must not be reused after the test suite changes.
 
 ## 11. Known Limitations
 
-- v0.10.0 remains unreleased until an authorized human completes the release
-  process; this draft is not release evidence.
+- Publishing v0.10.0 still requires an authorized human to create the Git tag
+  and GitHub Release; this document and aligned metadata are not publication
+  evidence.
 - The Workflow Playwright suite uses controlled API responses. It validates
   browser integration and user-visible races, not a single real-browser →
   FastAPI → PostgreSQL → Redis → Celery → worker completion journey.
