@@ -11,6 +11,7 @@ _MEMBER_PERMISSIONS = frozenset(
         WorkspacePermission.WORKFLOW_EDIT,
         WorkspacePermission.WORKFLOW_RUN,
         WorkspacePermission.RUN_READ,
+        WorkspacePermission.KNOWLEDGE_READ,
     }
 )
 _ADMIN_PERMISSIONS = _MEMBER_PERMISSIONS | frozenset(
@@ -18,6 +19,9 @@ _ADMIN_PERMISSIONS = _MEMBER_PERMISSIONS | frozenset(
         WorkspacePermission.WORKFLOW_DELETE,
         WorkspacePermission.APPROVAL_DECIDE,
         WorkspacePermission.MEMBER_MANAGE,
+        WorkspacePermission.KNOWLEDGE_CREATE,
+        WorkspacePermission.KNOWLEDGE_EDIT,
+        WorkspacePermission.KNOWLEDGE_DELETE,
     }
 )
 _ROLE_PERMISSIONS = MappingProxyType(

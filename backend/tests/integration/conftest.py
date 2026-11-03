@@ -17,7 +17,7 @@ from app.db.models.workflow.definition.model import Workflow
 from app.db.models.workflow.run.model import WorkflowRun
 
 _POSTGRES_E2E_ENV = "AGENTFORGE_RUN_POSTGRES_E2E"
-_EXPECTED_ALEMBIC_REVISION = "0042_add_workflow_recovery_dispatch_schedule"
+_EXPECTED_ALEMBIC_REVISION = "0043_create_knowledge_bases"
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ from app.api.routes.v1 import files
 from app.api.routes.v1 import admin_stats
 from app.api.routes.v1 import workflow
 from app.api.routes.v1 import workspaces
+from app.api.routes.v1 import knowledge
 
 v1_router = APIRouter()
 
@@ -38,6 +39,11 @@ v1_router.include_router(agent.router, tags=["agent"])
 v1_router.include_router(files.router, tags=["files"])
 v1_router.include_router(workflow.router, tags=["workflows"])
 v1_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
+v1_router.include_router(
+    knowledge.router,
+    prefix="/workspaces/{workspace_id}/knowledge-bases",
+    tags=["knowledge-bases"],
+)
 
 v1_router.include_router(
     admin_conversations.router,

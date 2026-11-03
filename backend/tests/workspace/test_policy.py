@@ -15,11 +15,15 @@ MEMBER_PERMISSIONS = {
     WorkspacePermission.WORKFLOW_EDIT,
     WorkspacePermission.WORKFLOW_RUN,
     WorkspacePermission.RUN_READ,
+    WorkspacePermission.KNOWLEDGE_READ,
 }
 ADMIN_PERMISSIONS = MEMBER_PERMISSIONS | {
     WorkspacePermission.WORKFLOW_DELETE,
     WorkspacePermission.APPROVAL_DECIDE,
     WorkspacePermission.MEMBER_MANAGE,
+    WorkspacePermission.KNOWLEDGE_CREATE,
+    WorkspacePermission.KNOWLEDGE_EDIT,
+    WorkspacePermission.KNOWLEDGE_DELETE,
 }
 
 
