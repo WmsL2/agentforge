@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。v0.9 在 Workspace RBAC 边界之上提供可验证的后台工作流执行、执行权租约与恢复能力。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。当前正式发布版本为 v0.9.0；v0.10.0 正在准备中，目标是在既有 Workspace RBAC 和后台执行能力之上提供完整的 Workflow Frontend。准备状态不代表已经创建 Git tag 或 GitHub Release。
 
 ---
 
@@ -58,6 +58,36 @@ v0.1 建设并验证了稳定的工程基础，包括：
   Celery background execution, PostgreSQL claim / lease / fencing, recovery
   scanning, asynchronous approval resume, and real PostgreSQL / Redis / Celery
   E2E proof gates.
+- **v0.10 — Workflow Frontend (in preparation):** cookie-authenticated frontend
+  API integration, Workspace and Workflow management, a React Flow canvas,
+  node configuration, saved-revision execution, Run Inspector, human approval,
+  and controlled-API Chromium integration coverage. v0.10.0 is not released by
+  this documentation change.
+
+## v0.10 — Workflow Frontend (Release Preparation)
+
+v0.10 brings the existing Workspace, Workflow, execution and approval backend
+contracts into the Next.js application without replacing the durable execution
+model introduced in v0.6-v0.9.
+
+- Same-origin Next.js API routes proxy Workspace, Workflow, Run, Steps, Trace
+  and Approval calls to FastAPI using the authenticated cookie session.
+- Workspace and Workflow screens support Workspace selection, membership and
+  role administration, Workflow CRUD and role-aware destructive controls.
+- The React Flow editor adapts `WorkflowGraph` without changing its business
+  schema, validates graph rules, preserves saved revisions and protects dirty
+  graphs and unapplied node drafts.
+- Node configuration covers VALUE, AGENT and APPROVAL data with JSON numeric
+  safety and explicit Apply semantics.
+- The execution panel submits input against the saved Workflow revision, shows
+  Run history, Steps and Trace data, and exposes pending approval decisions only
+  to trusted OWNER / ADMIN memberships.
+- Browser integration coverage uses real Chromium and real Next.js components
+  with controlled Workflow API responses. It is distinct from the backend CI
+  jobs that use real PostgreSQL, Redis and Celery.
+
+See the [v0.10 Release Notes draft](docs/release-v0.10.md) for the reviewed
+scope, verification matrix, known limitations and deployment checks.
 
 ## v0.9 — Background Execution & Recovery
 
