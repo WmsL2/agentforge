@@ -95,6 +95,10 @@ def create_app() -> FastAPI:
             "name": "workspaces",
             "description": "Workspace membership and RBAC management",
         },
+        {
+            "name": "knowledge-bases",
+            "description": "Workspace-scoped knowledge base management",
+        },
     ]
 
     setup_logging()

@@ -19,6 +19,10 @@ def test_workspace_permissions_have_only_the_supported_values() -> None:
         "workflow_run",
         "run_read",
         "approval_decide",
+        "knowledge_read",
+        "knowledge_create",
+        "knowledge_edit",
+        "knowledge_delete",
         "member_manage",
         "workspace_manage",
     }

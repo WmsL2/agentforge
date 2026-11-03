@@ -37,6 +37,7 @@ from app.services.session import SessionService
 from app.services.conversation import ConversationService
 from app.services.workspace.authorization import WorkspaceAuthorizationService
 from app.services.workspace.service import WorkspaceService
+from app.services.knowledge.service import KnowledgeBaseService
 from app.services.workflow import (
     AgentNodeExecutor,
     ApprovalNodeExecutor,
@@ -106,6 +107,16 @@ def get_workspace_service(
 
 
 WorkspaceSvc = Annotated[WorkspaceService, Depends(get_workspace_service)]
+
+
+def get_knowledge_base_service(
+    db: DBSession, authorization_service: WorkspaceAuthorizationSvc
+) -> KnowledgeBaseService:
+    """Create the Knowledge Base application service for a request session."""
+    return KnowledgeBaseService(db=db, authorization=authorization_service)
+
+
+KnowledgeBaseSvc = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]
 
 
 def get_workflow_service(
