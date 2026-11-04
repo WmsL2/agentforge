@@ -151,7 +151,7 @@ jobs:
           uv run --directory backend alembic upgrade head
           current_revision="$(uv run --directory backend alembic current)"
           echo "$current_revision"
-          test "$current_revision" = "0043_create_knowledge_bases (head)"
+          test "$current_revision" = "0044_create_knowledge_documents (head)"
 
       - name: Run Atomic 5 PostgreSQL and async API E2E
         run: |
@@ -236,7 +236,7 @@ jobs:
           uv run --directory backend alembic upgrade head
           current_revision="$(uv run --directory backend alembic current)"
           echo "$current_revision"
-          test "$current_revision" = "0043_create_knowledge_bases (head)"
+          test "$current_revision" = "0044_create_knowledge_documents (head)"
 
       - name: Run Atomic 6 PostgreSQL and Celery E2E
         run: |
@@ -313,7 +313,7 @@ jobs:
           uv run --directory backend alembic upgrade 0042_add_workflow_recovery_dispatch_schedule
           test "$(uv run --directory backend alembic current)" = "0042_add_workflow_recovery_dispatch_schedule"
           uv run --directory backend alembic upgrade head
-          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases (head)"
+          test "$(uv run --directory backend alembic current)" = "0044_create_knowledge_documents (head)"
           test "$(uv run --directory backend alembic heads | wc -l)" -eq 1
 
       - name: Run Atomic 7 PostgreSQL release proofs
@@ -379,16 +379,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --directory backend --dev
 
-      - name: Verify 0042 to 0043 upgrade and downgrade cycle
+      - name: Verify historical 0042 to 0043 chain and current head
         run: |
           uv run --directory backend alembic upgrade 0042_add_workflow_recovery_dispatch_schedule
           test "$(uv run --directory backend alembic current)" = "0042_add_workflow_recovery_dispatch_schedule"
+          uv run --directory backend alembic upgrade 0043_create_knowledge_bases
+          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases"
           uv run --directory backend alembic upgrade head
-          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases (head)"
+          test "$(uv run --directory backend alembic current)" = "0044_create_knowledge_documents (head)"
           uv run --directory backend alembic downgrade 0042_add_workflow_recovery_dispatch_schedule
           test "$(uv run --directory backend alembic current)" = "0042_add_workflow_recovery_dispatch_schedule"
           uv run --directory backend alembic upgrade head
-          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases (head)"
+          test "$(uv run --directory backend alembic current)" = "0044_create_knowledge_documents (head)"
           test "$(uv run --directory backend alembic heads | wc -l)" -eq 1
 
       - name: Run Atomic 1 PostgreSQL integration tests
@@ -415,6 +417,85 @@ jobs:
               or counts["skipped"] != 0
           ):
               print("Atomic 1 Knowledge E2E must execute without failures or skips", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
+  v011-atomic2-documents-postgres-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentforge_v011_atomic2_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentforge_v011_atomic2_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentforge_v011_atomic2_verify
+      AGENTFORGE_RUN_POSTGRES_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install frozen dependencies
+        run: uv sync --directory backend --dev --frozen
+
+      - name: Verify 0043 to 0044 upgrade and downgrade cycle
+        run: |
+          uv run --directory backend alembic upgrade 0043_create_knowledge_bases
+          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases"
+          uv run --directory backend alembic upgrade 0044_create_knowledge_documents
+          test "$(uv run --directory backend alembic current)" = "0044_create_knowledge_documents (head)"
+          uv run --directory backend alembic downgrade 0043_create_knowledge_bases
+          test "$(uv run --directory backend alembic current)" = "0043_create_knowledge_bases"
+          uv run --directory backend alembic upgrade head
+          test "$(uv run --directory backend alembic current)" = "0044_create_knowledge_documents (head)"
+          test "$(uv run --directory backend alembic heads | wc -l)" -eq 1
+
+      - name: Run Atomic 2 PostgreSQL integration tests
+        run: |
+          uv run --directory backend pytest \
+            tests/integration/knowledge/test_knowledge_documents_postgres.py \
+            -v -rs --junitxml=atomic2-documents-e2e.xml
+
+          uv run --directory backend python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("atomic2-documents-e2e.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              key: sum(int(suite.attrib.get(key, 0)) for suite in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+          print(f"Atomic 2 Documents E2E JUnit counts: {counts}")
+          if (
+              counts["tests"] < 1
+              or counts["failures"] != 0
+              or counts["errors"] != 0
+              or counts["skipped"] != 0
+          ):
+              print("Atomic 2 Documents E2E must execute without failures or skips", file=sys.stderr)
               raise SystemExit(1)
           PY
 

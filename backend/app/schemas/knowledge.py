@@ -40,3 +40,32 @@ class KnowledgeBaseRead(BaseSchema):
 class KnowledgeBaseList(BaseSchema):
     items: list[KnowledgeBaseRead]
     total: int
+
+
+class KnowledgeDocumentRead(BaseSchema):
+    id: UUID
+    workspace_id: UUID
+    knowledge_base_id: UUID
+    created_by_user_id: UUID | None
+    filename: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    parse_status: str
+    parse_error_code: str | None
+    page_count: int | None
+    parse_metadata: dict[str, object]
+    created_at: datetime
+    updated_at: datetime | None
+
+
+class KnowledgeDocumentList(BaseSchema):
+    items: list[KnowledgeDocumentRead]
+    total: int
+
+
+class KnowledgeDocumentContent(BaseSchema):
+    document_id: UUID
+    content: str
+    page_count: int | None
+    parse_metadata: dict[str, object]

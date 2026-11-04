@@ -92,6 +92,14 @@ class BadRequestError(AppException):
     status_code = 400
 
 
+class ContentUnavailableError(AppException):
+    """Parsed content is unavailable for a persisted resource (409)."""
+
+    message = "Content unavailable"
+    code = "CONTENT_UNAVAILABLE"
+    status_code = 409
+
+
 class PaymentRequiredError(AppException):
     """Payment required — seat or usage limit reached (402)."""
 

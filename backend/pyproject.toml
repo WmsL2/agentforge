@@ -43,6 +43,8 @@ dependencies = [
     "tqdm>=4.66.0",
     "jsonschema>=4.26.0,<5.0.0",
     "mcp>=2.2.0,<3.0.0",
+    "pymupdf>=1.26.0,<2.0.0",
+    "python-docx>=1.2.0,<2.0.0",
 ]
 
 # PEP 735 dependency group — installed by `uv sync` / `uv sync --dev` and

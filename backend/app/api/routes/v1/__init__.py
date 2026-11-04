@@ -14,6 +14,7 @@ from app.api.routes.v1 import admin_stats
 from app.api.routes.v1 import workflow
 from app.api.routes.v1 import workspaces
 from app.api.routes.v1 import knowledge
+from app.api.routes.v1 import knowledge_documents
 
 v1_router = APIRouter()
 
@@ -43,6 +44,11 @@ v1_router.include_router(
     knowledge.router,
     prefix="/workspaces/{workspace_id}/knowledge-bases",
     tags=["knowledge-bases"],
+)
+v1_router.include_router(
+    knowledge_documents.router,
+    prefix="/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents",
+    tags=["knowledge-documents"],
 )
 
 v1_router.include_router(
