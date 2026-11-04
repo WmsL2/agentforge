@@ -39,7 +39,7 @@ from app.services.workspace.domain import WorkspaceRole
 from app.worker.celery_app import celery_app
 
 DATABASE = "agentforge_v09_atomic5_verify"
-HEAD = "0043_create_knowledge_bases"
+HEAD = "0044_create_knowledge_documents"
 BACKEND_ROOT = Path(__file__).parents[3]
 
 

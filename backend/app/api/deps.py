@@ -38,6 +38,9 @@ from app.services.conversation import ConversationService
 from app.services.workspace.authorization import WorkspaceAuthorizationService
 from app.services.workspace.service import WorkspaceService
 from app.services.knowledge.service import KnowledgeBaseService
+from app.services.knowledge.document_parser import KnowledgeDocumentParser
+from app.services.knowledge.document_service import KnowledgeDocumentService
+from app.services.knowledge.document_storage import KnowledgeDocumentStorage
 from app.services.workflow import (
     AgentNodeExecutor,
     ApprovalNodeExecutor,
@@ -117,6 +120,20 @@ def get_knowledge_base_service(
 
 
 KnowledgeBaseSvc = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]
+
+
+def get_knowledge_document_service(
+    db: DBSession, authorization_service: WorkspaceAuthorizationSvc
+) -> KnowledgeDocumentService:
+    return KnowledgeDocumentService(
+        db=db,
+        authorization=authorization_service,
+        storage=KnowledgeDocumentStorage(settings.MEDIA_DIR),
+        parser=KnowledgeDocumentParser(),
+    )
+
+
+KnowledgeDocumentSvc = Annotated[KnowledgeDocumentService, Depends(get_knowledge_document_service)]
 
 
 def get_workflow_service(

@@ -99,6 +99,10 @@ def create_app() -> FastAPI:
             "name": "knowledge-bases",
             "description": "Workspace-scoped knowledge base management",
         },
+        {
+            "name": "knowledge-documents",
+            "description": "Private document upload, parsing, and retrieval",
+        },
     ]
 
     setup_logging()

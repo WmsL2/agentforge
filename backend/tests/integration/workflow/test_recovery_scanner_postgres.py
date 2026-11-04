@@ -18,7 +18,7 @@ from app.repositories.workflow.run import repository as run_repo
 from app.services.workflow.application.background.recovery_scanner import WorkflowRecoveryScanner
 
 DATABASE = "agentforge_v09_atomic6_verify"
-HEAD = "0043_create_knowledge_bases"
+HEAD = "0044_create_knowledge_documents"
 _DELAY = timedelta(hours=1)
 
 
