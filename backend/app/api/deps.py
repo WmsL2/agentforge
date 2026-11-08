@@ -41,6 +41,9 @@ from app.services.knowledge.service import KnowledgeBaseService
 from app.services.knowledge.document_parser import KnowledgeDocumentParser
 from app.services.knowledge.document_service import KnowledgeDocumentService
 from app.services.knowledge.document_storage import KnowledgeDocumentStorage
+from app.services.knowledge.chunking import ChunkingConfig
+from app.services.knowledge.indexing_service import KnowledgeIndexingService
+from app.integrations.celery.knowledge_index_dispatcher import CeleryKnowledgeIndexDispatcher
 from app.services.workflow import (
     AgentNodeExecutor,
     ApprovalNodeExecutor,
@@ -134,6 +137,26 @@ def get_knowledge_document_service(
 
 
 KnowledgeDocumentSvc = Annotated[KnowledgeDocumentService, Depends(get_knowledge_document_service)]
+
+
+def get_knowledge_indexing_service(
+    db: DBSession, authorization_service: WorkspaceAuthorizationSvc
+) -> KnowledgeIndexingService:
+    return KnowledgeIndexingService(
+        db,
+        authorization_service,
+        CeleryKnowledgeIndexDispatcher(celery_app),
+        chunking_config=ChunkingConfig(
+            chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
+            overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
+            max_chunks=settings.KNOWLEDGE_MAX_CHUNKS,
+        ),
+        embedding_model=settings.EMBEDDING_MODEL,
+        embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
+    )
+
+
+KnowledgeIndexingSvc = Annotated[KnowledgeIndexingService, Depends(get_knowledge_indexing_service)]
 
 
 def get_workflow_service(

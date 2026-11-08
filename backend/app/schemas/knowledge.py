@@ -69,3 +69,27 @@ class KnowledgeDocumentContent(BaseSchema):
     content: str
     page_count: int | None
     parse_metadata: dict[str, object]
+
+
+class KnowledgeIndexJobRead(BaseSchema):
+    id: UUID
+    document_id: UUID
+    status: str
+    embedding_model: str
+    embedding_dimensions: int
+    index_generation_id: UUID
+    chunking_config_version: str
+    attempt_count: int
+    error_code: str | None
+    created_at: datetime
+
+
+class KnowledgeIndexStatusRead(BaseSchema):
+    document_id: UUID
+    job_id: UUID | None
+    status: str
+    active_generation_id: UUID | None
+    chunk_count: int
+    embedding_model: str | None
+    index_version: str | None
+    error_code: str | None
