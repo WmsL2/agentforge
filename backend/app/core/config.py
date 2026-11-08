@@ -140,6 +140,20 @@ class Settings(BaseSettings):
     WORKFLOW_RECOVERY_SCAN_INTERVAL_SECONDS: int = Field(default=60, gt=0)
     WORKFLOW_RECOVERY_BATCH_SIZE: int = Field(default=100, gt=0)
     WORKFLOW_RECOVERY_REDISPATCH_DELAY_SECONDS: int = Field(default=60, gt=0)
+    KNOWLEDGE_INDEX_LEASE_SECONDS: int = Field(default=900, gt=0)
+    KNOWLEDGE_INDEX_RECOVERY_SCAN_INTERVAL_SECONDS: int = Field(default=60, gt=0)
+    KNOWLEDGE_INDEX_RECOVERY_BATCH_SIZE: int = Field(default=100, gt=0)
+    KNOWLEDGE_INDEX_RECOVERY_REDISPATCH_DELAY_SECONDS: int = Field(default=60, gt=0)
+    KNOWLEDGE_CHUNK_SIZE: int = Field(default=1000, gt=0)
+    KNOWLEDGE_CHUNK_OVERLAP: int = Field(default=150, ge=0)
+    KNOWLEDGE_MAX_CHUNKS: int = Field(default=2500, gt=0)
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSIONS: int = Field(default=1536, gt=0)
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_BASE_URL: str | None = None
+    EMBEDDING_BATCH_SIZE: int = Field(default=32, gt=0)
+    EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
+    EMBEDDING_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
     # Legacy template-chat compatibility. Platform Runtime uses LLM_* settings below.
     OPENAI_API_KEY: str = ""
     LLM_PROVIDER: str = "openai"

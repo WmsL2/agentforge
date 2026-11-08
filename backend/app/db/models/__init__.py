@@ -5,7 +5,12 @@ from app.db.models.user import User
 from app.db.models.session import Session
 from app.db.models.conversation import Conversation, Message, ToolCall
 from app.db.models.chat_file import ChatFile
-from app.db.models.knowledge import KnowledgeBase, KnowledgeDocument
+from app.db.models.knowledge import (
+    KnowledgeBase,
+    KnowledgeDocument,
+    KnowledgeDocumentChunk,
+    KnowledgeIndexJob,
+)
 from app.db.models.workspace import Workspace, WorkspaceMembership
 from app.db.models.workflow import (
     Workflow,
@@ -24,6 +29,8 @@ __all__ = [
     "ChatFile",
     "KnowledgeBase",
     "KnowledgeDocument",
+    "KnowledgeDocumentChunk",
+    "KnowledgeIndexJob",
     "Workspace",
     "WorkspaceMembership",
     "Workflow",

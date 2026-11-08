@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
     container_name: agentforge_db
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -124,6 +124,7 @@ services:
       - ./backend/.env
     environment:
       - DEBUG=true
+      - POSTGRES_HOST=db
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -133,6 +134,8 @@ services:
       app:
         condition: service_started
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:

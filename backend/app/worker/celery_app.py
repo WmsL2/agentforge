@@ -5,6 +5,7 @@ from celery import Celery
 from app.core.config import settings
 
 WORKFLOW_RECOVERY_SCAN_TASK = "agentforge.workflow.recovery.scan"
+KNOWLEDGE_INDEX_RECOVERY_TASK = "agentforge.knowledge.index.recovery.scan"
 
 celery_app = Celery(
     "agentforge",
@@ -14,6 +15,7 @@ celery_app = Celery(
         "app.worker.tasks.smoke",
         "app.worker.tasks.workflow",
         "app.worker.tasks.recovery",
+        "app.worker.tasks.knowledge_index",
     ),
 )
 
@@ -33,5 +35,9 @@ celery_app.conf.beat_schedule = {
     "workflow-recovery-scan": {
         "task": WORKFLOW_RECOVERY_SCAN_TASK,
         "schedule": settings.WORKFLOW_RECOVERY_SCAN_INTERVAL_SECONDS,
-    }
+    },
+    "knowledge-index-recovery-scan": {
+        "task": KNOWLEDGE_INDEX_RECOVERY_TASK,
+        "schedule": settings.KNOWLEDGE_INDEX_RECOVERY_SCAN_INTERVAL_SECONDS,
+    },
 }

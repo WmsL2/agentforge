@@ -5,14 +5,46 @@ from uuid import UUID
 from fastapi import APIRouter, File, Query, UploadFile, status
 from fastapi.responses import FileResponse
 
-from app.api.deps import CurrentUser, KnowledgeDocumentSvc
+from app.api.deps import CurrentUser, KnowledgeDocumentSvc, KnowledgeIndexingSvc
 from app.schemas.knowledge import (
     KnowledgeDocumentContent,
     KnowledgeDocumentList,
     KnowledgeDocumentRead,
+    KnowledgeIndexJobRead,
+    KnowledgeIndexStatusRead,
 )
 
 router = APIRouter()
+
+
+@router.post(
+    "/{document_id}/index",
+    response_model=KnowledgeIndexJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_document_index(
+    workspace_id: UUID,
+    knowledge_base_id: UUID,
+    document_id: UUID,
+    indexing_service: KnowledgeIndexingSvc,
+    current_user: CurrentUser,
+):
+    return await indexing_service.request_index(
+        workspace_id, knowledge_base_id, document_id, current_user.id
+    )
+
+
+@router.get("/{document_id}/index", response_model=KnowledgeIndexStatusRead)
+async def get_document_index_status(
+    workspace_id: UUID,
+    knowledge_base_id: UUID,
+    document_id: UUID,
+    indexing_service: KnowledgeIndexingSvc,
+    current_user: CurrentUser,
+):
+    return await indexing_service.get_index_status(
+        workspace_id, knowledge_base_id, document_id, current_user.id
+    )
 
 
 @router.post("", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)

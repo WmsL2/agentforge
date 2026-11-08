@@ -38,7 +38,7 @@ from app.services.workflow import (
 from app.worker.celery_app import celery_app
 
 DATABASE = "agentforge_v09_atomic4_verify"
-HEAD = "0044_create_knowledge_documents"
+HEAD = "0045_create_knowledge_vector_index"
 BACKEND_ROOT = Path(__file__).parents[3]
 
 
