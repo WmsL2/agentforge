@@ -43,6 +43,8 @@ from app.services.knowledge.document_service import KnowledgeDocumentService
 from app.services.knowledge.document_storage import KnowledgeDocumentStorage
 from app.services.knowledge.chunking import ChunkingConfig
 from app.services.knowledge.indexing_service import KnowledgeIndexingService
+from app.services.knowledge.embedding import OpenAIEmbeddingProvider
+from app.services.knowledge.retrieval_service import KnowledgeRetrievalService
 from app.integrations.celery.knowledge_index_dispatcher import CeleryKnowledgeIndexDispatcher
 from app.services.workflow import (
     AgentNodeExecutor,
@@ -157,6 +159,36 @@ def get_knowledge_indexing_service(
 
 
 KnowledgeIndexingSvc = Annotated[KnowledgeIndexingService, Depends(get_knowledge_indexing_service)]
+
+
+def get_knowledge_retrieval_service() -> KnowledgeRetrievalService:
+    """Compose retrieval without opening a request-long database session."""
+
+    def provider_factory() -> OpenAIEmbeddingProvider:
+        return OpenAIEmbeddingProvider(
+            api_key=settings.EMBEDDING_API_KEY,
+            model=settings.EMBEDDING_MODEL,
+            dimensions=settings.EMBEDDING_DIMENSIONS,
+            base_url=settings.EMBEDDING_BASE_URL,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+            timeout_seconds=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+            max_retries=settings.EMBEDDING_MAX_RETRIES,
+        )
+
+    return KnowledgeRetrievalService(
+        async_session_maker,
+        provider_factory,
+        embedding_model=settings.EMBEDDING_MODEL,
+        embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
+        embedding_timeout_seconds=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+        db_statement_timeout_ms=settings.KNOWLEDGE_RETRIEVAL_DB_TIMEOUT_MS,
+    )
+
+
+KnowledgeRetrievalSvc = Annotated[
+    KnowledgeRetrievalService,
+    Depends(get_knowledge_retrieval_service),
+]
 
 
 def get_workflow_service(

@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = Field(default=32, gt=0)
     EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
     EMBEDDING_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
+    KNOWLEDGE_RETRIEVAL_DB_TIMEOUT_MS: int = Field(default=5000, gt=0)
     # Legacy template-chat compatibility. Platform Runtime uses LLM_* settings below.
     OPENAI_API_KEY: str = ""
     LLM_PROVIDER: str = "openai"
