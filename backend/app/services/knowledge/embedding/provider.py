@@ -83,6 +83,10 @@ class OpenAIEmbeddingProvider:
             vectors.extend(await self._embed_batch(batch))
         return validate_embeddings(vectors, expected_count=len(texts), dimensions=self.dimensions)
 
+    async def aclose(self) -> None:
+        """Close the provider client after request-scoped retrieval use."""
+        await self._client.close()
+
     async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         for attempt in range(self._max_retries + 1):
             retry_error: Exception | None = None

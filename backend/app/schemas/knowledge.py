@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from app.schemas.base import BaseSchema
 
@@ -93,3 +93,32 @@ class KnowledgeIndexStatusRead(BaseSchema):
     embedding_model: str | None
     index_version: str | None
     error_code: str | None
+
+
+class KnowledgeSearchRequest(BaseSchema):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+    min_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+
+class KnowledgeSearchItemRead(BaseSchema):
+    chunk_id: UUID
+    document_id: UUID
+    knowledge_base_id: UUID
+    filename: str
+    chunk_index: int
+    content: str
+    start_offset: int
+    end_offset: int
+    page_start: int | None
+    page_end: int | None
+    similarity_score: float
+
+
+class KnowledgeSearchResponse(BaseSchema):
+    query: str
+    results: list[KnowledgeSearchItemRead]
+    total: int
+    embedding_model: str

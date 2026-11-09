@@ -585,6 +585,83 @@ jobs:
               raise SystemExit(1)
           PY
 
+  v011-atomic4-retrieval-postgres-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentforge_v011_atomic4_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentforge_v011_atomic4_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentforge_v011_atomic4_verify
+      AGENTFORGE_RUN_POSTGRES_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install frozen dependencies
+        run: uv sync --directory backend --dev --frozen
+
+      - name: Apply current migrations and verify pgvector
+        run: |
+          uv run --directory backend alembic upgrade head
+          test "$(uv run --directory backend alembic current)" = "0045_create_knowledge_vector_index (head)"
+          test "$(uv run --directory backend alembic heads | wc -l)" -eq 1
+          psql -h localhost -U postgres -d agentforge_v011_atomic4_verify -Atc \
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'" | grep -Fx '0.8.7'
+        env:
+          PGPASSWORD: postgres
+
+      - name: Run Atomic 4 retrieval PostgreSQL integration tests
+        run: |
+          uv run --directory backend pytest \
+            tests/integration/knowledge/test_knowledge_retrieval_postgres.py \
+            -v -rs --junitxml=atomic4-retrieval-e2e.xml
+
+          uv run --directory backend python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("atomic4-retrieval-e2e.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              key: sum(int(suite.attrib.get(key, 0)) for suite in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+          print(f"Atomic 4 Retrieval E2E JUnit counts: {counts}")
+          if (
+              counts["tests"] < 1
+              or counts["failures"] != 0
+              or counts["errors"] != 0
+              or counts["skipped"] != 0
+          ):
+              print("Atomic 4 Retrieval E2E must execute without failures or skips", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
   test-frontend:
     runs-on: ubuntu-latest
 
