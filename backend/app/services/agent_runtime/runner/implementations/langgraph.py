@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, Protocol
@@ -64,9 +65,12 @@ class LangGraphAgentRunner:
         self,
         model_factory: ModelFactory | None = None,
         tools: Sequence[BaseTool] | None = None,
+        recursion_limit: int | None = None,
     ) -> None:
         self._model_factory = model_factory or self._create_model
         self._tools = tuple(tools or ())
+        self._recursion_limit = recursion_limit
+        self._created_models: list[_AsyncChatModel] = []
         self._graph = self._build_graph()
 
     @staticmethod
@@ -80,6 +84,7 @@ class LangGraphAgentRunner:
 
     async def _model_node(self, state: _LangGraphAgentState) -> dict[str, Any]:
         model = self._model_factory(state["model_name"])
+        self._created_models.append(model)
         if self._tools:
             model = model.bind_tools(self._tools)
         response = await model.ainvoke(state["messages"])
@@ -110,8 +115,14 @@ class LangGraphAgentRunner:
         ]
         with bind_trace_context(request.trace_run_id, request.trace_step_id):
             try:
+                config = (
+                    {"recursion_limit": self._recursion_limit}
+                    if self._recursion_limit is not None
+                    else None
+                )
                 result = await self._graph.ainvoke(
-                    {"messages": messages, "model_name": effective_model}
+                    {"messages": messages, "model_name": effective_model},
+                    config=config,
                 )
             except Exception as exception:
                 raise AgentRuntimeError(
@@ -119,3 +130,21 @@ class LangGraphAgentRunner:
                     message=str(exception) or type(exception).__name__,
                 ) from exception
         return AgentExecutionResult(output=result["output"])
+
+    async def aclose(self) -> None:
+        """Close request-scoped model clients created by this runner, when supported."""
+        seen: set[int] = set()
+        for model in self._created_models:
+            if id(model) in seen:
+                continue
+            seen.add(id(model))
+            closer = getattr(model, "aclose", None)
+            if closer is None:
+                root_client = getattr(model, "root_async_client", None)
+                closer = getattr(root_client, "close", None)
+            if closer is None:
+                continue
+            result = closer()
+            if inspect.isawaitable(result):
+                await result
+        self._created_models.clear()

@@ -1,7 +1,7 @@
 """HTTP schemas for workspace-scoped knowledge bases."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, model_validator
@@ -122,3 +122,24 @@ class KnowledgeSearchResponse(BaseSchema):
     results: list[KnowledgeSearchItemRead]
     total: int
     embedding_model: str
+
+
+class KnowledgeAskRequest(BaseSchema):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=4000)
+
+
+class KnowledgeAgentSourceRead(BaseSchema):
+    chunk_id: UUID
+    document_id: UUID
+    filename: str
+    page_start: int | None
+    page_end: int | None
+    similarity_score: float
+
+
+class KnowledgeAskResponse(BaseSchema):
+    answer: str
+    status: Literal["answered", "no_evidence"]
+    sources: list[KnowledgeAgentSourceRead]

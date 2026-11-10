@@ -45,6 +45,7 @@ from app.services.knowledge.chunking import ChunkingConfig
 from app.services.knowledge.indexing_service import KnowledgeIndexingService
 from app.services.knowledge.embedding import OpenAIEmbeddingProvider
 from app.services.knowledge.retrieval_service import KnowledgeRetrievalService
+from app.services.knowledge.agent_service import KnowledgeAgentService
 from app.integrations.celery.knowledge_index_dispatcher import CeleryKnowledgeIndexDispatcher
 from app.services.workflow import (
     AgentNodeExecutor,
@@ -188,6 +189,30 @@ def get_knowledge_retrieval_service() -> KnowledgeRetrievalService:
 KnowledgeRetrievalSvc = Annotated[
     KnowledgeRetrievalService,
     Depends(get_knowledge_retrieval_service),
+]
+
+
+def get_knowledge_agent_service(
+    retrieval_service: KnowledgeRetrievalSvc,
+) -> KnowledgeAgentService:
+    """Create an isolated Knowledge Agent composition for one HTTP request."""
+
+    def runner_factory(tools, recursion_limit):
+        return LangGraphAgentRunner(tools=tools, recursion_limit=recursion_limit)
+
+    return KnowledgeAgentService(
+        retrieval_service,
+        runner_factory,
+        enabled=settings.KNOWLEDGE_AGENT_ENABLED,
+        timeout_seconds=settings.KNOWLEDGE_AGENT_TIMEOUT_SECONDS,
+        maximum_tool_calls=settings.KNOWLEDGE_AGENT_MAX_TOOL_CALLS,
+        model_api_key_configured=bool(settings.LLM_API_KEY),
+    )
+
+
+KnowledgeAgentSvc = Annotated[
+    KnowledgeAgentService,
+    Depends(get_knowledge_agent_service),
 ]
 
 

@@ -6,7 +6,7 @@ import pytest
 
 from app.api.deps import get_tool_execution_service, get_tool_registry
 from app.composition.tool_platform import open_tool_platform
-from app.services.tool import ToolExecutionError, ToolExecutionRequest
+from app.services.tool import ToolExecutionError, ToolExecutionRequest, ToolRegistryError
 from app.services.tool.execution.executor.implementations import NativeCallableToolExecutor
 from app.services.workflow import NoOpWorkflowExecutionObserver
 
@@ -29,6 +29,13 @@ async def test_production_registry_contains_current_datetime_native_tool() -> No
             "additionalProperties": False,
         }
         assert isinstance(registration.executor, NativeCallableToolExecutor)
+
+
+@pytest.mark.anyio
+async def test_application_registry_does_not_expose_request_bound_knowledge_search() -> None:
+    async with open_tool_platform(()) as registry:
+        with pytest.raises(ToolRegistryError):
+            registry.resolve("knowledge_search")
 
 
 @pytest.mark.anyio

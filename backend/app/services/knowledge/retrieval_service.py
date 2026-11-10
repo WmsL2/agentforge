@@ -160,6 +160,35 @@ class KnowledgeRetrievalService:
             embedding_model=self._embedding_model,
         )
 
+    async def authorize_scope(
+        self,
+        workspace_id: UUID,
+        knowledge_base_id: UUID,
+        actor_user_id: UUID,
+    ) -> None:
+        """Authorize a knowledge scope without embedding or holding a session open."""
+        try:
+            async with self._session_factory() as db, db.begin():
+                authorization = WorkspaceAuthorizationService(db)
+                await authorization.require_permission(
+                    workspace_id,
+                    actor_user_id,
+                    WorkspacePermission.KNOWLEDGE_READ,
+                )
+                knowledge_base = await knowledge_repo.get_by_workspace_and_id(
+                    db,
+                    workspace_id=workspace_id,
+                    knowledge_base_id=knowledge_base_id,
+                )
+                if knowledge_base is None:
+                    raise NotFoundError(message="Knowledge base not found")
+        except SQLAlchemyError:
+            logger.warning("Knowledge agent scope authorization database query failed")
+            raise DatabaseError(
+                message="Knowledge retrieval database query failed",
+                code="KNOWLEDGE_RETRIEVAL_DATABASE_ERROR",
+            ) from None
+
     async def _embed_query(self, query: str) -> list[float]:
         provider: EmbeddingProvider | None = None
         try:
