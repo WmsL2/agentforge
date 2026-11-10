@@ -16,6 +16,7 @@ from app.api.routes.v1 import workspaces
 from app.api.routes.v1 import knowledge
 from app.api.routes.v1 import knowledge_documents
 from app.api.routes.v1 import knowledge_search
+from app.api.routes.v1 import knowledge_agent
 
 v1_router = APIRouter()
 
@@ -55,6 +56,11 @@ v1_router.include_router(
     knowledge_search.router,
     prefix="/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/search",
     tags=["knowledge-search"],
+)
+v1_router.include_router(
+    knowledge_agent.router,
+    prefix="/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/ask",
+    tags=["knowledge-agent"],
 )
 
 v1_router.include_router(

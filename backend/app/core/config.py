@@ -155,6 +155,9 @@ class Settings(BaseSettings):
     EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
     EMBEDDING_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
     KNOWLEDGE_RETRIEVAL_DB_TIMEOUT_MS: int = Field(default=5000, gt=0)
+    KNOWLEDGE_AGENT_ENABLED: bool = False
+    KNOWLEDGE_AGENT_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
+    KNOWLEDGE_AGENT_MAX_TOOL_CALLS: int = Field(default=2, ge=1, le=2)
     # Legacy template-chat compatibility. Platform Runtime uses LLM_* settings below.
     OPENAI_API_KEY: str = ""
     LLM_PROVIDER: str = "openai"
