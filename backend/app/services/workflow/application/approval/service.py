@@ -233,7 +233,7 @@ class WorkflowApprovalService:
         return row, approval
 
     async def _state(self, workflow, db_run, approval):
-        run = _run(db_run)
+        run = _run(db_run, workflow.workspace_id)
         definition = deserialize_workflow_graph(
             db_run.definition_snapshot,
             workflow_id=db_run.workflow_id,
@@ -254,11 +254,13 @@ class WorkflowApprovalService:
         return run, definition, checkpoint
 
 
-def _run(row):
+def _run(row, workspace_id):
     return deserialize_workflow_run(
         run_id=row.id,
         workflow_id=row.workflow_id,
         workflow_revision=row.workflow_revision,
+        workspace_id=workspace_id,
+        actor_user_id=row.actor_user_id,
         status=row.status,
         input=row.input,
         node_outputs=row.node_outputs,

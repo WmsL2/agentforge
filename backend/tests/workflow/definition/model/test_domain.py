@@ -15,6 +15,7 @@ def test_workflow_node_kinds_have_supported_semantic_values():
         "start",
         "value",
         "agent",
+        "knowledge",
         "approval",
         "end",
     }

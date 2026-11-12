@@ -30,6 +30,7 @@ async def create_workflow_run(
         id=run.id,
         workflow_id=run.workflow_id,
         workflow_revision=run.workflow_revision,
+        actor_user_id=run.actor_user_id,
         definition_snapshot=definition_snapshot,
         **state,
     )

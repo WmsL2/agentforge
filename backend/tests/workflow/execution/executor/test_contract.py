@@ -107,3 +107,21 @@ def test_execution_context_top_level_mappings_can_be_read_only() -> None:
     with pytest.raises(TypeError):
         context.node_outputs["new"] = "value"  # type: ignore[index]
     assert node_outputs == {}
+
+
+def test_execution_context_snapshots_trusted_identity() -> None:
+    workspace_id = uuid4()
+    actor_user_id = uuid4()
+    context = NodeExecutionContext(
+        run_id=uuid4(),
+        workflow_input={},
+        upstream_outputs={},
+        node_outputs={},
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+    )
+
+    assert context.workspace_id == workspace_id
+    assert context.actor_user_id == actor_user_id
+    with pytest.raises(AttributeError):
+        context.actor_user_id = uuid4()  # type: ignore[misc]

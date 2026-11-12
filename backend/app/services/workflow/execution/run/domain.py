@@ -35,6 +35,8 @@ class WorkflowRun:
     id: UUID
     workflow_id: UUID
     workflow_revision: int
+    workspace_id: UUID | None = None
+    actor_user_id: UUID | None = None
     status: WorkflowRunStatus = WorkflowRunStatus.PENDING
     input: dict[str, Any] = field(default_factory=dict)
     node_outputs: dict[str, Any] = field(default_factory=dict)

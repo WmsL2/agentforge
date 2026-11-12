@@ -125,6 +125,34 @@ def test_approval_node_round_trips_without_serializer_changes():
     assert restored.nodes[1].kind is WorkflowNodeKind.APPROVAL
 
 
+def test_knowledge_node_round_trips_with_exact_config() -> None:
+    source = definition()
+    config = {
+        "knowledge_base_id": str(uuid4()),
+        "query_source": "workflow_input",
+        "input_key": "question",
+        "top_k": 5,
+    }
+    knowledge = WorkflowNode("knowledge", WorkflowNodeKind.KNOWLEDGE, config)
+    source.nodes = (source.nodes[0], knowledge, source.nodes[2])
+    source.edges = (
+        WorkflowEdge("start-knowledge", "start", "knowledge"),
+        WorkflowEdge("knowledge-end", "knowledge", "end"),
+    )
+
+    restored = deserialize_workflow_graph(
+        serialize_workflow_graph(source),
+        workflow_id=source.id,
+        name=source.name,
+        description=source.description,
+        revision=source.revision,
+    )
+
+    assert restored == source
+    assert restored.nodes[1].kind is WorkflowNodeKind.KNOWLEDGE
+    assert restored.nodes[1].config == config
+
+
 def test_persisted_resource_columns_and_json_payload_reconstruct_definition():
     source = definition()
     persisted_row = type(

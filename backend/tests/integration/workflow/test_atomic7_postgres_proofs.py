@@ -25,7 +25,7 @@ from app.services.workflow.application.background.durability import (
 from app.services.workflow.execution.run.domain import WorkflowRun as DomainWorkflowRun
 
 DATABASE = "agentforge_v09_atomic7_verify"
-HEAD = "0045_create_knowledge_vector_index"
+HEAD = "0046_add_workflow_run_actor_identity"
 LEASE_DURATION = timedelta(minutes=2)
 
 pytestmark = pytest.mark.anyio

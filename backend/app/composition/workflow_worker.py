@@ -13,6 +13,8 @@ from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
     LangGraphToolAdapter,
 )
+from app.services.knowledge.embedding import OpenAIEmbeddingProvider
+from app.services.knowledge.retrieval_service import KnowledgeRetrievalService
 from app.services.tool import ToolExecutionService
 from app.services.tool.definition.validation import ToolSchemaValidator
 from app.services.workflow import (
@@ -21,6 +23,7 @@ from app.services.workflow import (
     BackgroundRunExecutor,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
+    KnowledgeNodeExecutor,
     WorkflowEngine,
 )
 from app.services.workflow.application.observability import (
@@ -46,6 +49,26 @@ async def open_workflow_worker(
     )
     try:
         observer = SQLAlchemyWorkflowExecutionObserver(session_factory)
+
+        def provider_factory() -> OpenAIEmbeddingProvider:
+            return OpenAIEmbeddingProvider(
+                api_key=worker_settings.EMBEDDING_API_KEY,
+                model=worker_settings.EMBEDDING_MODEL,
+                dimensions=worker_settings.EMBEDDING_DIMENSIONS,
+                base_url=worker_settings.EMBEDDING_BASE_URL,
+                batch_size=worker_settings.EMBEDDING_BATCH_SIZE,
+                timeout_seconds=worker_settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+                max_retries=worker_settings.EMBEDDING_MAX_RETRIES,
+            )
+
+        retrieval_service = KnowledgeRetrievalService(
+            session_factory,
+            provider_factory,
+            embedding_model=worker_settings.EMBEDDING_MODEL,
+            embedding_dimensions=worker_settings.EMBEDDING_DIMENSIONS,
+            embedding_timeout_seconds=worker_settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+            db_statement_timeout_ms=worker_settings.KNOWLEDGE_RETRIEVAL_DB_TIMEOUT_MS,
+        )
         async with open_tool_platform(worker_settings.MCP_STDIO_SERVERS) as registry:
             tool_service = ToolExecutionService(
                 registry=registry,
@@ -60,6 +83,7 @@ async def open_workflow_worker(
                 deterministic_executor=DeterministicNodeExecutor(),
                 agent_executor=AgentNodeExecutor({"langgraph": runner}, observer=observer),
                 approval_executor=ApprovalNodeExecutor(observer=observer),
+                knowledge_executor=KnowledgeNodeExecutor(retrieval_service),
             )
             workflow_engine = WorkflowEngine(node_executor, observer=observer)
             yield BackgroundRunExecutor(

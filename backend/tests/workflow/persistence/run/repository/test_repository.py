@@ -22,7 +22,8 @@ def make_run(**kwargs: object) -> WorkflowRun:
 async def test_create_persists_exact_identity_snapshot_and_state() -> None:
     db = AsyncMock()
     db.add = MagicMock()
-    run = make_run(input={"request": "hello"})
+    actor_user_id = uuid4()
+    run = make_run(actor_user_id=actor_user_id, input={"request": "hello"})
     snapshot = {
         "schema_version": 1,
         "entry_node_id": "start",
@@ -39,6 +40,7 @@ async def test_create_persists_exact_identity_snapshot_and_state() -> None:
         4,
     )
     assert created.definition_snapshot == snapshot
+    assert created.actor_user_id == actor_user_id
     assert created.status == "pending"
     assert created.input == {"request": "hello"}
     assert created.node_outputs == {}

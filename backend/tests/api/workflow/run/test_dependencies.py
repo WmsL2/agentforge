@@ -87,6 +87,10 @@ def _run(input: dict[str, object]) -> WorkflowRun:
     return WorkflowRun(id=uuid4(), workflow_id=uuid4(), workflow_revision=1, input=input)
 
 
+def _workflow_engine(runner, observer):
+    return get_workflow_engine(runner, observer, SimpleNamespace(search=AsyncMock()))
+
+
 def _registry():
     async def open_registry():
         async with open_tool_platform(()) as registry:
@@ -316,9 +320,7 @@ def test_production_composition_executes_agent_node_with_injected_runner() -> No
     workflow_run = _run({"question": "What is the answer?"})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
-            definition, workflow_run
-        )
+        _workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
     )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
@@ -345,9 +347,7 @@ def test_production_composition_preserves_deterministic_execution() -> None:
     workflow_run = _run({"ignored": True})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
-            definition, workflow_run
-        )
+        _workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
     )
 
     assert workflow_run.status is WorkflowRunStatus.COMPLETED
@@ -373,9 +373,7 @@ def test_production_composition_pauses_at_approval_node() -> None:
     workflow_run = _run({})
 
     asyncio.run(
-        get_workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(
-            definition, workflow_run
-        )
+        _workflow_engine(runner, NoOpWorkflowExecutionObserver()).execute(definition, workflow_run)
     )
 
     assert workflow_run.status is WorkflowRunStatus.PAUSED
@@ -403,7 +401,7 @@ def test_production_dependency_factories_share_the_supplied_observability_compos
     )
 
     runner = FakeAgentRunner()
-    engine = get_workflow_engine(runner, observer)
+    engine = _workflow_engine(runner, observer)
     agent_definition = _definition(
         (
             WorkflowNode("start", WorkflowNodeKind.START),

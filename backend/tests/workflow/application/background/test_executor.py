@@ -294,6 +294,7 @@ async def test_load_uses_persisted_snapshot_revision_and_short_read_session(setu
         id=setup.run.id,
         workflow_id=setup.run.workflow_id,
         workflow_revision=1,
+        actor_user_id=uuid4(),
         status="pending",
         input={},
         node_outputs={},
@@ -309,6 +310,8 @@ async def test_load_uses_persisted_snapshot_revision_and_short_read_session(setu
     db = MagicMock(spec=AsyncSession)
     db.__aenter__.return_value = db
     db.scalar.return_value = datetime(2026, 1, 1, tzinfo=UTC)
+    workspace_id = uuid4()
+    db.get.return_value = SimpleNamespace(workspace_id=workspace_id)
     factory = MagicMock(return_value=db)
     monkeypatch.setattr(module.run_repo, "get_workflow_run_by_id", AsyncMock(return_value=row))
     monkeypatch.setattr(
@@ -318,6 +321,7 @@ async def test_load_uses_persisted_snapshot_revision_and_short_read_session(setu
     definition, run, checkpoint = await subject._load(setup.lease)
     assert definition.revision == 1 and definition.nodes[1].config["value"] == "V1"
     assert run.workflow_revision == 1 and checkpoint is None
+    assert run.workspace_id == workspace_id and run.actor_user_id == row.actor_user_id
     db.__aexit__.assert_awaited_once()
     row.execution_claim_token = uuid4()
     with pytest.raises(WorkflowExecutionLeaseLostError):

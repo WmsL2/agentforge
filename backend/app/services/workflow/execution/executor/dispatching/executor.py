@@ -16,10 +16,12 @@ class DispatchingNodeExecutor:
         deterministic_executor: NodeExecutor,
         agent_executor: NodeExecutor,
         approval_executor: NodeExecutor,
+        knowledge_executor: NodeExecutor | None = None,
     ) -> None:
         self._deterministic_executor = deterministic_executor
         self._agent_executor = agent_executor
         self._approval_executor = approval_executor
+        self._knowledge_executor = knowledge_executor
 
     async def execute(
         self,
@@ -34,6 +36,10 @@ class DispatchingNodeExecutor:
             return await self._deterministic_executor.execute(node, context)
         if node.kind is WorkflowNodeKind.AGENT:
             return await self._agent_executor.execute(node, context)
+        if node.kind is WorkflowNodeKind.KNOWLEDGE:
+            if self._knowledge_executor is None:
+                raise RuntimeError("KNOWLEDGE workflow nodes are not configured in this runtime.")
+            return await self._knowledge_executor.execute(node, context)
         if node.kind is WorkflowNodeKind.APPROVAL:
             return await self._approval_executor.execute(node, context)
         raise RuntimeError(f"Unsupported workflow node kind: {node.kind}")

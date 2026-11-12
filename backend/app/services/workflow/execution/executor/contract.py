@@ -40,6 +40,8 @@ class NodeExecutionContext:
     workflow_input: Mapping[str, Any]
     upstream_outputs: Mapping[str, Any]
     node_outputs: Mapping[str, Any]
+    workspace_id: UUID | None = None
+    actor_user_id: UUID | None = None
     step_id: UUID | None = None
 
     def __post_init__(self) -> None:

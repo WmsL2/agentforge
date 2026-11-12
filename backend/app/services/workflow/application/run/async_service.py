@@ -76,6 +76,8 @@ class WorkflowAsyncRunService:
             id=uuid4(),
             workflow_id=definition.id,
             workflow_revision=definition.revision,
+            workspace_id=workflow_row.workspace_id,
+            actor_user_id=actor_user_id,
             input=deepcopy(input_data),
         )
         snapshot = deepcopy(serialize_workflow_graph(definition))

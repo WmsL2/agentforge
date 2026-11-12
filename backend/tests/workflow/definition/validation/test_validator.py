@@ -56,6 +56,119 @@ def agent_workflow(config: dict[str, object]) -> WorkflowDefinition:
     )
 
 
+def knowledge_workflow(config: dict[str, object]) -> WorkflowDefinition:
+    return workflow(
+        (
+            node("start", WorkflowNodeKind.START),
+            WorkflowNode(id="knowledge", kind=WorkflowNodeKind.KNOWLEDGE, config=config),
+            node("end", WorkflowNodeKind.END),
+        ),
+        (
+            edge("start-knowledge", "start", "knowledge"),
+            edge("knowledge-end", "knowledge", "end"),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "knowledge_base_id": str(uuid4()),
+            "query_source": "literal",
+            "query": "What is documented?",
+        },
+        {
+            "knowledge_base_id": str(uuid4()),
+            "query_source": "workflow_input",
+            "input_key": "question",
+            "top_k": 5,
+        },
+    ],
+)
+def test_valid_knowledge_config(config: dict[str, object]) -> None:
+    assert WorkflowValidator().validate(knowledge_workflow(config)).is_valid
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        (
+            {"query_source": "literal", "query": "q"},
+            WorkflowValidationCode.KNOWLEDGE_BASE_ID_REQUIRED,
+        ),
+        (
+            {"knowledge_base_id": "bad", "query_source": "literal", "query": "q"},
+            WorkflowValidationCode.KNOWLEDGE_BASE_ID_INVALID,
+        ),
+        (
+            {"knowledge_base_id": str(uuid4()), "query_source": "literal"},
+            WorkflowValidationCode.KNOWLEDGE_QUERY_REQUIRED,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "literal",
+                "query": " ",
+            },
+            WorkflowValidationCode.KNOWLEDGE_QUERY_INVALID,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "literal",
+                "query": "x" * 2001,
+            },
+            WorkflowValidationCode.KNOWLEDGE_QUERY_INVALID,
+        ),
+        (
+            {"knowledge_base_id": str(uuid4()), "query_source": "workflow_input"},
+            WorkflowValidationCode.KNOWLEDGE_INPUT_KEY_REQUIRED,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "workflow_input",
+                "input_key": "question",
+                "top_k": 6,
+            },
+            WorkflowValidationCode.KNOWLEDGE_TOP_K_INVALID,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "literal",
+                "query": "q",
+                "actor_user_id": str(uuid4()),
+            },
+            WorkflowValidationCode.KNOWLEDGE_CONFIG_UNKNOWN_FIELD,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "workflow_input",
+                "input_key": "question",
+                "workspace_id": str(uuid4()),
+            },
+            WorkflowValidationCode.KNOWLEDGE_CONFIG_UNKNOWN_FIELD,
+        ),
+        (
+            {
+                "knowledge_base_id": str(uuid4()),
+                "query_source": "literal",
+                "query": "q",
+                "input_key": "question",
+            },
+            WorkflowValidationCode.KNOWLEDGE_CONFIG_UNKNOWN_FIELD,
+        ),
+    ],
+)
+def test_invalid_knowledge_config(
+    config: dict[str, object], expected: WorkflowValidationCode
+) -> None:
+    assert expected in codes(knowledge_workflow(config))
+
+
 def test_valid_linear_workflow():
     result = WorkflowValidator().validate(linear_workflow())
 
