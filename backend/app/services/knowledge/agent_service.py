@@ -92,6 +92,32 @@ class KnowledgeAgentService:
                 code="KNOWLEDGE_AGENT_MODEL_NOT_CONFIGURED",
             )
 
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                return await self._ask_within_timeout(
+                    workspace_id,
+                    knowledge_base_id,
+                    actor_user_id,
+                    question,
+                )
+        except TimeoutError:
+            raise ExternalServiceError(
+                message="Knowledge Agent timed out",
+                code="KNOWLEDGE_AGENT_TIMEOUT",
+            ) from None
+        except AgentRuntimeError:
+            raise ExternalServiceError(
+                message="Knowledge Agent execution failed",
+                code="KNOWLEDGE_AGENT_EXECUTION_FAILED",
+            ) from None
+
+    async def _ask_within_timeout(
+        self,
+        workspace_id: UUID,
+        knowledge_base_id: UUID,
+        actor_user_id: UUID,
+        question: str,
+    ) -> KnowledgeAgentResult:
         await self._retrieval_service.authorize_scope(
             workspace_id,
             knowledge_base_id,
@@ -115,49 +141,59 @@ class KnowledgeAgentService:
         runner = self._runner_factory((tool,), self._maximum_tool_calls * 2 + 2)
 
         try:
-            try:
-                async with asyncio.timeout(self._timeout_seconds):
-                    result = await runner.run(
-                        AgentExecutionRequest(
-                            instruction=KNOWLEDGE_AGENT_INSTRUCTION,
-                            input=question,
-                        )
-                    )
-            except TimeoutError:
+            result = await runner.run(
+                AgentExecutionRequest(
+                    instruction=KNOWLEDGE_AGENT_INSTRUCTION,
+                    input=question,
+                )
+            )
+
+            items = _deduplicate_evidence(evidence.snapshot())
+            if not items:
+                return KnowledgeAgentResult(
+                    answer=(
+                        "The knowledge base does not contain supporting information "
+                        "for this question."
+                    ),
+                    status="no_evidence",
+                    sources=[],
+                )
+
+            answer = _extract_answer_text(result.output)
+            if answer is None:
                 raise ExternalServiceError(
-                    message="Knowledge Agent timed out",
-                    code="KNOWLEDGE_AGENT_TIMEOUT",
-                ) from None
-            except AgentRuntimeError:
-                raise ExternalServiceError(
-                    message="Knowledge Agent execution failed",
-                    code="KNOWLEDGE_AGENT_EXECUTION_FAILED",
-                ) from None
+                    message="Knowledge Agent returned an invalid response",
+                    code="KNOWLEDGE_AGENT_INVALID_RESPONSE",
+                )
+            return KnowledgeAgentResult(
+                answer=answer,
+                status="answered",
+                sources=[_source(item) for item in items],
+            )
         finally:
             closer = getattr(runner, "aclose", None)
             if closer is not None:
                 with suppress(Exception):
                     await closer()
 
-        items = _deduplicate_evidence(evidence.snapshot())
-        if not items:
-            return KnowledgeAgentResult(
-                answer="The knowledge base does not contain supporting information for this question.",
-                status="no_evidence",
-                sources=[],
-            )
 
-        answer = result.output.strip() if isinstance(result.output, str) else ""
-        if not answer:
-            raise ExternalServiceError(
-                message="Knowledge Agent returned an invalid response",
-                code="KNOWLEDGE_AGENT_INVALID_RESPONSE",
-            )
-        return KnowledgeAgentResult(
-            answer=answer,
-            status="answered",
-            sources=[_source(item) for item in items],
-        )
+def _extract_answer_text(output: object) -> str | None:
+    """Extract answer text from a string or standard text content blocks only."""
+    if isinstance(output, str):
+        answer = output.strip()
+        return answer or None
+    if not isinstance(output, list):
+        return None
+
+    text_parts: list[str] = []
+    for block in output:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        text = block.get("text")
+        if isinstance(text, str):
+            text_parts.append(text)
+    answer = "".join(text_parts).strip()
+    return answer or None
 
 
 def _deduplicate_evidence(items: tuple[KnowledgeSearchItem, ...]) -> list[KnowledgeSearchItem]:

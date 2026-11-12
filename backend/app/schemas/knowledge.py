@@ -127,7 +127,7 @@ class KnowledgeSearchResponse(BaseSchema):
 class KnowledgeAskRequest(BaseSchema):
     model_config = ConfigDict(extra="forbid")
 
-    question: str = Field(min_length=1, max_length=4000)
+    question: str = Field(min_length=1, max_length=2000)
 
 
 class KnowledgeAgentSourceRead(BaseSchema):

@@ -51,7 +51,13 @@ async def test_ask_returns_no_store_and_backend_sources() -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "payload",
-    [{}, {"question": ""}, {"question": "   "}, {"question": "q", "workspace_id": "forged"}],
+    [
+        {},
+        {"question": ""},
+        {"question": "   "},
+        {"question": "q" * 2001},
+        {"question": "q", "workspace_id": "forged"},
+    ],
 )
 async def test_ask_rejects_invalid_and_forged_scope_payload(payload) -> None:
     service = SimpleNamespace(ask=AsyncMock())
@@ -65,6 +71,33 @@ async def test_ask_rejects_invalid_and_forged_scope_payload(payload) -> None:
         app.dependency_overrides.clear()
     assert response.status_code == 422
     service.ask.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_ask_accepts_question_at_2000_character_limit() -> None:
+    user = SimpleNamespace(id=uuid4())
+    question = "q" * 2000
+    service = SimpleNamespace(
+        ask=AsyncMock(
+            return_value=KnowledgeAgentResult(
+                answer="no evidence",
+                status="no_evidence",
+                sources=[],
+            )
+        )
+    )
+    workspace_id, base_id = uuid4(), uuid4()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_knowledge_agent_service] = lambda: service
+    url = f"/api/v1/workspaces/{workspace_id}/knowledge-bases/{base_id}/ask"
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(url, json={"question": question})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    service.ask.assert_awaited_once_with(workspace_id, base_id, user.id, question)
 
 
 @pytest.mark.anyio
@@ -109,3 +142,4 @@ def test_ask_openapi_request_exposes_only_question() -> None:
     ]["$ref"]
     request_schema = schema["components"]["schemas"][request_ref.rsplit("/", 1)[-1]]
     assert set(request_schema["properties"]) == {"question"}
+    assert request_schema["properties"]["question"]["maxLength"] == 2000
