@@ -111,6 +111,8 @@ async def test_execute_creates_snapshot_executes_same_run_and_persists_terminal_
         3,
         {"request": "hello"},
     )
+    assert created_run.workspace_id == row.workspace_id
+    assert created_run.actor_user_id == owner
     assert snapshot == row.definition
     assert created_run.status.value == "completed"
     assert events[:3] == ["create", "commit", "execute"]

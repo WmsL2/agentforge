@@ -86,3 +86,27 @@ def test_dispatches_approval_nodes_to_approval_executor() -> None:
     assert deterministic.calls == []
     assert agent.calls == []
     assert approval.calls == [(workflow_node, execution_context)]
+
+
+def test_dispatches_knowledge_nodes_without_breaking_legacy_constructor() -> None:
+    deterministic = SpyExecutor("deterministic")
+    agent = SpyExecutor("agent")
+    approval = SpyExecutor("approval")
+    knowledge = SpyExecutor("knowledge")
+    execution_context = context()
+    workflow_node = WorkflowNode(id="knowledge", kind=WorkflowNodeKind.KNOWLEDGE)
+
+    result = asyncio.run(
+        DispatchingNodeExecutor(
+            deterministic, agent, approval, knowledge_executor=knowledge
+        ).execute(workflow_node, execution_context)
+    )
+
+    assert result.output == "knowledge"
+    assert knowledge.calls == [(workflow_node, execution_context)]
+    with pytest.raises(RuntimeError, match="not configured"):
+        asyncio.run(
+            DispatchingNodeExecutor(deterministic, agent, approval).execute(
+                workflow_node, execution_context
+            )
+        )

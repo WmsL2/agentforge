@@ -228,6 +228,8 @@ class WorkflowEngine:
                 workflow_input=workflow_input,
                 upstream_outputs=upstream_outputs,
                 node_outputs=run.node_outputs,
+                workspace_id=run.workspace_id,
+                actor_user_id=run.actor_user_id,
             )
             observation_context = await self._start_observation(run.id, ready_node, context)
             context = replace(context, step_id=observation_context.step_id)

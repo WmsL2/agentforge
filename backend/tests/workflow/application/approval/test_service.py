@@ -48,13 +48,21 @@ def rows(status="pending"):
         uuid4(),
         uuid4(),
     )
+    workspace_id = uuid4()
+    actor_user_id = uuid4()
     workflow = SimpleNamespace(
-        id=workflow_id, name="Current", description=None, definition=graph("new"), revision=2
+        id=workflow_id,
+        workspace_id=workspace_id,
+        name="Current",
+        description=None,
+        definition=graph("new"),
+        revision=2,
     )
     run = SimpleNamespace(
         id=run_id,
         workflow_id=workflow_id,
         workflow_revision=1,
+        actor_user_id=actor_user_id,
         definition_snapshot=graph("old"),
         status="paused",
         input={},

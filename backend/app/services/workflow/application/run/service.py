@@ -66,6 +66,8 @@ class WorkflowRunService:
             id=uuid4(),
             workflow_id=definition.id,
             workflow_revision=definition.revision,
+            workspace_id=workflow_row.workspace_id,
+            actor_user_id=actor_user_id,
             input=dict(input_data),
         )
         db_run = await run_repo.create_workflow_run(

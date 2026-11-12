@@ -11,12 +11,18 @@ from app.services.workflow.execution.executor.contract import (
 )
 from app.services.workflow.execution.executor.dispatching import DispatchingNodeExecutor
 from app.services.workflow.execution.executor.implementations import DeterministicNodeExecutor
+from app.services.workflow.execution.executor.knowledge import (
+    KnowledgeNodeExecutionError,
+    KnowledgeNodeExecutor,
+)
 
 __all__ = [
     "AgentNodeExecutor",
     "ApprovalNodeExecutor",
     "DeterministicNodeExecutor",
     "DispatchingNodeExecutor",
+    "KnowledgeNodeExecutionError",
+    "KnowledgeNodeExecutor",
     "NodeExecutionContext",
     "NodeExecutionInterrupt",
     "NodeExecutionOutcome",

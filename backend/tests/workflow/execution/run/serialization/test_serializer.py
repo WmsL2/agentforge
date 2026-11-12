@@ -79,11 +79,15 @@ def test_deserialize_run_reconstructs_terminal_state_with_fresh_dicts() -> None:
     output_payload = {"end": {"value": 10}}
     run_id = uuid4()
     workflow_id = uuid4()
+    workspace_id = uuid4()
+    actor_user_id = uuid4()
 
     run = deserialize_workflow_run(
         run_id=run_id,
         workflow_id=workflow_id,
         workflow_revision=3,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
         status="completed",
         input=input_payload,
         node_outputs=outputs_payload,
@@ -99,6 +103,7 @@ def test_deserialize_run_reconstructs_terminal_state_with_fresh_dicts() -> None:
 
     assert run.status is WorkflowRunStatus.COMPLETED
     assert (run.id, run.workflow_id, run.workflow_revision) == (run_id, workflow_id, 3)
+    assert (run.workspace_id, run.actor_user_id) == (workspace_id, actor_user_id)
     assert input_payload == {"request": "hello"}
     assert outputs_payload == {"value": 10}
     assert output_payload == {"end": {"value": 10}}

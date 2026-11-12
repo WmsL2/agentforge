@@ -52,6 +52,7 @@ from app.services.workflow import (
     ApprovalNodeExecutor,
     DeterministicNodeExecutor,
     DispatchingNodeExecutor,
+    KnowledgeNodeExecutor,
     WorkflowEngine,
     WorkflowExecutionObserver,
     WorkflowApprovalService,
@@ -278,15 +279,18 @@ LangGraphRunnerDep = Annotated[AgentRunner, Depends(get_langgraph_agent_runner)]
 def get_workflow_engine(
     langgraph_runner: LangGraphRunnerDep,
     observer: WorkflowExecutionObserverDep,
+    knowledge_retrieval_service: KnowledgeRetrievalSvc,
 ) -> WorkflowEngine:
     """Compose the production workflow engine and its node executors."""
     deterministic_executor = DeterministicNodeExecutor()
     agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner}, observer=observer)
     approval_executor = ApprovalNodeExecutor(observer=observer)
+    knowledge_executor = KnowledgeNodeExecutor(knowledge_retrieval_service)
     dispatching_executor = DispatchingNodeExecutor(
         deterministic_executor=deterministic_executor,
         agent_executor=agent_executor,
         approval_executor=approval_executor,
+        knowledge_executor=knowledge_executor,
     )
     return WorkflowEngine(dispatching_executor, observer=observer)
 

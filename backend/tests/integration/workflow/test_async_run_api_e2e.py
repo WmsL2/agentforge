@@ -39,7 +39,7 @@ from app.services.workspace.domain import WorkspaceRole
 from app.worker.celery_app import celery_app
 
 DATABASE = "agentforge_v09_atomic5_verify"
-HEAD = "0045_create_knowledge_vector_index"
+HEAD = "0046_add_workflow_run_actor_identity"
 BACKEND_ROOT = Path(__file__).parents[3]
 
 

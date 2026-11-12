@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
+from uuid import UUID
 
 from app.services.workflow.definition.model.domain import (
     WorkflowDefinition,
@@ -44,6 +45,16 @@ class WorkflowValidationCode(str, Enum):  # noqa: UP042
     AGENT_INSTRUCTION_INVALID = "agent_instruction_invalid"
     AGENT_MODEL_INVALID = "agent_model_invalid"
     AGENT_CONFIG_UNKNOWN_FIELD = "agent_config_unknown_field"
+    KNOWLEDGE_BASE_ID_REQUIRED = "knowledge_base_id_required"
+    KNOWLEDGE_BASE_ID_INVALID = "knowledge_base_id_invalid"
+    KNOWLEDGE_QUERY_SOURCE_REQUIRED = "knowledge_query_source_required"
+    KNOWLEDGE_QUERY_SOURCE_INVALID = "knowledge_query_source_invalid"
+    KNOWLEDGE_QUERY_REQUIRED = "knowledge_query_required"
+    KNOWLEDGE_QUERY_INVALID = "knowledge_query_invalid"
+    KNOWLEDGE_INPUT_KEY_REQUIRED = "knowledge_input_key_required"
+    KNOWLEDGE_INPUT_KEY_INVALID = "knowledge_input_key_invalid"
+    KNOWLEDGE_TOP_K_INVALID = "knowledge_top_k_invalid"
+    KNOWLEDGE_CONFIG_UNKNOWN_FIELD = "knowledge_config_unknown_field"
     APPROVAL_PROMPT_REQUIRED = "approval_prompt_required"
     APPROVAL_PROMPT_INVALID = "approval_prompt_invalid"
     APPROVAL_CONFIG_UNKNOWN_FIELD = "approval_config_unknown_field"
@@ -72,6 +83,7 @@ class WorkflowValidationResult:
 
 _AGENT_CONFIG_FIELDS = frozenset({"runner", "instruction", "model"})
 _APPROVAL_CONFIG_FIELDS = frozenset({"prompt"})
+_KNOWLEDGE_COMMON_FIELDS = frozenset({"knowledge_base_id", "query_source", "top_k"})
 
 
 def _validate_agent_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue, ...]:
@@ -174,6 +186,116 @@ def _validate_approval_config(node: WorkflowNode) -> tuple[WorkflowValidationIss
     return tuple(issues)
 
 
+def _validate_knowledge_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue, ...]:
+    """Validate the mutually exclusive literal and workflow-input query contracts."""
+    if node.kind is not WorkflowNodeKind.KNOWLEDGE:
+        return ()
+
+    issues: list[WorkflowValidationIssue] = []
+
+    knowledge_base_id = node.config.get("knowledge_base_id")
+    if knowledge_base_id is None:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.KNOWLEDGE_BASE_ID_REQUIRED,
+                "KNOWLEDGE config field 'knowledge_base_id' is required.",
+                node_id=node.id,
+            )
+        )
+    else:
+        try:
+            if not isinstance(knowledge_base_id, str):
+                raise ValueError
+            UUID(knowledge_base_id)
+        except (TypeError, ValueError):
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_BASE_ID_INVALID,
+                    "KNOWLEDGE config field 'knowledge_base_id' must be a UUID string.",
+                    node_id=node.id,
+                )
+            )
+
+    query_source = node.config.get("query_source")
+    if query_source is None:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.KNOWLEDGE_QUERY_SOURCE_REQUIRED,
+                "KNOWLEDGE config field 'query_source' is required.",
+                node_id=node.id,
+            )
+        )
+        allowed_fields = _KNOWLEDGE_COMMON_FIELDS
+    elif query_source not in {"literal", "workflow_input"}:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.KNOWLEDGE_QUERY_SOURCE_INVALID,
+                "KNOWLEDGE config field 'query_source' must be 'literal' or 'workflow_input'.",
+                node_id=node.id,
+            )
+        )
+        allowed_fields = _KNOWLEDGE_COMMON_FIELDS
+    elif query_source == "literal":
+        allowed_fields = _KNOWLEDGE_COMMON_FIELDS | {"query"}
+        query = node.config.get("query")
+        if query is None:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_QUERY_REQUIRED,
+                    "KNOWLEDGE literal config field 'query' is required.",
+                    node_id=node.id,
+                )
+            )
+        elif not isinstance(query, str) or not query.strip() or len(query.strip()) > 2000:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_QUERY_INVALID,
+                    "KNOWLEDGE literal query must contain between 1 and 2000 characters.",
+                    node_id=node.id,
+                )
+            )
+    else:
+        allowed_fields = _KNOWLEDGE_COMMON_FIELDS | {"input_key"}
+        input_key = node.config.get("input_key")
+        if input_key is None:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_INPUT_KEY_REQUIRED,
+                    "KNOWLEDGE workflow_input config field 'input_key' is required.",
+                    node_id=node.id,
+                )
+            )
+        elif not isinstance(input_key, str) or not input_key.strip():
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_INPUT_KEY_INVALID,
+                    "KNOWLEDGE input_key must be a non-blank string.",
+                    node_id=node.id,
+                )
+            )
+
+    top_k = node.config.get("top_k", 5)
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 5:
+        issues.append(
+            WorkflowValidationIssue(
+                WorkflowValidationCode.KNOWLEDGE_TOP_K_INVALID,
+                "KNOWLEDGE top_k must be an integer between 1 and 5.",
+                node_id=node.id,
+            )
+        )
+
+    for field in node.config:
+        if field not in allowed_fields:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.KNOWLEDGE_CONFIG_UNKNOWN_FIELD,
+                    f"KNOWLEDGE config field {field!r} is not supported.",
+                    node_id=node.id,
+                )
+            )
+    return tuple(issues)
+
+
 class WorkflowValidator:
     """Validate workflow definitions without mutating their domain representation."""
 
@@ -209,6 +331,7 @@ class WorkflowValidator:
 
         for node in definition.nodes:
             issues.extend(_validate_agent_config(node))
+            issues.extend(_validate_knowledge_config(node))
             issues.extend(_validate_approval_config(node))
 
         seen_edge_ids: set[str] = set()

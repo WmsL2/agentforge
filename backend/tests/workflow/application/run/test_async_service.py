@@ -101,6 +101,8 @@ async def test_authorize_validate_commit_then_dispatch_pending_snapshot() -> Non
     snapshot = create.await_args.kwargs["definition_snapshot"]
     assert run.status.value == "pending"
     assert run.workflow_revision == 7
+    assert run.workspace_id == row.workspace_id
+    assert run.actor_user_id == actor_id
     assert snapshot == row.definition
     assert run.started_at is run.finished_at is run.output is run.error is None
     assert run.node_outputs == {}

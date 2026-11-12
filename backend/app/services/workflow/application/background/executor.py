@@ -5,6 +5,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db.models.workflow.definition.model import Workflow as DBWorkflow
 from app.repositories.workflow.checkpoint import repository as checkpoint_repo
 from app.repositories.workflow.run import repository as run_repo
 from app.services.workflow.application.background.claim_service import WorkflowExecutionClaimService
@@ -130,10 +131,15 @@ class BackgroundRunExecutor:
                 raise WorkflowExecutionLeaseLostError(
                     "Lease expired before execution state was loaded."
                 )
+            workflow = await db.get(DBWorkflow, row.workflow_id)
+            if workflow is None:
+                raise BackgroundRunStateError("Claimed run workflow is missing.")
             run = deserialize_workflow_run(
                 run_id=row.id,
                 workflow_id=row.workflow_id,
                 workflow_revision=row.workflow_revision,
+                workspace_id=workflow.workspace_id,
+                actor_user_id=row.actor_user_id,
                 status=row.status,
                 input=row.input,
                 node_outputs=row.node_outputs,
