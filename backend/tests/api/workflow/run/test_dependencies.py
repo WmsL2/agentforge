@@ -88,7 +88,9 @@ def _run(input: dict[str, object]) -> WorkflowRun:
 
 
 def _workflow_engine(runner, observer):
-    return get_workflow_engine(runner, observer, SimpleNamespace(search=AsyncMock()))
+    return get_workflow_engine(
+        runner, observer, SimpleNamespace(search=AsyncMock()), ToolRegistry()
+    )
 
 
 def _registry():

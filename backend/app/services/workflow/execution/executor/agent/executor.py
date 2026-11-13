@@ -5,10 +5,14 @@ from contextlib import suppress
 
 from app.services.agent_runtime import (
     AgentExecutionRequest,
+    AgentExecutionResult,
     AgentRunner,
     AgentRuntimeError,
 )
 from app.services.workflow.definition.model.domain import WorkflowNode, WorkflowNodeKind
+from app.services.workflow.execution.executor.agent.knowledge import (
+    WorkflowAgentKnowledgeComposition,
+)
 from app.services.workflow.execution.executor.contract import (
     NodeExecutionContext,
     NodeExecutionResult,
@@ -29,9 +33,11 @@ class AgentNodeExecutor:
         runners: Mapping[str, AgentRunner],
         *,
         observer: WorkflowExecutionObserver | None = None,
+        knowledge: WorkflowAgentKnowledgeComposition | None = None,
     ) -> None:
         self._runners = dict(runners)
         self._observer = observer or NoOpWorkflowExecutionObserver()
+        self._knowledge = knowledge
 
     async def execute(
         self,
@@ -72,7 +78,17 @@ class AgentNodeExecutor:
                     observation, kind=TraceEventKind.AGENT_STARTED, payload=base_payload
                 )
         try:
-            agent_result = await runner.run(request)
+            if "knowledge_base_id" in node.config:
+                if self._knowledge is None:
+                    raise AgentRuntimeError(
+                        "knowledge_agent_not_configured", "Knowledge Agent is unavailable."
+                    )
+                output = await self._knowledge.run(
+                    node.config["knowledge_base_id"], request, context
+                )
+                agent_result = AgentExecutionResult(output=output)
+            else:
+                agent_result = await runner.run(request)
         except Exception as error:
             if observation is not None:
                 with suppress(Exception):
