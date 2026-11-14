@@ -204,10 +204,27 @@ def test_valid_branching_dag():
             "instruction": " Analyze input. ",
             "model": "gpt-5-mini",
         },
+        {
+            "runner": "langgraph",
+            "instruction": "Use evidence.",
+            "knowledge_base_id": str(uuid4()),
+        },
     ],
 )
 def test_valid_agent_config(config: dict[str, object]):
     assert WorkflowValidator().validate(agent_workflow(config)).is_valid
+
+
+@pytest.mark.parametrize("value", [None, 123, "", "not-a-uuid", uuid4()])
+def test_agent_knowledge_base_id_must_be_uuid_string(value: object):
+    config = {"runner": "langgraph", "instruction": "Use evidence", "knowledge_base_id": value}
+    assert WorkflowValidationCode.AGENT_KNOWLEDGE_BASE_ID_INVALID in codes(agent_workflow(config))
+
+
+@pytest.mark.parametrize("field", ["workspace_id", "actor_user_id", "other"])
+def test_agent_rejects_identity_and_unknown_config_fields(field: str):
+    config = {"runner": "langgraph", "instruction": "Use evidence", field: str(uuid4())}
+    assert WorkflowValidationCode.AGENT_CONFIG_UNKNOWN_FIELD in codes(agent_workflow(config))
 
 
 @pytest.mark.parametrize(

@@ -44,6 +44,7 @@ class WorkflowValidationCode(str, Enum):  # noqa: UP042
     AGENT_INSTRUCTION_REQUIRED = "agent_instruction_required"
     AGENT_INSTRUCTION_INVALID = "agent_instruction_invalid"
     AGENT_MODEL_INVALID = "agent_model_invalid"
+    AGENT_KNOWLEDGE_BASE_ID_INVALID = "agent_knowledge_base_id_invalid"
     AGENT_CONFIG_UNKNOWN_FIELD = "agent_config_unknown_field"
     KNOWLEDGE_BASE_ID_REQUIRED = "knowledge_base_id_required"
     KNOWLEDGE_BASE_ID_INVALID = "knowledge_base_id_invalid"
@@ -81,7 +82,7 @@ class WorkflowValidationResult:
         return not self.issues
 
 
-_AGENT_CONFIG_FIELDS = frozenset({"runner", "instruction", "model"})
+_AGENT_CONFIG_FIELDS = frozenset({"runner", "instruction", "model", "knowledge_base_id"})
 _APPROVAL_CONFIG_FIELDS = frozenset({"prompt"})
 _KNOWLEDGE_COMMON_FIELDS = frozenset({"knowledge_base_id", "query_source", "top_k"})
 
@@ -137,6 +138,21 @@ def _validate_agent_config(node: WorkflowNode) -> tuple[WorkflowValidationIssue,
                 node_id=node.id,
             )
         )
+
+    if "knowledge_base_id" in node.config:
+        value = node.config["knowledge_base_id"]
+        try:
+            if not isinstance(value, str):
+                raise ValueError
+            UUID(value)
+        except ValueError:
+            issues.append(
+                WorkflowValidationIssue(
+                    WorkflowValidationCode.AGENT_KNOWLEDGE_BASE_ID_INVALID,
+                    "AGENT knowledge_base_id must be a UUID string.",
+                    node_id=node.id,
+                )
+            )
 
     for field in node.config:
         if field not in _AGENT_CONFIG_FIELDS:

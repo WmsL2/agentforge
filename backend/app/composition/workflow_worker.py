@@ -30,6 +30,9 @@ from app.services.workflow.application.observability import (
     SQLAlchemyWorkflowExecutionObserver,
     WorkflowToolExecutionObserver,
 )
+from app.services.workflow.execution.executor.agent.knowledge import (
+    WorkflowAgentKnowledgeComposition,
+)
 
 
 @asynccontextmanager
@@ -81,7 +84,20 @@ async def open_workflow_worker(
             )
             node_executor = DispatchingNodeExecutor(
                 deterministic_executor=DeterministicNodeExecutor(),
-                agent_executor=AgentNodeExecutor({"langgraph": runner}, observer=observer),
+                agent_executor=AgentNodeExecutor(
+                    {"langgraph": runner},
+                    observer=observer,
+                    knowledge=WorkflowAgentKnowledgeComposition(
+                        retrieval_service,
+                        registry,
+                        lambda tools, limit: LangGraphAgentRunner(
+                            tools=tools, recursion_limit=limit
+                        ),
+                        tool_observer=WorkflowToolExecutionObserver(observer),
+                        timeout_seconds=worker_settings.KNOWLEDGE_AGENT_TIMEOUT_SECONDS,
+                        maximum_calls=worker_settings.KNOWLEDGE_AGENT_MAX_TOOL_CALLS,
+                    ),
+                ),
                 approval_executor=ApprovalNodeExecutor(observer=observer),
                 knowledge_executor=KnowledgeNodeExecutor(retrieval_service),
             )

@@ -67,6 +67,9 @@ from app.services.workflow.application.observability import (
     SQLAlchemyWorkflowExecutionObserver,
     WorkflowToolExecutionObserver,
 )
+from app.services.workflow.execution.executor.agent.knowledge import (
+    WorkflowAgentKnowledgeComposition,
+)
 from app.services.agent_runtime import AgentRunner
 from app.services.agent_runtime.runner.implementations import (
     LangGraphAgentRunner,
@@ -280,10 +283,20 @@ def get_workflow_engine(
     langgraph_runner: LangGraphRunnerDep,
     observer: WorkflowExecutionObserverDep,
     knowledge_retrieval_service: KnowledgeRetrievalSvc,
+    registry: ToolRegistryDep,
 ) -> WorkflowEngine:
     """Compose the production workflow engine and its node executors."""
     deterministic_executor = DeterministicNodeExecutor()
-    agent_executor = AgentNodeExecutor({"langgraph": langgraph_runner}, observer=observer)
+    agent_executor = AgentNodeExecutor(
+        {"langgraph": langgraph_runner},
+        observer=observer,
+        knowledge=WorkflowAgentKnowledgeComposition(
+            knowledge_retrieval_service,
+            registry,
+            lambda tools, limit: LangGraphAgentRunner(tools=tools, recursion_limit=limit),
+            tool_observer=WorkflowToolExecutionObserver(observer),
+        ),
+    )
     approval_executor = ApprovalNodeExecutor(observer=observer)
     knowledge_executor = KnowledgeNodeExecutor(knowledge_retrieval_service)
     dispatching_executor = DispatchingNodeExecutor(
