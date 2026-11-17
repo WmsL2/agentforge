@@ -134,6 +134,21 @@ class KnowledgeRetrievalService:
         query_vector = await self._embed_query(normalized_query)
         try:
             async with self._session_factory() as db, db.begin():
+                # Embedding may outlive a membership or base deletion. Recheck in
+                # the same transaction that reads the matching chunks.
+                authorization = WorkspaceAuthorizationService(db)
+                await authorization.require_permission(
+                    workspace_id,
+                    actor_user_id,
+                    WorkspacePermission.KNOWLEDGE_READ,
+                )
+                knowledge_base = await knowledge_repo.get_by_workspace_and_id(
+                    db,
+                    workspace_id=workspace_id,
+                    knowledge_base_id=knowledge_base_id,
+                )
+                if knowledge_base is None:
+                    raise NotFoundError(message="Knowledge base not found")
                 rows = await retrieval_repo.search_active_chunks(
                     db,
                     workspace_id=workspace_id,

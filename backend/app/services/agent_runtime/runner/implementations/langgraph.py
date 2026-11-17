@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, Protocol
 
+import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
@@ -80,6 +81,17 @@ class LangGraphAgentRunner:
             temperature=settings.AI_TEMPERATURE,
             api_key=settings.LLM_API_KEY,
             base_url=settings.LLM_BASE_URL or None,
+        )
+
+    @staticmethod
+    def create_isolated_model(model_name: str) -> _AsyncChatModel:
+        """Give a short-lived knowledge runner an owned, closable HTTP client."""
+        return ChatOpenAI(
+            model=model_name,
+            temperature=settings.AI_TEMPERATURE,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL or None,
+            http_async_client=httpx.AsyncClient(),
         )
 
     async def _model_node(self, state: _LangGraphAgentState) -> dict[str, Any]:

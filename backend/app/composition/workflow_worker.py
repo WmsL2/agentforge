@@ -91,7 +91,9 @@ async def open_workflow_worker(
                         retrieval_service,
                         registry,
                         lambda tools, limit: LangGraphAgentRunner(
-                            tools=tools, recursion_limit=limit
+                            model_factory=LangGraphAgentRunner.create_isolated_model,
+                            tools=tools,
+                            recursion_limit=limit,
                         ),
                         tool_observer=WorkflowToolExecutionObserver(observer),
                         timeout_seconds=worker_settings.KNOWLEDGE_AGENT_TIMEOUT_SECONDS,

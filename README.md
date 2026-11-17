@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。此版本线的 Backend、Frontend 与运行时展示元数据统一为 v0.10.0；版本对齐时上一正式 GitHub Release 为 v0.9.0。元数据本身不代表已经创建 Git tag 或 GitHub Release。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。当前开发线的 Backend、Frontend 与运行时展示元数据统一为 v0.11.0。元数据本身不代表已经创建 Git tag 或 GitHub Release；正式发布状态以仓库 Tag 和 GitHub Release 为准。
 
 ---
 
