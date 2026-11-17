@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 from collections.abc import Callable, Sequence
@@ -144,19 +145,30 @@ class LangGraphAgentRunner:
         return AgentExecutionResult(output=result["output"])
 
     async def aclose(self) -> None:
-        """Close request-scoped model clients created by this runner, when supported."""
+        """Try each distinct client; retain failed or interrupted models for an explicit retry."""
         seen: set[int] = set()
-        for model in self._created_models:
+        models = self._created_models
+        self._created_models = []
+        errors: list[Exception] = []
+        for index, model in enumerate(models):
             if id(model) in seen:
                 continue
             seen.add(id(model))
-            closer = getattr(model, "aclose", None)
-            if closer is None:
-                root_client = getattr(model, "root_async_client", None)
-                closer = getattr(root_client, "close", None)
-            if closer is None:
-                continue
-            result = closer()
-            if inspect.isawaitable(result):
-                await result
-        self._created_models.clear()
+            try:
+                closer = getattr(model, "aclose", None)
+                if closer is None:
+                    root_client = getattr(model, "root_async_client", None)
+                    closer = getattr(root_client, "close", None)
+                if closer is None:
+                    continue
+                result = closer()
+                if inspect.isawaitable(result):
+                    await result
+            except asyncio.CancelledError:
+                self._created_models.extend(models[index:])
+                raise
+            except Exception as error:
+                self._created_models.append(model)
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("Model client cleanup failed", errors)

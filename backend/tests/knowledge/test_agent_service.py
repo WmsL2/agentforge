@@ -438,6 +438,39 @@ async def test_blocked_runner_cleanup_is_bounded(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
+async def test_execution_timeout_then_blocked_cleanup_remains_bounded(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.knowledge.agent_service.RUNNER_CLOSE_TIMEOUT_SECONDS", 0.01)
+    run_cancelled = asyncio.Event()
+    cleanup_cancelled = asyncio.Event()
+
+    class TimedOutRunner:
+        async def run(self, request) -> AgentExecutionResult:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                run_cancelled.set()
+                raise
+
+        async def aclose(self) -> None:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_cancelled.set()
+                raise
+
+    retrieval = SimpleNamespace(authorize_scope=AsyncMock(), search=AsyncMock())
+    with pytest.raises(ExternalServiceError) as error_info:
+        await asyncio.wait_for(
+            _service_with_runner(
+                retrieval, lambda tools, limit: TimedOutRunner(), timeout_seconds=0.01
+            ).ask(uuid4(), uuid4(), uuid4(), "question"),
+            timeout=0.5,
+        )
+    assert error_info.value.code == "KNOWLEDGE_AGENT_TIMEOUT"
+    assert run_cancelled.is_set() and cleanup_cancelled.is_set()
+
+
+@pytest.mark.anyio
 async def test_external_cancellation_propagates_and_closes_runner() -> None:
     runner = BlockingRunner()
     retrieval = SimpleNamespace(authorize_scope=AsyncMock(), search=AsyncMock())
