@@ -202,7 +202,11 @@ def get_knowledge_agent_service(
     """Create an isolated Knowledge Agent composition for one HTTP request."""
 
     def runner_factory(tools, recursion_limit):
-        return LangGraphAgentRunner(tools=tools, recursion_limit=recursion_limit)
+        return LangGraphAgentRunner(
+            model_factory=LangGraphAgentRunner.create_isolated_model,
+            tools=tools,
+            recursion_limit=recursion_limit,
+        )
 
     return KnowledgeAgentService(
         retrieval_service,
@@ -293,7 +297,11 @@ def get_workflow_engine(
         knowledge=WorkflowAgentKnowledgeComposition(
             knowledge_retrieval_service,
             registry,
-            lambda tools, limit: LangGraphAgentRunner(tools=tools, recursion_limit=limit),
+            lambda tools, limit: LangGraphAgentRunner(
+                model_factory=LangGraphAgentRunner.create_isolated_model,
+                tools=tools,
+                recursion_limit=limit,
+            ),
             tool_observer=WorkflowToolExecutionObserver(observer),
         ),
     )

@@ -903,6 +903,102 @@ jobs:
               raise SystemExit(1)
           PY
 
+  v011-atomic8-knowledge-lifecycle-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentforge_v011_atomic8_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentforge_v011_atomic8_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentforge_v011_atomic8_verify
+      CELERY_BROKER_URL: redis://localhost:6379/15
+      CELERY_RESULT_BACKEND: redis://localhost:6379/15
+      AGENTFORGE_RUN_POSTGRES_E2E: "1"
+      AGENTFORGE_RUN_ATOMIC8_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install frozen dependencies
+        run: uv sync --directory backend --dev --frozen
+
+      - name: Verify 0043 through 0046 and pgvector
+        run: |
+          for revision in \
+            0043_create_knowledge_bases \
+            0044_create_knowledge_documents \
+            0045_create_knowledge_vector_index \
+            0046_add_workflow_run_actor_identity; do
+            uv run --directory backend alembic upgrade "$revision"
+            uv run --directory backend alembic current | grep -F "$revision"
+          done
+          test "$(uv run --directory backend alembic current)" = "0046_add_workflow_run_actor_identity (head)"
+          psql -h localhost -U postgres -d agentforge_v011_atomic8_verify -Atc \
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'" | grep -Fx '0.8.7'
+        env:
+          PGPASSWORD: postgres
+
+      - name: Run real Knowledge lifecycle with Redis and Celery
+        run: |
+          uv run --directory backend pytest \
+            tests/integration/knowledge/test_knowledge_lifecycle_e2e.py \
+            -v -rs --junitxml=atomic8-knowledge-lifecycle-e2e.xml
+
+          uv run --directory backend python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("atomic8-knowledge-lifecycle-e2e.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              key: sum(int(suite.attrib.get(key, 0)) for suite in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+          print(f"Atomic 8 Knowledge lifecycle E2E JUnit counts: {counts}")
+          if (
+              counts["tests"] < 1
+              or counts["failures"] != 0
+              or counts["errors"] != 0
+              or counts["skipped"] != 0
+          ):
+              print("Atomic 8 E2E must execute without failures or skips", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
   test-frontend:
     runs-on: ubuntu-latest
 

@@ -262,3 +262,57 @@ async def test_preflight_and_model_timeout():
     with pytest.raises(AgentRuntimeError, match="timed out"):
         await executor.execute(node, context)
     assert runners[0].closed
+
+
+@pytest.mark.anyio
+async def test_blocked_workflow_runner_cleanup_is_bounded(monkeypatch):
+    monkeypatch.setattr("app.services.knowledge.agent_service.RUNNER_CLOSE_TIMEOUT_SECONDS", 0.01)
+    executor, node, context, _, _, runners, _ = setup(call_knowledge=False)
+    cleanup_cancelled = asyncio.Event()
+
+    class SlowCloseRunner(FakeRunner):
+        async def aclose(self):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_cancelled.set()
+                raise
+
+    def factory(tools, limit):
+        runner = SlowCloseRunner(tools, "answer", call_knowledge=False)
+        runners.append(runner)
+        return runner
+
+    executor._knowledge._runner_factory = factory
+    result = await asyncio.wait_for(executor.execute(node, context), timeout=0.2)
+    assert result.output["status"] == "no_evidence"
+    assert cleanup_cancelled.is_set()
+
+
+@pytest.mark.anyio
+async def test_external_workflow_cancellation_propagates_and_closes_runner():
+    executor, node, context, _, _, runners, _ = setup(call_knowledge=False)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class BlockingRunner(FakeRunner):
+        async def run(self, request):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    def factory(tools, limit):
+        runner = BlockingRunner(tools, "answer")
+        runners.append(runner)
+        return runner
+
+    executor._knowledge._runner_factory = factory
+    task = asyncio.create_task(executor.execute(node, context))
+    await asyncio.wait_for(started.wait(), timeout=0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cancelled.is_set() and runners[0].closed

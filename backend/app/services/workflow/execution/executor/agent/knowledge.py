@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Sequence
-from contextlib import suppress
 from uuid import UUID
 
 from langchain_core.tools import BaseTool
@@ -12,7 +11,11 @@ from langchain_core.tools import BaseTool
 from app.core.config import settings
 from app.services.agent_runtime import AgentExecutionRequest, AgentRunner, AgentRuntimeError
 from app.services.agent_runtime.runner.implementations import LangGraphToolAdapter
-from app.services.knowledge.agent_service import _deduplicate_evidence, _extract_answer_text
+from app.services.knowledge.agent_service import (
+    _close_runner_bounded,
+    _deduplicate_evidence,
+    _extract_answer_text,
+)
 from app.services.knowledge.agent_tool import (
     KNOWLEDGE_SEARCH_TOOL_DEFINITION,
     KnowledgeEvidenceCollector,
@@ -188,7 +191,4 @@ class WorkflowAgentKnowledgeComposition:
                 ],
             }
         finally:
-            closer = getattr(runner, "aclose", None)
-            if closer is not None:
-                with suppress(Exception):
-                    await closer()
+            await _close_runner_bounded(runner)

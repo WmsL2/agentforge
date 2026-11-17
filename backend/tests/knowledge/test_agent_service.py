@@ -409,6 +409,51 @@ async def test_agent_error_closes_runner_and_close_failure_does_not_mask_error()
 
 
 @pytest.mark.anyio
+async def test_blocked_runner_cleanup_is_bounded(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.knowledge.agent_service.RUNNER_CLOSE_TIMEOUT_SECONDS", 0.01)
+    cleanup_started = asyncio.Event()
+    cleanup_cancelled = asyncio.Event()
+
+    class SlowCloseRunner:
+        async def run(self, request) -> AgentExecutionResult:
+            return AgentExecutionResult(output="untrusted answer")
+
+        async def aclose(self) -> None:
+            cleanup_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_cancelled.set()
+                raise
+
+    retrieval = SimpleNamespace(authorize_scope=AsyncMock(), search=AsyncMock())
+    result = await asyncio.wait_for(
+        _service_with_runner(retrieval, lambda tools, limit: SlowCloseRunner()).ask(
+            uuid4(), uuid4(), uuid4(), "question"
+        ),
+        timeout=0.2,
+    )
+    assert result.status == "no_evidence"
+    assert cleanup_started.is_set() and cleanup_cancelled.is_set()
+
+
+@pytest.mark.anyio
+async def test_external_cancellation_propagates_and_closes_runner() -> None:
+    runner = BlockingRunner()
+    retrieval = SimpleNamespace(authorize_scope=AsyncMock(), search=AsyncMock())
+    task = asyncio.create_task(
+        _service_with_runner(retrieval, lambda tools, limit: runner).ask(
+            uuid4(), uuid4(), uuid4(), "question"
+        )
+    )
+    await asyncio.wait_for(runner.started.wait(), timeout=0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert runner.cancelled and runner.closed
+
+
+@pytest.mark.anyio
 async def test_concurrent_requests_have_independent_timeout_state() -> None:
     retrieval = SimpleNamespace(authorize_scope=AsyncMock(), search=AsyncMock())
 

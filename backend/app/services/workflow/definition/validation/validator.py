@@ -242,7 +242,7 @@ def _validate_knowledge_config(node: WorkflowNode) -> tuple[WorkflowValidationIs
             )
         )
         allowed_fields = _KNOWLEDGE_COMMON_FIELDS
-    elif query_source not in {"literal", "workflow_input"}:
+    elif not isinstance(query_source, str) or query_source not in {"literal", "workflow_input"}:
         issues.append(
             WorkflowValidationIssue(
                 WorkflowValidationCode.KNOWLEDGE_QUERY_SOURCE_INVALID,

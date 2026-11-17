@@ -102,6 +102,14 @@ def test_valid_knowledge_config(config: dict[str, object]) -> None:
             WorkflowValidationCode.KNOWLEDGE_BASE_ID_INVALID,
         ),
         (
+            {"knowledge_base_id": str(uuid4()), "query_source": []},
+            WorkflowValidationCode.KNOWLEDGE_QUERY_SOURCE_INVALID,
+        ),
+        (
+            {"knowledge_base_id": str(uuid4()), "query_source": {}},
+            WorkflowValidationCode.KNOWLEDGE_QUERY_SOURCE_INVALID,
+        ),
+        (
             {"knowledge_base_id": str(uuid4()), "query_source": "literal"},
             WorkflowValidationCode.KNOWLEDGE_QUERY_REQUIRED,
         ),

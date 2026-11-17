@@ -5,7 +5,9 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from httpx import AsyncClient
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 
 import app.services.agent_runtime as agent_runtime
 from app.core.config import settings
@@ -57,6 +59,23 @@ class FakeChatModel:
         if self._responses is not None:
             return self._responses.pop(0)
         return self._response
+
+
+@pytest.mark.anyio
+async def test_knowledge_models_own_distinct_async_http_clients(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-only")
+    first = LangGraphAgentRunner.create_isolated_model("test-model")
+    second = LangGraphAgentRunner.create_isolated_model("test-model")
+    assert isinstance(first, ChatOpenAI) and isinstance(second, ChatOpenAI)
+    assert isinstance(first.http_async_client, AsyncClient)
+    assert isinstance(second.http_async_client, AsyncClient)
+    assert first.http_async_client is not second.http_async_client
+    try:
+        await first.root_async_client.close()
+        assert first.http_async_client.is_closed
+        assert not second.http_async_client.is_closed
+    finally:
+        await second.root_async_client.close()
 
 
 class RecordingModelFactory:

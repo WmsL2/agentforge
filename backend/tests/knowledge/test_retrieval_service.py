@@ -145,13 +145,44 @@ async def test_authorization_and_model_preflight_precede_embedding_and_use_fresh
     ):
         result = await service.search(workspace_id, base_id, actor_id, "  中文问题  ", 5, None)
 
-    assert events == ["authorize", "preflight", "embed", "search"]
+    assert events == ["authorize", "preflight", "embed", "authorize", "search"]
     assert len(factory.sessions) == 2
     assert result.query == "中文问题" and result.total == 1
     assert provider.closed
-    require_permission.assert_awaited_once_with(
-        workspace_id, actor_id, WorkspacePermission.KNOWLEDGE_READ
-    )
+    assert require_permission.await_count == 2
+    require_permission.assert_any_await(workspace_id, actor_id, WorkspacePermission.KNOWLEDGE_READ)
+
+
+@pytest.mark.anyio
+async def test_membership_revoked_during_embedding_blocks_final_chunk_read() -> None:
+    provider = _Provider()
+    service, factory = _service(provider)
+    search = AsyncMock()
+    permission = AsyncMock(side_effect=[None, NotFoundError(message="Workspace not found")])
+    with (
+        patch(
+            "app.services.knowledge.retrieval_service.WorkspaceAuthorizationService.require_permission",
+            permission,
+        ),
+        patch(
+            "app.services.knowledge.retrieval_service.knowledge_repo.get_by_workspace_and_id",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.knowledge.retrieval_service.retrieval_repo.list_active_index_profiles",
+            AsyncMock(return_value=_profile()),
+        ),
+        patch(
+            "app.services.knowledge.retrieval_service.retrieval_repo.search_active_chunks",
+            search,
+        ),
+        pytest.raises(NotFoundError),
+    ):
+        await service.search(uuid4(), uuid4(), uuid4(), "question", 5, None)
+    assert len(factory.sessions) == 2
+    assert provider.calls == [["question"]]
+    assert permission.await_count == 2
+    search.assert_not_awaited()
 
 
 @pytest.mark.anyio
