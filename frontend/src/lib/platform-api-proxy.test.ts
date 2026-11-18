@@ -270,3 +270,18 @@ describe("platform API routes", () => {
     expect(JSON.stringify(await response.json())).not.toContain("secret");
   });
 });
+
+it("keeps existing workflow JSON forwarding and frontend Location after Knowledge extensions", async () => {
+  backendMock.mockResolvedValue({ id: "run/created" });
+  const response = await submitAsyncRun(
+    request("POST", "/", { body: { input: { value: 7 } } }),
+    workflowParams,
+  );
+  expect(response.status).toBe(202);
+  expect(response.headers.get("location")).toBe("/api/workflows/workflow%2Fone/runs/run%2Fcreated");
+  const options = backendMock.mock.calls[0]![1];
+  expect(options?.body).toBe('{"input":{"value":7}}');
+  expect(options).not.toHaveProperty("rawResponse");
+  expect(options).not.toHaveProperty("redirect");
+  expect(response.headers.get("cache-control")).toBe("no-store");
+});

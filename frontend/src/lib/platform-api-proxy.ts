@@ -6,6 +6,9 @@ type ProxyMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 interface PlatformApiProxyOptions {
   path: string;
+  knowledge?: boolean;
+  multipart?: boolean;
+  download?: boolean;
   method?: ProxyMethod;
   query?: readonly string[];
   successStatus?: number;
@@ -55,6 +58,9 @@ export async function proxyPlatformApi(
   request: NextRequest,
   {
     path,
+    knowledge = false,
+    multipart = false,
+    download = false,
     method = "GET",
     query: allowedQuery = [],
     successStatus = 200,
@@ -71,15 +77,49 @@ export async function proxyPlatformApi(
   }
 
   try {
-    const body = method === "GET" || method === "DELETE" ? undefined : await request.text();
+    let body: string | FormData | undefined;
+    if (multipart) {
+      try {
+        const incoming = await request.formData();
+        const file = incoming.get("file");
+        if (!file || typeof file === "string") return json({ detail: "Expected file field" }, 422);
+        body = new FormData();
+        body.append("file", file, file.name);
+      } catch {
+        return json({ detail: "Invalid multipart request" }, 400);
+      }
+    } else {
+      body = method === "GET" || method === "DELETE" ? undefined : await request.text();
+    }
     const query = selectedQuery(request, allowedQuery);
     const data = await backendFetch<unknown>(path, {
       method,
+      ...(knowledge
+        ? { cache: "no-store" as const, redirect: "error" as const, signal: request.signal }
+        : {}),
+      ...(download ? { rawResponse: true } : {}),
       params: Object.keys(query).length ? query : undefined,
       headers: { Authorization: `Bearer ${accessToken}` },
       body: body || undefined,
     });
 
+    if (download) {
+      const upstream = data as Response;
+      const disposition = upstream.headers.get("Content-Disposition");
+      // Keep backend filename parameters (including RFC 5987 Unicode); force attachment.
+      const filename = disposition?.includes(";")
+        ? disposition.slice(disposition.indexOf(";"))
+        : "";
+      return new NextResponse(upstream.body, {
+        status: 200,
+        headers: {
+          "Content-Type": upstream.headers.get("Content-Type") || "application/octet-stream",
+          "Content-Disposition": `attachment${filename}`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     if (successStatus === 204) {
       return new NextResponse(null, { status: 204, headers: NO_STORE_HEADERS });
     }

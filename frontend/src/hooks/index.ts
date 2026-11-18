@@ -20,3 +20,5 @@ export {
   useWorkflowRunSteps,
   useWorkflowTrace,
 } from "./use-workflow-runs";
+
+export * from "./use-knowledge";

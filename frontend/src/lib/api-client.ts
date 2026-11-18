@@ -5,6 +5,7 @@
  */
 
 import { useAuthStore } from "@/stores";
+import { authIdentity, sameAuthIdentity, aborted } from "./auth-identity";
 
 import {
   getApiErrorMessage,
@@ -25,10 +26,12 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions
+export interface RequestOptions
   extends Omit<RequestInit, "body"> {
   params?: Record<string, string>;
   body?: unknown;
+  identityGuard?: () => boolean;
+  responseType?: "blob";
 }
 
 const REFRESH_ENDPOINT =
@@ -40,6 +43,7 @@ let refreshPromise:
 
 function refreshAccessToken(): Promise<boolean> {
   if (!refreshPromise) {
+    const identity = authIdentity();
     refreshPromise = fetch(
       `/api${REFRESH_ENDPOINT}`,
       {
@@ -61,7 +65,7 @@ function refreshAccessToken(): Promise<boolean> {
               access_token?: string;
             };
 
-          if (data?.access_token) {
+          if (data?.access_token && sameAuthIdentity(identity)) {
             useAuthStore
               .getState()
               .setAccessToken(
@@ -72,7 +76,7 @@ function refreshAccessToken(): Promise<boolean> {
           // Cookies may still have been rotated successfully.
         }
 
-        return true;
+        return sameAuthIdentity(identity);
       })
       .catch(() => false)
       .finally(() => {
@@ -83,81 +87,117 @@ function refreshAccessToken(): Promise<boolean> {
   return refreshPromise;
 }
 
+export interface DownloadResponse {
+  blob: Blob;
+  contentDisposition: string | null;
+  contentType: string | null;
+}
+
 class ApiClient {
-  private async request<T>(
-    endpoint: string,
-    options: RequestOptions = {},
-  ): Promise<T> {
-    const {
-      params,
-      body,
-      ...fetchOptions
-    } = options;
+  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const { params, body, identityGuard, responseType, ...fetchOptions } = options;
 
     let url = `/api${endpoint}`;
 
     if (params) {
-      const searchParams =
-        new URLSearchParams(params);
+      const searchParams = new URLSearchParams(params);
 
       url += `?${searchParams.toString()}`;
     }
 
-    const doFetch = () =>
-      fetch(url, {
-        ...fetchOptions,
-        headers: {
-          "Content-Type":
-            "application/json",
-          ...fetchOptions.headers,
-        },
-        body:
-          body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
-      });
+    const identity = authIdentity();
+    const guarded = Boolean(identityGuard) || endpoint.includes("/knowledge-bases");
+    const check = () => {
+      if (
+        fetchOptions.signal?.aborted ||
+        (guarded && (!sameAuthIdentity(identity) || identityGuard?.() === false))
+      )
+        aborted();
+    };
+    const doFetch = async () => {
+      check();
+      const headers = new Headers(fetchOptions.headers);
+      if (body instanceof FormData) headers.delete("Content-Type");
+      else if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+      try {
+        return await fetch(url, {
+          ...fetchOptions,
+          headers,
+          body:
+            body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
+        });
+      } catch (error) {
+        check();
+        if (guarded && !(error instanceof DOMException && error.name === "AbortError")) {
+          throw new ApiError(0, "Network request failed");
+        }
+        throw error;
+      }
+    };
 
     let response = await doFetch();
 
-    if (
-      response.status === 401 &&
-      endpoint !== REFRESH_ENDPOINT
-    ) {
-      const refreshed =
-        await refreshAccessToken();
+    if (response.status === 401 && endpoint !== REFRESH_ENDPOINT) {
+      check();
+      const refreshed = await refreshAccessToken();
 
+      check();
       if (refreshed) {
         response = await doFetch();
       }
     }
 
+    check();
     if (!response.ok) {
       let errorData: unknown;
 
       try {
-        errorData =
-          await response.json();
+        errorData = await response.json();
       } catch {
         errorData = null;
       }
 
-      throw new ApiError(
-        response.status,
-        getApiErrorMessage(
-          errorData,
-        ),
-        errorData,
-      );
+      check();
+      throw new ApiError(response.status, getApiErrorMessage(errorData), errorData);
     }
 
-    const text =
-      await response.text();
+    const read = async <R>(consume: () => Promise<R>): Promise<R> => {
+      try { return await consume(); }
+      catch (error) {
+        check();
+        if (guarded) throw new ApiError(0, "Network request failed");
+        throw error;
+      }
+    };
+    if (responseType === "blob") {
+      const blob = await read(() => response.blob());
+      check();
+      return {
+        blob,
+        contentDisposition: response.headers.get("Content-Disposition"),
+        contentType: response.headers.get("Content-Type"),
+      } as T;
+    }
+    const text = await read(() => response.text());
+    check();
 
     if (!text) {
       return null as T;
     }
 
-    return JSON.parse(text) as T;
+    try { return JSON.parse(text) as T; }
+    catch (error) {
+      if (guarded) throw new ApiError(response.status, "Invalid server response");
+      throw error;
+    }
+  }
+
+  download(endpoint: string, options?: RequestOptions) {
+    return this.request<DownloadResponse>(endpoint, {
+      ...options,
+      method: "GET",
+      responseType: "blob",
+    });
   }
 
   get<T>(
