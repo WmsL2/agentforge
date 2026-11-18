@@ -1,6 +1,6 @@
+// @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { backendFetch } from "./server-api";
-import { File as NodeFile } from "node:buffer";
 import { NextRequest } from "next/server";
 import { POST as upload } from "@/app/api/workspaces/[workspaceId]/knowledge-bases/[knowledgeBaseId]/documents/route";
 import { GET as download } from "@/app/api/workspaces/[workspaceId]/knowledge-bases/[knowledgeBaseId]/documents/[documentId]/download/route";
@@ -38,19 +38,12 @@ it.each([401, 403, 404, 422])(
   },
 );
 it("real multipart proxy/server client preserves Unicode filename, MIME and bytes", async () => {
-  // Obtain the native FormData realm used by Next's Node Request implementation.
-  const seed = new Request("https://app.test/seed", {
-    method: "POST",
-    headers: { "content-type": "multipart/form-data; boundary=b" },
-    body: "--b--\r\n",
-  });
-  const form = await seed.formData();
-  vi.stubGlobal("FormData", form.constructor);
+  const form = new FormData();
   form.append(
     "file",
-    new NodeFile([new Uint8Array([0, 255, 1, 128])], "资料.txt", {
+    new File([new Uint8Array([0, 255, 1, 128])], "资料.txt", {
       type: "text/plain",
-    }) as unknown as File,
+    }),
   );
   const req = new NextRequest("https://app.test/api/upload", {
     method: "POST",

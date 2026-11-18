@@ -5,15 +5,13 @@
  */
 
 import { useAuthStore } from "@/stores";
+import type { User } from "@/types";
+import { coordinateAuthentication, type AuthOperation } from "./auth-transition";
 import { authIdentity, sameAuthIdentity, aborted } from "./auth-identity";
 
-import {
-  getApiErrorMessage,
-} from "./error-message";
+import { getApiErrorMessage } from "./error-message";
 
-export {
-  getApiErrorMessage,
-} from "./error-message";
+export { getApiErrorMessage } from "./error-message";
 
 export class ApiError extends Error {
   constructor(
@@ -26,65 +24,39 @@ export class ApiError extends Error {
   }
 }
 
-export interface RequestOptions
-  extends Omit<RequestInit, "body"> {
+export interface RequestOptions extends Omit<RequestInit, "body"> {
   params?: Record<string, string>;
   body?: unknown;
   identityGuard?: () => boolean;
   responseType?: "blob";
 }
 
-const REFRESH_ENDPOINT =
-  "/auth/refresh";
+const REFRESH_ENDPOINT = "/auth/refresh";
 
-let refreshPromise:
-  | Promise<boolean>
-  | null = null;
+let refreshFlight: { identity: ReturnType<typeof authIdentity>; promise: Promise<boolean> } | null =
+  null;
 
 function refreshAccessToken(): Promise<boolean> {
-  if (!refreshPromise) {
-    const identity = authIdentity();
-    refreshPromise = fetch(
-      `/api${REFRESH_ENDPOINT}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-      },
-    )
-      .then(async (response) => {
-        if (!response.ok) {
-          return false;
-        }
+  const identity = authIdentity();
+  if (refreshFlight && sameAuthIdentity(refreshFlight.identity)) return refreshFlight.promise;
+  const flight = { identity, promise: Promise.resolve(false) };
+  flight.promise = apiClient
+    .post<{ access_token?: string }>(REFRESH_ENDPOINT)
+    .then(() => sameAuthIdentity(identity))
+    .catch(() => false)
+    .finally(() => {
+      if (refreshFlight === flight) refreshFlight = null;
+    });
+  refreshFlight = flight;
+  return flight.promise;
+}
 
-        try {
-          const data =
-            (await response.json()) as {
-              access_token?: string;
-            };
-
-          if (data?.access_token && sameAuthIdentity(identity)) {
-            useAuthStore
-              .getState()
-              .setAccessToken(
-                data.access_token,
-              );
-          }
-        } catch {
-          // Cookies may still have been rotated successfully.
-        }
-
-        return sameAuthIdentity(identity);
-      })
-      .catch(() => false)
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-
-  return refreshPromise;
+const loginEndpoints = new Set(["/auth/login", "/auth/oauth-callback", "/auth/magic-link/verify"]);
+function authOperation(endpoint: string): AuthOperation | undefined {
+  if (loginEndpoints.has(endpoint)) return "login";
+  if (endpoint === "/auth/logout") return "logout";
+  if (endpoint === "/auth/me" || endpoint === REFRESH_ENDPOINT) return "probe";
+  return undefined;
 }
 
 export interface DownloadResponse {
@@ -94,7 +66,64 @@ export interface DownloadResponse {
 }
 
 class ApiClient {
-  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  private request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const kind = authOperation(endpoint);
+    if (!kind) return this.perform<T>(endpoint, options);
+    const original = authIdentity();
+    return coordinateAuthentication(
+      kind,
+      useAuthStore.getState().isAuthenticated,
+      () => {
+        useAuthStore.setState({
+          user: null,
+          isAuthenticated: false,
+          accessToken: null,
+          isLoading: kind === "login",
+        });
+      },
+      async (current) => {
+        try {
+          const data = await this.perform<T>(
+            endpoint,
+            {
+              ...options,
+              identityGuard: () => current() && (kind !== "probe" || sameAuthIdentity(original)),
+            },
+            true,
+          );
+          if (!current()) aborted();
+          if (kind !== "logout" && data && typeof data === "object") {
+            const auth = data as { user?: User; access_token?: string };
+            if (kind === "login" && auth.user) useAuthStore.getState().setUser(auth.user);
+            if (endpoint === "/auth/me") {
+              const { access_token, ...user } = data as unknown as User & { access_token?: string };
+              if (access_token) useAuthStore.getState().setAccessToken(access_token);
+              useAuthStore.getState().setUser(user);
+            }
+            if (auth.access_token) useAuthStore.getState().setAccessToken(auth.access_token);
+          }
+          return data;
+        } catch (error) {
+          if (
+            current() &&
+            error instanceof ApiError &&
+            error.status === 401 &&
+            endpoint === "/auth/me"
+          )
+            useAuthStore.getState().logout();
+          throw error;
+        } finally {
+          if (current()) useAuthStore.getState().setLoading(false);
+        }
+      },
+    );
+  }
+
+  private async perform<T>(
+    endpoint: string,
+    options: RequestOptions = {},
+    coordinated = false,
+  ): Promise<T> {
     const { params, body, identityGuard, responseType, ...fetchOptions } = options;
 
     let url = `/api${endpoint}`;
@@ -120,12 +149,17 @@ class ApiClient {
       if (body instanceof FormData) headers.delete("Content-Type");
       else if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
       try {
-        return await fetch(url, {
+        const response = await fetch(url, {
           ...fetchOptions,
+          ...(coordinated ? { signal: undefined, cache: "no-store" as const } : {}),
           headers,
           body:
             body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
         });
+        // Drain a clone while holding the cookie queue, even if the caller cancels.
+        if (coordinated && typeof response.clone === "function")
+          await response.clone().arrayBuffer();
+        return response;
       } catch (error) {
         check();
         if (guarded && !(error instanceof DOMException && error.name === "AbortError")) {
@@ -137,9 +171,10 @@ class ApiClient {
 
     let response = await doFetch();
 
-    if (response.status === 401 && endpoint !== REFRESH_ENDPOINT) {
+    if (response.status === 401 && !coordinated) {
       check();
       const refreshed = await refreshAccessToken();
+      if (!sameAuthIdentity(identity)) aborted();
 
       check();
       if (refreshed) {
@@ -162,8 +197,9 @@ class ApiClient {
     }
 
     const read = async <R>(consume: () => Promise<R>): Promise<R> => {
-      try { return await consume(); }
-      catch (error) {
+      try {
+        return await consume();
+      } catch (error) {
         check();
         if (guarded) throw new ApiError(0, "Network request failed");
         throw error;
@@ -185,8 +221,9 @@ class ApiClient {
       return null as T;
     }
 
-    try { return JSON.parse(text) as T; }
-    catch (error) {
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
       if (guarded) throw new ApiError(response.status, "Invalid server response");
       throw error;
     }

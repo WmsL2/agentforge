@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAuthStore } from "./auth-store";
 import type { User } from "@/types";
 
@@ -56,4 +56,20 @@ describe("Auth Store", () => {
     useAuthStore.getState().setLoading(false);
     expect(useAuthStore.getState().isLoading).toBe(false);
   });
+});
+
+it("does not start an auth probe if Logout begins before its client import completes", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    useAuthStore.getState().setUser(createMockUser());
+    const pending = useAuthStore.getState().checkAuth();
+    useAuthStore.getState().logout();
+    await pending;
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

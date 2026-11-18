@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { NextRequest } from "next/server";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import * as bases from "@/app/api/workspaces/[workspaceId]/knowledge-bases/route";
@@ -64,9 +65,6 @@ async function multipart() {
   const raw =
     '--bound\r\nContent-Disposition: form-data; name="file"; filename="fish.txt"\r\nContent-Type: text/plain\r\n\r\nfish bytes\r\n--bound--\r\n';
   const request = req("POST", { "content-type": "multipart/form-data; boundary=bound" }, raw);
-  // Use the same native FormData realm as NextRequest's actual multipart parser.
-  const form = await request.clone().formData();
-  vi.stubGlobal("FormData", form.constructor);
   return request;
 }
 it.each(cases)("fixed route %s %s", async (handler, method, path, status) => {

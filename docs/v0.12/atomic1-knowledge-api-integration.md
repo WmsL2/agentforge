@@ -1,5 +1,7 @@
 # AgentForge v0.12 — Atomic 1 Knowledge API Integration
 
+> 文中第 1–11 节保留 Atomic 1 合并前的历史实现记录。当前基线、认证协调机制与验证结论以文末第 12 节 Main CI 修复记录为准。
+
 ## 1. Baseline Verification
 
 2026-11-18 本地实现。开始时 `git status --short` 无输出，工作区干净；分支 `main`，HEAD 和 `git rev-list -n 1 v0.11.0` 均为 `32e4c0c6ec94d709b16f628a9b9810b6ac867656`。通过解析 Alembic revision/down_revision 源码图确认唯一 head 为 `0046_add_workflow_run_actor_identity`；没有连接数据库或执行 migration。
@@ -268,3 +270,166 @@ Configured coverage：Statements 58.85%，Branches 100%，Functions 52.17%，Lin
 - No release or GitHub PR.
 
 Backend、Alembic、Version Metadata、lockfile 不修改。等待 ChatGPT 审查本实现报告。
+
+
+## 12. Main CI #173 Fix — 2026-11-18
+
+### 12.1 Baseline Verification
+
+修复任务开始和结束均要求保持 main / `02ab18b4c6e2b800fdb847531c1fbc6024107a91`。开始时 `git status --short` 无输出，工作区干净。PR #29 已合并；任务提供的 [Main CI #173](https://github.com/WmsL2/agentforge/actions/runs/44258962940) 中 test-frontend（Job 134647363018）为 334 passed / 3 failed。本次不创建分支、不提交、不推送、不启动 Atomic 2。
+
+### 12.2 三项 CI 失败的实际根因
+
+在现有 Docker Linux 引擎的临时 oven/bun:1 容器中，使用官方原生 Node **v24.22.3**、Bun **1.3.14**、Vitest **2.1.9** 和 jsdom **25.0.1**，从 HEAD 的只读 git archive 提取合并基线，以 frozen lockfile 安装依赖后运行三个相关测试文件。实际结果为 **94 tests / 91 passed / 3 failed**，三项错误与任务提供的 CI 日志一致：
+
+| 场景 | 复现错误 | 根因 |
+|---|---|---|
+| reads only successful binary as Blob | result.blob.arrayBuffer is not a function | 默认 jsdom 环境的 Blob API 不完整；测试把浏览器 Blob 当作一定支持 Node arrayBuffer 的 Blob。本机 Node 22 的通过不能证明 Node 24 中相同混合环境兼容 |
+| fixed route … POST | WebIDL assert: USVString(value) or File(value) | 混合 jsdom File/Blob 与原生 Request/FormData；仅替换 FormData constructor 不能统一 WebIDL 对象归属 |
+| real multipart proxy/server client preserves Unicode filename, MIME and bytes | expected 400 to be 201 | 原生 Request、Node File、jsdom 全局及 constructor 替换混用，使 multipart 处理失败并进入代理现有安全 400 分支；TypeScript cast 不会改变运行时对象归属 |
+
+这些不是后端契约变化。使用一致的原生 Node Web API 后，现有生产 multipart 代理通过真实编码、解析和二次转发测试，因此未修改 platform-api-proxy.ts 或 server-api.ts 的生产上传/下载逻辑。
+
+### 12.3 修复前后行为
+
+- server-api.test.ts、knowledge-proxy.test.ts、platform-api-proxy.test.ts 显式使用 `@vitest-environment node`。保留真实 Request/NextRequest、FormData、File、编码 boundary、解析和转发，不替换为返回成功的 mock。
+- 移除两个 multipart 测试的 FormData constructor 全局替换；server-api 测试直接使用同一 Node 环境的 File/FormData，不再用 Node File 与 jsdom File 的强制转换。
+- vitest.setup.ts 的 window.localStorage 与 matchMedia 初始化仅在 window 存在时执行；没有为 Node 环境伪造 window，也没有修改 CI 或降低 Coverage 阈值。
+- 浏览器侧下载测试使用功能检测：支持 arrayBuffer 时直接读取，否则通过 FileReader 读取字节。新增实际 jsdom Blob 的字节测试，保留 `[0,255,128]` 等逐字节断言。
+- Unicode filename、MIME、multipart boundary、201 + parse_status=failed、Cookie Authorization、CSRF、私有下载 headers、结构化错误和全部原有测试均保留。
+
+### 12.4 Authentication Race Condition 审查与修复
+
+原 generation 检查只能阻止旧结果写内存，不能撤销浏览器已经处理的 Set-Cookie。原始 /auth/me、/auth/refresh 都可能修改或清除 Cookie；AuthGuard、auth-store.checkAuth、定时刷新、Chat WebSocket 重连和 OAuth 回调还存在分散调用或写入入口。
+
+新增轻量 `auth-transition.ts`，在同一页面 JavaScript 实例内对以下 Cookie 写入入口使用同一个顺序屏障：Login、Logout、Refresh、具有刷新副作用的 /auth/me，以及 OAuth Callback / Magic Link Verify。
+
+1. Login/Logout 调用开始时同步推进 transition epoch，清除旧 user/token，立即触发原有 Knowledge 清理；此时即便旧用户本来就是 null，epoch 也能使旧请求失效。
+2. 已开始的 Cookie 写请求必须先取得并消费响应，再允许下一个认证写入开始。不会把 AbortSignal 传给已协调的底层 fetch 来提前释放屏障；调用方取消只使其结果不再被采纳。认证响应很小，使用 clone.arrayBuffer 保持原响应供既有 JSON 解析。
+3. 旧 Refresh 成功设置的 Cookie，或者失败时清除的 Cookie，都先于 Logout / 新 Login 完成；Logout 因而能携带刷新后实际生效的 refresh_token，新的 Login Cookie 最后生效。
+4. Logout / Login 转换期间拒绝自动 /me、Refresh；Logout 后继续禁止自动重新认证，直到显式成功登录。屏障中排队但已过期的 Probe 不发送 HTTP。
+5. 身份快照包含 userId、generation 和 transition epoch；转换期间身份不可用于 Knowledge 请求。旧 Knowledge 请求不通过新用户 Cookie 重试，已完成的 Search/Ask/Download 结果也由既有 scope 清理。
+6. ApiClient 统一负责认证结果写入 Auth Store，只有当前操作可以提交。旧成功、错误和 finally 回调不覆盖新用户、Token、Loading 或导航。Logout 响应不采纳 Token 字段。
+7. 原自动 401 刷新仍只有一套共享 flight，现按身份快照限定共享，旧 flight 的 finally 不能清除新 flight。新 Login 等待旧 Cookie 写入结束属于必要屏障；新会话创建后不复用旧会话的刷新结果。
+8. auth-store.checkAuth 通过同一 apiClient 执行，启动导入前后都校验 epoch。AuthGuard 使用 checkAuth，未认证时不渲染受保护 children。
+9. useAuth 的 Login/Logout、显式刷新、十分钟刷新均进入同一链路；同一挂载 Hook 退出后再次登录会恢复定时器，最后一个消费者卸载时停止定时器。
+10. Chat 重连不再直接 fetch /api/auth/me；OAuth 回调不再自行写入用户和 Token。额外审查到 Profile / Avatar 的异步 setUser 回调，均增加原始身份检查，避免晚返回后恢复旧用户。
+
+没有重写服务器认证架构，没有修改 Backend 授权或 Session 策略。
+
+### 12.5 Created / Modified Files
+
+新增三个源码/测试文件：
+
+| 文件 | 职责 |
+|---|---|
+| frontend/src/lib/auth-transition.ts | 页面内 Cookie 写入顺序、转换 epoch、Probe 准入 |
+| frontend/src/lib/auth-transition.test.ts | 真实 Next Auth Handler + 延迟后端 + Cookie Jar 的竞态测试 |
+| frontend/src/hooks/use-auth.test.tsx | 实际 AuthGuard、Hooks、定时刷新、Profile/Avatar 晚返回测试 |
+
+修改文件：
+
+| 文件 | 修改职责 |
+|---|---|
+| frontend/src/lib/api-client.ts | 认证请求统一协调、集中提交状态、身份限定 refresh flight、禁止跨身份重试 |
+| frontend/src/lib/auth-identity.ts | 快照包含 transition epoch，转换期间不提供 Knowledge 身份 |
+| frontend/src/stores/auth-store.ts | checkAuth 统一接入和启动取消，Logout 禁止自动恢复 |
+| frontend/src/hooks/use-auth.ts | 移除分散状态提交；统一登录、退出、刷新与定时器生命周期 |
+| frontend/src/components/layout/auth-guard.tsx | 统一 checkAuth，退出时隐藏 children |
+| frontend/src/hooks/use-chat.ts | 重连认证接入统一入口 |
+| frontend/src/app/[locale]/auth/callback/page.tsx | 移除旧异步回调的重复身份写入 |
+| frontend/src/app/[locale]/(dashboard)/settings/profile/page.tsx | Profile/Avatar 迟到回调身份检查 |
+| frontend/src/lib/knowledge/knowledge-api.test.ts | 浏览器 Blob 字节读取兼容及实际字节断言 |
+| frontend/src/lib/knowledge/knowledge-proxy.test.ts | 统一 Node HTTP 环境，移除 constructor 替换 |
+| frontend/src/lib/server-api.test.ts | 原生 Node File/FormData 真实 multipart 链路 |
+| frontend/src/lib/platform-api-proxy.test.ts | Server HTTP 回归测试使用 Node 环境 |
+| frontend/vitest.setup.ts | window 初始化有条件执行，支持 Node 测试 |
+| frontend/src/stores/auth-store.test.ts | checkAuth 启动前退出，不发送旧 Probe |
+| frontend/src/lib/utils.test.ts | Profile 实际依赖的缺省/非法/Date/string 日期边界 |
+| docs/v0.12/atomic1-knowledge-api-integration.md | 本修复记录 |
+
+### 12.6 新增与保留测试
+
+保留原有 **337** 项测试，新增 **25** 项，共 **362** 项、**26** 个测试文件：
+
+- Blob 实际字节读取 1 项。
+- Node Authentication Transition 11 项：三种登录入口、Logout、Refresh/Logout 并发、成功/失败 Cookie 写入与新 Login 顺序、旧 /me 与排队 Probe、取消不释放 Cookie 屏障、新身份独立 refresh flight、同身份共享刷新、Knowledge 清理和不跨用户重试。
+- 浏览器 Hooks/Guard 11 项：隐藏 children、Login/Logout、旧退出不影响新登录导航、十分钟刷新及再次登录恢复、显式刷新、失败登录、过期 /me、Profile/Avatar 在 Logout 和新 Login 后的晚返回。
+- auth-store 启动前退出 1 项；Profile 日期边界 1 项。
+
+Cookie 竞态测试调用真实 Next Route Handler 生成 Set-Cookie，用 Cookie Jar 在 fetch Promise 返回前应用这些真实响应 Cookie；只 mock 后端业务响应并加入延迟，验证的是实际请求发送顺序和状态结果。它不是一次真实浏览器/真实后端 E2E，不能把该 Cookie Jar 模型声称为浏览器全生命周期验收。
+
+### 12.7 本地验证结果
+
+Windows：Node v22.13.0 / Bun 1.3.14。规定的 frozen install 成功（839 installs / 950 packages，no changes）；规定的原定向命令 **6 files / 150 tests PASS**。新增认证专项测试另由完整 suite 执行。
+
+最终 Windows 规定命令结果（全部退出 0）：
+
+| 命令 | 结果 |
+|---|---|
+| bun install --frozen-lockfile | PASS，无依赖或锁文件改动 |
+| 任务指定的六文件定向测试命令 | PASS，6 files / 150 tests |
+| bun run lint | PASS，0 errors / 13 warnings |
+| bun run type-check | PASS |
+| bun run test:run | PASS，26 files / 362 tests |
+| bun run test:coverage | PASS，26 files / 362 tests，所有原阈值通过 |
+| bun run build | PASS，Next.js 15.5.23，105 个静态页面生成完毕 |
+| git diff --check | PASS，无输出 |
+
+Windows Node 22.13.0 与 Linux Node 24.22.3 的完整测试和 Coverage 均通过。Linux 最终原始测试日志保存在 `frontend/coverage/atomic1-fix-linux-node24.log`（ignored 验证产物，非源码变更）。
+
+Coverage 保留既有 include 和所有 thresholds。中途完整测试已通过，但新增 Profile 测试使原先未执行的日期分支进入统计，分支 Coverage 为 88.57%，未达到原 90% 阈值；新增实际日期边界和 Probe 启动取消用例后，最终配置范围为 Statements/Lines **69.23%**、Branches **100%**、Functions **60.86%**，auth-store.ts 的 Statements/Lines/Branches 为 **100%**。没有降低阈值或修改统计范围。该聚合百分比只对应原配置的四个文件，不代表 auth-transition.ts / Knowledge 源码的整体覆盖率。
+
+Lint/Build 保留既有可访问性和 runtimeConfig 弃用告警。Node HTTP 认证测试中，真实 Zustand Store 在无 window 的服务器环境会输出 storage unavailable 提示；测试未伪造 window 或隐藏诊断，浏览器 Store/Guard 行为另在 jsdom 测试中验证。
+
+### 12.8 Linux / CI Runtime 验证
+
+- 使用已有 Docker Linux 引擎及已有 oven/bun:1 镜像；原生 Node v24.22.3 从官方发布存档解压到临时容器，没有安装新的大型环境或更改宿主 Node。
+- 使用锁文件对应依赖和相同 Vitest/jsdom。合并基线三个文件为 **91 passed / 3 failed**，精确复现任务列出的三项失败。
+- 修复版本完整 Linux 单元测试及 Coverage：**26 files / 362 tests PASS**，原 Coverage 阈值通过；Linux TypeScript 类型检查也通过（LINUX_TYPE_CHECK_PASS）。
+- 工作流使用 ubuntu-latest，Setup Bun 没有固定版本，也没有显式固定 Node 版本。本次是关键运行时复现，不能宣称临时容器的发行版及补丁版本与失败 Job 完全相同。
+- 未触发 GitHub Actions 重跑，**不能声明 Main CI PASS**。也未执行该 Job 后续的真实 PostgreSQL/Redis/Playwright E2E 或其他 Backend CI。
+
+### 12.9 Known Limitations / 安全边界
+
+- 单页面保证：仅覆盖当前页面中已审查并统一接入的认证 HTTP 入口；已开始的 Cookie 写操作顺序完成，旧身份结果不再被采纳。没有仅靠 Abort fetch 或 generation 宣称解决 Set-Cookie。
+- 跨标签页、另一浏览器窗口、重新载入页面或其他客户端不共享本页内存屏障；未新增 BroadcastChannel、跨页锁或服务端 Session 代次协议，不能保证这些场景的 Cookie 并发顺序。
+- 服务端 Session / Token 失效仍由已有 Backend Logout/JWT 策略决定；本次没有修改该策略，也没有证明所有 Session 即时失效。
+- Cookie 写请求若持续不返回，后续认证转换会等待；本地旧数据立即隐藏，不以提前释放屏障换取表面成功。
+- 网络失败时仍会保持本地退出和禁止自动恢复，但无法声称服务器 Logout 已完成或浏览器一定收到清 Cookie 响应；重新加载是另一个生命周期。
+- Profile/Avatar 等已被后端接受的业务写入不能撤销；这里只隔离晚返回的本地身份更新。
+- 不开始 Knowledge UI、不新增 Migration、不新增运行时依赖、不更新 Version（仍 0.11.0）。
+
+### 12.10 Git Status
+
+结束时仍为 main，HEAD 为 `02ab18b4c6e2b800fdb847531c1fbc6024107a91`。16 个 tracked 文件修改、3 个 untracked 新文件；全部为上表 frontend 源码/测试和本文件。
+
+`git status --short`：
+
+```text
+ M docs/v0.12/atomic1-knowledge-api-integration.md
+ M frontend/src/app/[locale]/(dashboard)/settings/profile/page.tsx
+ M frontend/src/app/[locale]/auth/callback/page.tsx
+ M frontend/src/components/layout/auth-guard.tsx
+ M frontend/src/hooks/use-auth.ts
+ M frontend/src/hooks/use-chat.ts
+ M frontend/src/lib/api-client.ts
+ M frontend/src/lib/auth-identity.ts
+ M frontend/src/lib/knowledge/knowledge-api.test.ts
+ M frontend/src/lib/knowledge/knowledge-proxy.test.ts
+ M frontend/src/lib/platform-api-proxy.test.ts
+ M frontend/src/lib/server-api.test.ts
+ M frontend/src/lib/utils.test.ts
+ M frontend/src/stores/auth-store.test.ts
+ M frontend/src/stores/auth-store.ts
+ M frontend/vitest.setup.ts
+?? frontend/src/hooks/use-auth.test.tsx
+?? frontend/src/lib/auth-transition.test.ts
+?? frontend/src/lib/auth-transition.ts
+```
+
+`git diff --name-only` 与上表一致；Backend、Alembic、Version Metadata、package.json、bun.lock/bun.lockb、vitest.config.ts 和 .github/workflows/ci.yml 的 diff 为空。git diff --stat 仅统计 tracked 修改，不包含三个新增文件。临时容器只挂载 frontend 为只读来源，测试运行于容器临时目录，验证后停止并自动移除；没有创建其他持久环境或改动 CI。
+
+### 12.11 Git Restrictions Confirmation
+
+No branch creation/switching. No git add. No commit. No push. No merge. No reset/stash. No PR, tag or release. 所有改动留在本地，等待审查，不开始 Atomic 2。
