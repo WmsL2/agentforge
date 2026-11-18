@@ -87,7 +87,10 @@ class ApiClient {
             endpoint,
             {
               ...options,
-              identityGuard: () => current() && (kind !== "probe" || sameAuthIdentity(original)),
+              // Queued Logout must reach the server before a later Login, even if stale.
+              // Only transport is exempt; result/state adoption below still requires current().
+              identityGuard: () =>
+                kind === "logout" || (current() && (kind !== "probe" || sameAuthIdentity(original))),
             },
             true,
           );
@@ -173,6 +176,9 @@ class ApiClient {
 
     if (response.status === 401 && !coordinated) {
       check();
+      // Ordinary requests are not otherwise identity-guarded: reject stale 401s
+      // before they can refresh the cookies of a newly signed-in user.
+      if (!sameAuthIdentity(identity)) aborted();
       const refreshed = await refreshAccessToken();
       if (!sameAuthIdentity(identity)) aborted();
 

@@ -272,3 +272,65 @@ it("parallel same-session Knowledge 401s share one refresh and retry only once",
   expect(sent.filter((p) => p === "/api/auth/refresh")).toHaveLength(1);
   expect(sent.filter((p) => p.includes("knowledge-bases"))).toHaveLength(4);
 });
+
+it("executes queued Logout with A's rotated token before Login B even after epoch changes", async () => {
+  const refreshPending = deferred<unknown>();
+  const logoutPending = deferred<unknown>();
+  backend.mockImplementation((path, opts) => {
+    if (path === "/api/v1/auth/refresh") return refreshPending.promise;
+    if (path === "/api/v1/auth/logout") {
+      logoutTokens.push(
+        (JSON.parse(String(opts?.body)) as { refresh_token: string }).refresh_token,
+      );
+      return logoutPending.promise;
+    }
+    return realBackend(path, opts);
+  });
+  const oldRefresh = outcome(apiClient.post("/auth/refresh"));
+  await vi.waitFor(() => expect(sent).toEqual(["/api/auth/refresh"]));
+  const oldLogout = outcome(apiClient.post("/auth/logout"));
+  const newLogin = apiClient.post("/auth/login", { email: "b@test", password: "fake" });
+  expect(sent).toEqual(["/api/auth/refresh"]);
+  refreshPending.resolve({ access_token: "a2", refresh_token: "ra2" });
+  try {
+    await vi.waitFor(() => expect(sent).toEqual(["/api/auth/refresh", "/api/auth/logout"]));
+    expect(logoutTokens).toEqual(["ra2"]);
+    expect(jar.get("access_token")).toBe("a2");
+    expect(jar.get("refresh_token")).toBe("ra2");
+    expect(useAuthStore.getState().user).toBeNull();
+  } finally {
+    logoutPending.resolve(null);
+    await newLogin;
+    await oldRefresh;
+    await oldLogout;
+  }
+  expect(sent).toEqual(["/api/auth/refresh", "/api/auth/logout", "/api/auth/login"]);
+  expect((await oldRefresh).error?.name).toBe("AbortError");
+  expect((await oldLogout).error?.name).toBe("AbortError");
+  expect(jar.get("access_token")).toBe("b");
+  expect(jar.get("refresh_token")).toBe("rb");
+  expect(useAuthStore.getState().user?.id).toBe("B");
+  expect(useAuthStore.getState().accessToken).toBe("b");
+});
+
+it("rejects A's late ordinary 401 before refreshing or retrying under B", async () => {
+  const pending = deferred<Response>();
+  const transport = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((url, options) =>
+    url === "/api/users/me" ? pending.promise : transport(url, options),
+  );
+  const old = outcome(apiClient.get("/users/me"));
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/users/me")).toHaveLength(1);
+  await apiClient.post("/auth/login", { email: "b@test", password: "fake" });
+  const epoch = authTransitionEpoch();
+  pending.resolve(Response.json({ detail: "A expired" }, { status: 401 }));
+  expect((await old).error?.name).toBe("AbortError");
+  expect(sent).toEqual(["/api/auth/login"]);
+  expect(backend.mock.calls.filter(([path]) => path === "/api/v1/auth/refresh")).toHaveLength(0);
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/users/me")).toHaveLength(1);
+  expect(authTransitionEpoch()).toBe(epoch);
+  expect(jar.get("access_token")).toBe("b");
+  expect(jar.get("refresh_token")).toBe("rb");
+  expect(useAuthStore.getState().user?.id).toBe("B");
+  expect(useAuthStore.getState().accessToken).toBe("b");
+});

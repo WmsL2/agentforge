@@ -1,6 +1,6 @@
 # AgentForge v0.12 — Atomic 1 Knowledge API Integration
 
-> 文中第 1–11 节保留 Atomic 1 合并前的历史实现记录。当前基线、认证协调机制与验证结论以文末第 12 节 Main CI 修复记录为准。
+> 第 1–12 节保留历史实现与修复记录。当前基线及最新验证结论以文末第 13 节 Final Review Corrections 为准。
 
 ## 1. Baseline Verification
 
@@ -433,3 +433,75 @@ Lint/Build 保留既有可访问性和 runtimeConfig 弃用告警。Node HTTP �
 ### 12.11 Git Restrictions Confirmation
 
 No branch creation/switching. No git add. No commit. No push. No merge. No reset/stash. No PR, tag or release. 所有改动留在本地，等待审查，不开始 Atomic 2。
+
+
+## 13. Final Review Corrections — Queued Logout / Stale 401
+
+### 13.1 基线与范围
+
+开始时工作区干净，分支为 `review/v012-atomic1-fix-ci-auth`，HEAD 为 `f105389c8d40812329e58cd1f00b66d17db1d80d`。任务提供的 PR #30 / CI #174 已通过 362 项 Unit Tests 和 26 项 Playwright E2E；这些属于修正前提交的结果，不作为本地未提交修正已经通过远端 CI 的证明。
+
+本次只处理 Queued Logout 和 Stale 401；生产代码仅修改 api-client.ts 两处，auth-transition.ts 的现有 FIFO 框架不变。无新增依赖、Backend、Migration、CI 配置、Version 或 Atomic 2 改动。
+
+### 13.2 Queued Logout
+
+新增测试先在未修复源码中复现：Refresh A 阻塞时，Logout A 和 Login B 依次排队；Login B 推进 epoch 后，Logout 的 `identityGuard: current()` 在实际发送前失败。观察到的 HTTP 顺序是 Refresh → Login，Logout 被跳过。
+
+修复仅对已分类为 logout 的协调请求放行其传输准入，使其在 FIFO 中继续发送；perform 在出队时仍取得身份快照，其余取消/身份检查保留。认证结果提交处的 `if (!current()) aborted()`、状态更新与 finally 的 current 检查均不放宽，useAuth 的导航 epoch 检查也保持不变。故旧 Logout 可以完成后端注销与 Cookie 清理，却仍不能采纳旧结果或更改新会话导航。旧 Logout 调用方收到 AbortError 是过期结果隔离，不代表 HTTP 被跳过。
+
+使用真实 Next Refresh / Logout / Login Handler 和响应 Cookie Jar 验证：
+
+1. Refresh A 响应延迟，Logout A 与 Login B 尚未发 HTTP。
+2. Refresh A 返回 access_token=a2、refresh_token=ra2。
+3. Logout A 必须发送，后端收到刷新后的 ra2；Logout 响应也被延迟，此时 Login B 仍不得发送。
+4. Logout 响应清 Cookie 后才发送 Login B。
+5. 最终实际顺序严格为 Refresh A → Logout A → Login B，Cookie 为 b/rb，Auth Store 为用户 B / Token b。
+
+另一个实际 useAuth Hook 测试验证相同排队顺序，且只有新 Login 的 Chat 导航，没有旧 Logout 的 Login 导航。
+
+### 13.3 Stale 401
+
+普通请求并不总是进入 Knowledge 的 identityGuard，所以只在刷新之后校验身份太晚。新增测试在未修复源码中观察到：A 的普通 /users/me 请求延迟返回 401，而 B 已登录；旧请求触发了 B 的 Refresh，虽然之后被 Abort，B 的 Cookie 已被改变。
+
+现在所有非 coordinated 请求进入 401 分支后，在 `refreshAccessToken()` 之前显式检查最初捕获的 identity；不匹配立即 Abort。原有刷新后的检查和重试前检查保留。没有放宽普通请求、Knowledge 请求或其他认证操作的保护。
+
+回归测试验证：旧普通请求仅发送一次；B 登录后旧 401 不产生任何 /auth/refresh HTTP 或后端 Refresh 调用、不重发旧请求；B 的 Cookie、User、Token 与 epoch 均保持不变。
+
+### 13.4 修改文件与回归测试
+
+仅四个 tracked 文件修改，无新增源码文件：
+
+| 文件 | 改动 |
+|---|---|
+| frontend/src/lib/api-client.ts | Queued Logout 传输准入；Stale 401 刷新前身份校验 |
+| frontend/src/lib/auth-transition.test.ts | 真实 Auth Handler / Cookie Jar 排队注销测试；普通请求旧 401 测试 |
+| frontend/src/hooks/use-auth.test.tsx | 排队注销实际发送且不影响 B 导航的 Hook 测试 |
+| docs/v0.12/atomic1-knowledge-api-integration.md | 本次修正和验证记录 |
+
+新增三项测试在修复前全部失败（原认证专项 22 项通过 / 新增 3 项失败），修复后认证专项为 2 个文件 / 25 项通过。原 362 项测试全部保留，完整套件为 26 个文件 / 365 项；没有删改旧断言、跳过测试或降低阈值。
+
+### 13.5 实际验证结果
+
+Windows Node v22.13.0 / Bun 1.3.14：
+
+| 命令 | 实际结果 |
+|---|---|
+| bun run test:run -- src/lib/auth-transition.test.ts src/hooks/use-auth.test.tsx | 2 files / 25 tests PASS |
+| bun run lint | PASS，0 errors / 13 条既有告警 |
+| bun run type-check | PASS |
+| bun run test:run | 26 files / 365 tests PASS |
+| bun run test:coverage | 26 files / 365 tests PASS，既有全部阈值通过 |
+| bun run build | PASS |
+| git diff --check | PASS，无输出 |
+
+Configured Coverage：Statements/Lines 69.23%，Branches 100%（40/40），Functions 60.86%；include/thresholds 未修改，聚合百分比仍只对应原配置的四个文件。
+
+复用现有 oven/bun:1 镜像，在只读挂载源码的独立临时 Linux 容器中使用原生 Node v24.22.3 / Bun 1.3.14：完整 Unit Tests + Coverage 为 **26 files / 365 tests PASS**，TypeScript 检查通过。Linux 原始日志保存为 `frontend/coverage/atomic1-final-review-linux-node24.log`（ignored 验证产物）。该临时容器已移除，未修改或停止现有服务。
+
+本次未重新运行远端 CI 或 Playwright E2E，不能将任务提供的 CI #174 成功直接当作此未提交补丁的 CI 结果。既有 Node HTTP 测试的 Zustand 无浏览器存储提示、Lint/Build 的既有告警仍如实保留。
+
+### 13.6 限制与 Git
+
+本次真实 Handler / Cookie Jar 测试包含延迟响应，但仍不是跨标签页或真实浏览器全链路验收；单页面协调、跨标签页及服务端 Session 边界保持第 12.9 节说明。本次不将 CI #174 或之前的 26 项 Playwright 结果宣称为未提交补丁的重新验收。
+
+最终只读核查：工作分支仍为 `review/v012-atomic1-fix-ci-auth`，HEAD 仍为 `f105389c8d40812329e58cd1f00b66d17db1d80d`。仅第 13.4 节列出的四个 tracked 文件修改，无新增源码文件；Backend、依赖锁文件、版本元数据、CI 和 Coverage 配置均无修改，git diff --check 无输出。未创建或切换分支，未执行 git add、commit、push、merge、reset、stash，等待审查，不开始 Atomic 2。

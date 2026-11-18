@@ -248,3 +248,43 @@ it.each([
   expect(useAuthStore.getState().user?.id).toBe(transition === "login" ? "B" : undefined);
   expect(useAuthStore.getState().user?.full_name).not.toBe("late");
 });
+
+it("queued Logout sends HTTP before Login B but never navigates B back to Login", async () => {
+  const hook = renderHook(() => useAuth());
+  await waitFor(() => expect(useAuthStore.getState().isLoading).toBe(false));
+  const pending = deferred<Response>();
+  mock.mockClear().mockImplementation((url: string) => {
+    if (url === "/api/auth/refresh") return pending.promise;
+    return Promise.resolve(
+      Response.json(
+        url === "/api/auth/login" ? { user: B, access_token: "b" } : { message: "out" },
+      ),
+    );
+  });
+  const oldRefresh = apiClient.post("/auth/refresh").catch((error: unknown) => error);
+  await waitFor(() => expect(mock.mock.calls.map(([url]) => url)).toEqual(["/api/auth/refresh"]));
+  let exit!: Promise<void>, enter!: ReturnType<typeof hook.result.current.login>;
+  act(() => {
+    exit = hook.result.current.logout();
+  });
+  act(() => {
+    enter = hook.result.current.login({ email: "b@test", password: "fake" });
+  });
+  expect(mock.mock.calls.map(([url]) => url)).toEqual(["/api/auth/refresh"]);
+  await act(async () => {
+    pending.resolve(Response.json({ access_token: "a2" }));
+    await oldRefresh;
+    await exit;
+    await enter;
+  });
+  expect(mock.mock.calls.map(([url]) => url)).toEqual([
+    "/api/auth/refresh",
+    "/api/auth/logout",
+    "/api/auth/login",
+  ]);
+  expect(useAuthStore.getState().user?.id).toBe("B");
+  expect(useAuthStore.getState().accessToken).toBe("b");
+  expect(navigation.push).toHaveBeenCalledTimes(1);
+  expect(navigation.push).toHaveBeenCalledWith(ROUTES.CHAT);
+  expect(navigation.replace).not.toHaveBeenCalled();
+});
