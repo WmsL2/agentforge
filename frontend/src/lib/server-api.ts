@@ -21,6 +21,7 @@ interface RequestOptions extends RequestInit {
   params?: Record<string, string>;
   /** Return raw text instead of parsing as JSON */
   raw?: boolean;
+  rawResponse?: boolean;
 }
 
 /**
@@ -28,7 +29,7 @@ interface RequestOptions extends RequestInit {
  * This should only be called from Next.js API routes or Server Components.
  */
 export async function backendFetch<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { params, body, raw, ...fetchOptions } = options;
+  const { params, body, raw, rawResponse, ...fetchOptions } = options;
 
   let url = `${BACKEND_URL}${endpoint}`;
 
@@ -63,6 +64,8 @@ export async function backendFetch<T>(endpoint: string, options: RequestOptions 
     }
     throw new BackendApiError(response.status, response.statusText, errorData);
   }
+
+  if (rawResponse) return response as T;
 
   // Handle empty responses
   const text = await response.text();

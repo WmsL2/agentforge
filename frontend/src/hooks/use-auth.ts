@@ -104,6 +104,7 @@ export function useAuth() {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    logout();
     try {
       await apiClient.post("/auth/logout");
     } catch {

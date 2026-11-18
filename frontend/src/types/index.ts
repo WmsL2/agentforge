@@ -4,3 +4,5 @@ export * from "./chat";
 export * from "./conversation";
 export * from "./workspace";
 export * from "./workflow";
+
+export * from "./knowledge";

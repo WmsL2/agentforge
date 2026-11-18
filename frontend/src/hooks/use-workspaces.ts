@@ -2,6 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { clearKnowledgeScope } from "@/lib/knowledge/knowledge-lifecycle";
+import { authIdentity, sameAuthIdentity } from "@/lib/auth-identity";
+import { ApiError } from "@/lib/api-client";
+
 import { qk } from "@/lib/query-keys";
 import { workspaceApi } from "@/lib/workflow/workspace-api";
 import type {
@@ -21,9 +25,26 @@ export function useWorkspaces(userId?: string) {
 }
 
 export function useWorkspaceMembers(userId?: string, workspaceId?: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: qk.workspaces.members(userId ?? "anonymous", workspaceId ?? "none"),
-    queryFn: () => workspaceApi.listMembers(workspaceId!),
+    queryFn: async () => {
+      const identity = authIdentity();
+      try {
+        return await workspaceApi.listMembers(workspaceId!);
+      } catch (error) {
+        // Membership endpoint checks workspace access before returning members.
+        if (
+          sameAuthIdentity(identity) &&
+          identity.userId === userId &&
+          error instanceof ApiError &&
+          (error.status === 403 || error.status === 404)
+        ) {
+          clearKnowledgeScope(queryClient, qk.knowledge.workspace(userId!, workspaceId!));
+        }
+        throw error;
+      }
+    },
     enabled: Boolean(userId && workspaceId),
   });
 }
@@ -52,7 +73,11 @@ export function useWorkspaceMutations(userId: string) {
 
   const remove = useMutation({
     mutationFn: (workspaceId: string) => workspaceApi.deleteWorkspace(workspaceId),
-    onSuccess: (_data, workspaceId) => {
+    onMutate: () => authIdentity(),
+    onSuccess: (_data, workspaceId, identity) => {
+      if (identity && sameAuthIdentity(identity) && identity.userId === userId) {
+        clearKnowledgeScope(queryClient, qk.knowledge.workspace(userId, workspaceId));
+      }
       queryClient.setQueryData<WorkspaceRead[]>(listKey, (current = []) =>
         current.filter((item) => item.id !== workspaceId),
       );

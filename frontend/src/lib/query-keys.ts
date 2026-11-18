@@ -96,6 +96,26 @@ export const qk = {
       ["workflow-runs", userId, workflowId, "approval", runId] as const,
   },
 
+  knowledge: {
+    root: () => ["knowledge"] as const,
+    user: (u: string) => ["knowledge", u] as const,
+    workspace: (u: string, w: string) => ["knowledge", u, w] as const,
+    lists: (u: string, w: string) => ["knowledge", u, w, "list"] as const,
+    list: (u: string, w: string, skip = 0, limit = 50) =>
+      ["knowledge", u, w, "list", skip, limit] as const,
+    base: (u: string, w: string, b: string) => ["knowledge", u, w, "base", b] as const,
+    documentLists: (u: string, w: string, b: string) =>
+      ["knowledge", u, w, "base", b, "documents"] as const,
+    documents: (u: string, w: string, b: string, skip = 0, limit = 50) =>
+      ["knowledge", u, w, "base", b, "documents", skip, limit] as const,
+    document: (u: string, w: string, b: string, d: string) =>
+      ["knowledge", u, w, "base", b, "document", d] as const,
+    content: (u: string, w: string, b: string, d: string) =>
+      ["knowledge", u, w, "base", b, "document", d, "content"] as const,
+    index: (u: string, w: string, b: string, d: string) =>
+      ["knowledge", u, w, "base", b, "document", d, "index"] as const,
+  },
+
   kb: {
     all: () => ["kb"] as const,
 
