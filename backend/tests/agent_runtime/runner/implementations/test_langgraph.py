@@ -61,6 +61,77 @@ class FakeChatModel:
         return self._response
 
 
+class CloseProbe(FakeChatModel):
+    def __init__(self, error: Exception | None = None) -> None:
+        super().__init__()
+        self.error = error
+        self.close_calls = 0
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        if self.error is not None:
+            raise self.error
+
+
+@pytest.mark.anyio
+async def test_runner_cleanup_continues_after_one_client_fails() -> None:
+    first_error = RuntimeError("first close failed")
+    first, second = CloseProbe(first_error), CloseProbe()
+    runner = LangGraphAgentRunner()
+    runner.__dict__["_created_models"] = [first, second]
+
+    with pytest.raises(ExceptionGroup) as error_info:
+        await runner.aclose()
+
+    assert error_info.value.exceptions == (first_error,)
+    assert (first.close_calls, second.close_calls) == (1, 1)
+    assert runner._created_models == [first]
+    first.error = None
+    await runner.aclose()
+    assert first.close_calls == 2 and runner._created_models == []
+
+
+@pytest.mark.anyio
+async def test_runner_cleanup_closes_multiple_distinct_clients() -> None:
+    first, second = CloseProbe(), CloseProbe()
+    runner = LangGraphAgentRunner()
+    runner.__dict__["_created_models"] = [first, second]
+    await runner.aclose()
+    assert (first.close_calls, second.close_calls) == (1, 1)
+    assert runner._created_models == []
+
+
+@pytest.mark.anyio
+async def test_runner_cleanup_deduplicates_model_instances() -> None:
+    model = CloseProbe()
+    runner = LangGraphAgentRunner()
+    runner.__dict__["_created_models"] = [model, model]
+    await runner.aclose()
+    assert model.close_calls == 1 and runner._created_models == []
+
+
+@pytest.mark.anyio
+async def test_runner_cleanup_propagates_cancellation() -> None:
+    started = asyncio.Event()
+
+    class BlockingCloseProbe(CloseProbe):
+        async def aclose(self) -> None:
+            self.close_calls += 1
+            started.set()
+            await asyncio.Event().wait()
+
+    first, second = BlockingCloseProbe(), CloseProbe()
+    runner = LangGraphAgentRunner()
+    runner.__dict__["_created_models"] = [first, second]
+    task = asyncio.create_task(runner.aclose())
+    await asyncio.wait_for(started.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert second.close_calls == 0
+    assert runner._created_models == [first, second]
+
+
 @pytest.mark.anyio
 async def test_knowledge_models_own_distinct_async_http_clients(monkeypatch) -> None:
     monkeypatch.setattr(settings, "LLM_API_KEY", "test-only")

@@ -206,58 +206,75 @@ async def atomic8_runtime(postgres_restart_session_factory, tmp_path: Path, monk
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     provider_url = f"http://127.0.0.1:{server.server_port}/v1"
-    for key, value in {
-        "EMBEDDING_API_KEY": "atomic8-test-only",
-        "EMBEDDING_BASE_URL": provider_url,
-        "LLM_API_KEY": "atomic8-test-only",
-        "LLM_BASE_URL": provider_url,
-        "MEDIA_DIR": str(tmp_path),
-        "KNOWLEDGE_AGENT_ENABLED": "true",
-    }.items():
-        monkeypatch.setenv(key, value)
-        setattr(settings, key, value if key != "MEDIA_DIR" else tmp_path)
+    overrides = {
+        "EMBEDDING_API_KEY": ("atomic8-test-only", "atomic8-test-only"),
+        "EMBEDDING_BASE_URL": (provider_url, provider_url),
+        "LLM_API_KEY": ("atomic8-test-only", "atomic8-test-only"),
+        "LLM_BASE_URL": (provider_url, provider_url),
+        "MEDIA_DIR": (str(tmp_path), tmp_path),
+        "KNOWLEDGE_AGENT_ENABLED": ("true", True),
+    }
+    previous_settings = {key: getattr(settings, key) for key in overrides}
+    previous_env = {key: os.environ.get(key) for key in overrides}
     queue = f"agentforge-atomic8-{uuid4().hex}"
     hostname = f"atomic8-{uuid4().hex}@localhost"
     previous_queue = celery_app.conf.task_default_queue
-    celery_app.conf.task_default_queue = queue
-    worker = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "celery",
-            "-A",
-            "app.worker.celery_app:celery_app",
-            "worker",
-            "--pool=solo",
-            "--concurrency=1",
-            "--loglevel=WARNING",
-            "--queues",
-            queue,
-            "--hostname",
-            hostname,
-            "--without-gossip",
-            "--without-mingle",
-            "--without-heartbeat",
-        ],
-        cwd=BACKEND_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-        env=os.environ.copy(),
-    )
     try:
-        await _wait_for_worker(hostname, worker)
-        yield postgres_restart_session_factory
+        with monkeypatch.context() as runtime_patch:
+            for key, (env_value, setting_value) in overrides.items():
+                runtime_patch.setenv(key, env_value)
+                runtime_patch.setattr(settings, key, setting_value)
+            worker_env = os.environ.copy()
+            assert worker_env["EMBEDDING_BASE_URL"] == provider_url
+            assert worker_env["LLM_BASE_URL"] == provider_url
+            celery_app.conf.task_default_queue = queue
+            worker: subprocess.Popen | None = None
+            try:
+                worker = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-m",
+                        "celery",
+                        "-A",
+                        "app.worker.celery_app:celery_app",
+                        "worker",
+                        "--pool=solo",
+                        "--concurrency=1",
+                        "--loglevel=WARNING",
+                        "--queues",
+                        queue,
+                        "--hostname",
+                        hostname,
+                        "--without-gossip",
+                        "--without-mingle",
+                        "--without-heartbeat",
+                    ],
+                    cwd=BACKEND_ROOT,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT,
+                    env=worker_env,
+                )
+                await _wait_for_worker(hostname, worker)
+                yield postgres_restart_session_factory
+            finally:
+                try:
+                    if worker is not None:
+                        worker.terminate()
+                        try:
+                            await asyncio.to_thread(worker.wait, 10)
+                        except subprocess.TimeoutExpired:
+                            worker.kill()
+                            await asyncio.to_thread(worker.wait, 5)
+                        assert worker.poll() is not None
+                finally:
+                    celery_app.conf.task_default_queue = previous_queue
     finally:
-        worker.terminate()
-        try:
-            await asyncio.to_thread(worker.wait, 10)
-        except subprocess.TimeoutExpired:
-            worker.kill()
-            await asyncio.to_thread(worker.wait, 5)
-        celery_app.conf.task_default_queue = previous_queue
         server.shutdown()
         server.server_close()
         server_thread.join(timeout=5)
+    assert all(getattr(settings, key) == value for key, value in previous_settings.items())
+    assert all(os.environ.get(key) == value for key, value in previous_env.items())
+    assert celery_app.conf.task_default_queue == previous_queue
 
 
 @pytest.mark.anyio
