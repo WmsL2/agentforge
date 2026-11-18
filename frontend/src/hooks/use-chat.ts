@@ -360,11 +360,7 @@ export function useChat(options: UseChatOptions = {}) {
       refreshingRef.current = true;
       void (async () => {
         try {
-          const res = await fetch("/api/auth/me");
-          if (res.ok) {
-            const data = (await res.json()) as { access_token?: string };
-            if (data.access_token) useAuthStore.getState().setAccessToken(data.access_token);
-          }
+          await useAuthStore.getState().checkAuth();
         } catch {
           // ignore — backoff reconnect will retry
         } finally {

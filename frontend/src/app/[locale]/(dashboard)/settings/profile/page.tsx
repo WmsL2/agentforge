@@ -21,6 +21,7 @@ import {
 } from "@/components/ui";
 import { SectionCard } from "@/components/settings/settings-section";
 import { useAuth } from "@/hooks";
+import { authIdentity, sameAuthIdentity } from "@/lib/auth-identity";
 import { apiClient, ApiError } from "@/lib/api-client";
 import {
   cn,
@@ -82,6 +83,7 @@ export default function ProfileSettingsPage() {
 
   const handleSaveProfile = async () => {
     if (!user) return;
+    const identity = authIdentity();
     setSaving(true);
     try {
       const payload: { email?: string; full_name?: string | null } = {};
@@ -93,6 +95,7 @@ export default function ProfileSettingsPage() {
         return;
       }
       const updated = await apiClient.patch<User>("/users/me", payload);
+      if (!sameAuthIdentity(identity)) return;
       setUser(updated);
       toast.success("Profile updated");
     } catch (err) {
@@ -110,6 +113,7 @@ export default function ProfileSettingsPage() {
       toast.error("Avatar too large. Maximum 2MB.");
       return;
     }
+    const identity = authIdentity();
     setAvatarUploading(true);
     try {
       const formData = new FormData();
@@ -120,6 +124,7 @@ export default function ProfileSettingsPage() {
         throw new Error(err.detail || "Upload failed");
       }
       const updated = await res.json();
+      if (!sameAuthIdentity(identity)) return;
       setUser(updated);
       bumpAvatarVersion();
       toast.success("Avatar updated");

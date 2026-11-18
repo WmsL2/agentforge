@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { LoadingState } from "@/components/states";
 import { apiClient } from "@/lib/api-client";
-import { useAuthStore } from "@/stores";
 import type { User } from "@/types";
 
 export default function AuthCallbackPage() {
@@ -34,13 +33,11 @@ export default function AuthCallbackPage() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiClient.post<{ user: User; access_token: string }>(
-          "/auth/oauth-callback",
-          { access_token: accessToken, refresh_token: refreshToken },
-        );
+        await apiClient.post<{ user: User; access_token: string }>("/auth/oauth-callback", {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
         if (cancelled) return;
-        useAuthStore.getState().setUser(data.user);
-        useAuthStore.getState().setAccessToken(data.access_token);
         router.replace("/dashboard");
       } catch {
         if (!cancelled) {

@@ -2,6 +2,12 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  authTransitionEpoch,
+  canProbeAuthentication,
+  blockAuthProbes,
+  resumeAuthProbes,
+} from "@/lib/auth-transition";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -28,12 +34,14 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       avatarVersion: 0,
 
-      setUser: (user) =>
+      setUser: (user) => {
+        if (user) resumeAuthProbes();
         set({
           user,
           isAuthenticated: user !== null,
           isLoading: false,
-        }),
+        });
+      },
 
       setLoading: (loading) => set({ isLoading: loading }),
 
@@ -42,27 +50,25 @@ export const useAuthStore = create<AuthState>()(
       bumpAvatarVersion: () => set((s) => ({ avatarVersion: s.avatarVersion + 1 })),
 
       checkAuth: async () => {
+        const state = useAuthStore.getState();
+        if (!canProbeAuthentication(state.isAuthenticated)) return;
+        const ticket = authTransitionEpoch();
+        set({ isLoading: true });
         try {
-          set({ isLoading: true });
-          const response = await fetch("/api/auth/me");
-          if (response.ok) {
-            const user = await response.json();
-            set({ user, isAuthenticated: true, isLoading: false });
-          } else {
-            set({ user: null, isAuthenticated: false, isLoading: false });
-          }
+          const { apiClient } = await import("@/lib/api-client");
+          if (ticket !== authTransitionEpoch()) return;
+          await apiClient.get<User>("/auth/me");
         } catch {
-          set({ user: null, isAuthenticated: false, isLoading: false });
+          // The coordinated client owns identity updates; stale errors do not log out a new user.
+        } finally {
+          if (ticket === authTransitionEpoch()) set({ isLoading: false });
         }
       },
 
-      logout: () =>
-        set({
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          accessToken: null,
-        }),
+      logout: () => {
+        blockAuthProbes();
+        set({ user: null, isAuthenticated: false, isLoading: false, accessToken: null });
+      },
     }),
     {
       name: "auth-storage",

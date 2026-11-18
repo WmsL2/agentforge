@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn } from "./utils";
+import { cn, formatDate } from "./utils";
 
 describe("cn utility function", () => {
   it("should merge class names", () => {
@@ -36,4 +36,12 @@ describe("cn utility function", () => {
     expect(result).toContain("class1");
     expect(result).toContain("class2");
   });
+});
+
+it("formats profile dates consistently and handles absent or invalid dates", () => {
+  expect(formatDate("2026-11-18T12:00:00Z")).toBe("Nov 18, 2026");
+  expect(formatDate(new Date("2026-11-18T12:00:00Z"))).toBe("Nov 18, 2026");
+  expect(formatDate(null)).toBe("—");
+  expect(formatDate(undefined)).toBe("—");
+  expect(formatDate("not-a-date")).toBe("—");
 });

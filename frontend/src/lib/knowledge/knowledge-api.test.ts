@@ -8,6 +8,19 @@ import { qk } from "@/lib/query-keys";
 import { getKnowledgeErrorCode } from "./knowledge-error";
 import type { User } from "@/types";
 
+// jsdom Blob intentionally does not implement arrayBuffer on every CI runtime.
+async function blobBytes(blob: Blob): Promise<number[]> {
+  const buffer =
+    typeof blob.arrayBuffer === "function"
+      ? await blob.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as ArrayBuffer);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(blob);
+        });
+  return Array.from(new Uint8Array(buffer));
+}
 const fetchMock = vi.fn();
 const w = "w/一",
   b = "b?#",
@@ -123,7 +136,7 @@ it("reads only successful binary as Blob", async () => {
     text = vi.spyOn(response, "text");
   fetchMock.mockResolvedValueOnce(response);
   const result = await api.downloadDocument(w, b, d);
-  expect(Array.from(new Uint8Array(await result.blob.arrayBuffer()))).toEqual([0, 255, 2]);
+  expect(await blobBytes(result.blob)).toEqual([0, 255, 2]);
   expect(result.contentType).toBe("application/pdf");
   expect(result.contentDisposition).toContain("filename*=");
   expect(json).not.toHaveBeenCalled();
@@ -245,4 +258,8 @@ it("does not leak body stream or JSON parse failures", async () => {
   await expect(api.getKnowledgeBase(w, b)).rejects.toMatchObject({
     message: "Invalid server response",
   });
+});
+
+it("reads browser Blob bytes without requiring Node Blob methods", async () => {
+  expect(await blobBytes(new Blob([new Uint8Array([0, 255, 128])]))).toEqual([0, 255, 128]);
 });

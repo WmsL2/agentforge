@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores";
-import { apiClient } from "@/lib/api-client";
+import { isAuthTransition } from "@/lib/auth-transition";
 import { ROUTES } from "@/lib/constants";
-import type { User } from "@/types";
 import { Spinner } from "@/components/ui";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, setUser } = useAuthStore();
+  const { isAuthenticated, checkAuth } = useAuthStore();
   const [checking, setChecking] = useState(!isAuthenticated);
 
   useEffect(() => {
@@ -18,8 +17,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const verify = async () => {
       try {
-        const user = await apiClient.get<User>("/auth/me");
-        setUser(user);
+        await checkAuth();
+        const state = useAuthStore.getState();
+        if (!state.isAuthenticated && !isAuthTransition()) router.replace(ROUTES.LOGIN);
       } catch {
         router.replace(ROUTES.LOGIN);
       } finally {
@@ -28,7 +28,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     };
 
     verify();
-  }, [isAuthenticated, router, setUser]);
+  }, [isAuthenticated, router, checkAuth]);
 
   if (checking && !isAuthenticated) {
     return (
@@ -39,5 +39,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (!isAuthenticated) return null;
   return <>{children}</>;
 }
