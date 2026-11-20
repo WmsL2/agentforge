@@ -22,6 +22,8 @@ export const ROUTES = {
   DASHBOARD: "/dashboard",
   CHAT: "/chat",
   WORKFLOWS: "/workflows",
+  KNOWLEDGE: "/knowledge",
+  KNOWLEDGE_DETAIL: (id: string) => `/knowledge/${encodeURIComponent(id)}`,
   PROFILE: "/profile",
   SETTINGS: "/settings",
   SETTINGS_PROFILE:

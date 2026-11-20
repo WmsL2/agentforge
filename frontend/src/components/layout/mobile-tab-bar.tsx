@@ -7,6 +7,7 @@ import {
 } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  BookOpen,
   LayoutDashboard,
   MessageSquare,
   Search,
@@ -16,7 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
-import { localizeHref } from "@/lib/active-route";
+import { localizeHref, stripLocale } from "@/lib/active-route";
 import { cn } from "@/lib/utils";
 
 interface TabItem {
@@ -32,10 +33,7 @@ export function MobileTabBar() {
   const router = useRouter();
   const t = useTranslations("nav");
 
-  const stripped = pathname.replace(
-    /^\/[a-z]{2}/,
-    "",
-  );
+  const stripped = stripLocale(pathname);
 
   const items: TabItem[] = [
     {
@@ -56,6 +54,7 @@ export function MobileTabBar() {
       icon: Workflow,
       startsWith: true,
     },
+    { label: t("knowledge"), href: ROUTES.KNOWLEDGE, icon: BookOpen, startsWith: true },
     {
       label: t("search"),
       icon: Search,
@@ -100,7 +99,7 @@ export function MobileTabBar() {
         const active = isActive(item);
 
         const className = cn(
-          "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-medium uppercase tracking-wider transition-colors min-h-[56px]",
+          "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-medium uppercase tracking-tight transition-colors min-h-[56px]",
           active
             ? "text-foreground"
             : "text-foreground/55 hover:text-foreground",
@@ -116,7 +115,7 @@ export function MobileTabBar() {
               )}
             />
 
-            <span className="font-mono">
+            <span className="max-w-full truncate px-0.5 font-mono">
               {item.label}
             </span>
 
