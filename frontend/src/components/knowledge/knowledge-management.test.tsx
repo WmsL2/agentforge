@@ -113,6 +113,7 @@ function response(url: string, options: RequestInit = {}) {
       limit = Number(parsed.searchParams.get("limit") ?? 50);
     return Response.json({ items: items.slice(skip, skip + limit), total: items.length });
   }
+  if (parts[6] === "documents") return Response.json({ items: [], total: 0 });
   const payload = options.body ? JSON.parse(String(options.body)) : {};
   if (method === "POST") {
     const created = { ...base("new", w), ...payload };
