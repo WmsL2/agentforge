@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  BookOpen,
   Activity,
   ChevronDown,
   Layers3,
@@ -85,6 +86,7 @@ const NAV: NavEntry[] = [
     href: ROUTES.WORKFLOWS,
     icon: Workflow,
   },
+  { kind: "link", labelKey: "knowledge", href: ROUTES.KNOWLEDGE, icon: BookOpen },
   {
     kind: "menu",
     labelKey: "admin",

@@ -2,8 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { clearKnowledgeScope } from "@/lib/knowledge/knowledge-lifecycle";
-import { authIdentity, sameAuthIdentity } from "@/lib/auth-identity";
+import { clearKnowledgeScope, within } from "@/lib/knowledge/knowledge-lifecycle";
+import { aborted, authIdentity, sameAuthIdentity } from "@/lib/auth-identity";
+import { useAuthStore } from "@/stores/auth-store";
 import { ApiError } from "@/lib/api-client";
 
 import { qk } from "@/lib/query-keys";
@@ -16,36 +17,118 @@ import type {
   WorkspaceUpdate,
 } from "@/types";
 
-export function useWorkspaces(userId?: string) {
+/** Opt-in policy for Knowledge authorization. Workflow defaults remain unchanged. */
+export interface WorkspaceQueryOptions {
+  authorizationFresh?: boolean;
+}
+function useAuthorizationQuery(userId: string | undefined, options: WorkspaceQueryOptions) {
+  useAuthStore((s) => s.user);
+  const identity = authIdentity();
+  return {
+    identity,
+    enabled: !options.authorizationFresh || Boolean(userId && identity.userId === userId),
+    suffix: options.authorizationFresh
+      ? ["knowledge-access", identity.generation, identity.transitionEpoch]
+      : [],
+    policy: options.authorizationFresh
+      ? {
+          staleTime: 0,
+          gcTime: 0,
+          retry: false as const,
+          refetchOnMount: "always" as const,
+          refetchOnWindowFocus: true,
+          refetchOnReconnect: "always" as const,
+        }
+      : {},
+  };
+}
+export function useWorkspaces(userId?: string, options: WorkspaceQueryOptions = {}) {
+  const client = useQueryClient();
+  const access = useAuthorizationQuery(userId, options);
+  const key = [...qk.workspaces.list(userId ?? "anonymous"), ...access.suffix];
   return useQuery({
-    queryKey: qk.workspaces.list(userId ?? "anonymous"),
-    queryFn: async () => (await workspaceApi.listWorkspaces()).items,
-    enabled: Boolean(userId),
+    ...access.policy,
+    queryKey: key,
+    queryFn: async ({ signal }) => {
+      const valid = () =>
+        !signal.aborted && sameAuthIdentity(access.identity) && access.identity.userId === userId;
+      if (options.authorizationFresh && (!userId || !valid())) aborted();
+      const items = (
+        await workspaceApi.listWorkspaces(
+          options.authorizationFresh
+            ? { signal, identityGuard: valid, cache: "no-store" }
+            : undefined,
+        )
+      ).items;
+      if (options.authorizationFresh) {
+        if (!valid()) aborted();
+        const previous = client.getQueryData<WorkspaceRead[]>(key) ?? [];
+        const prefix = qk.knowledge.user(userId!);
+        const cachedScopes = client
+          .getQueryCache()
+          .findAll({ queryKey: prefix })
+          .map((query) => query.queryKey[2]);
+        const mutationScopes = client
+          .getMutationCache()
+          .getAll()
+          .flatMap((mutation) => {
+            const key = mutation.options.mutationKey ?? [];
+            return within(key, prefix) ? [key[2]] : [];
+          });
+        const known = new Set(
+          [...previous.map((workspace) => workspace.id), ...cachedScopes, ...mutationScopes].filter(
+            (id): id is string => typeof id === "string",
+          ),
+        );
+        for (const id of known)
+          if (!items.some((item) => item.id === id))
+            clearKnowledgeScope(client, qk.knowledge.workspace(userId!, id));
+      }
+      return items;
+    },
+    enabled: Boolean(userId) && access.enabled,
   });
 }
 
-export function useWorkspaceMembers(userId?: string, workspaceId?: string) {
+export function useWorkspaceMembers(
+  userId?: string,
+  workspaceId?: string,
+  options: WorkspaceQueryOptions = {},
+) {
   const queryClient = useQueryClient();
+  const access = useAuthorizationQuery(userId, options);
   return useQuery({
-    queryKey: qk.workspaces.members(userId ?? "anonymous", workspaceId ?? "none"),
-    queryFn: async () => {
+    ...access.policy,
+    queryKey: [
+      ...qk.workspaces.members(userId ?? "anonymous", workspaceId ?? "none"),
+      ...access.suffix,
+    ],
+    queryFn: async ({ signal }) => {
       const identity = authIdentity();
+      const valid = () =>
+        !signal.aborted && sameAuthIdentity(identity) && identity.userId === userId;
+      if (options.authorizationFresh && (!userId || !workspaceId || !valid())) aborted();
       try {
-        return await workspaceApi.listMembers(workspaceId!);
+        const members = await workspaceApi.listMembers(
+          workspaceId!,
+          options.authorizationFresh
+            ? { signal, identityGuard: valid, cache: "no-store" }
+            : undefined,
+        );
+        if (options.authorizationFresh && !valid()) aborted();
+        return members;
       } catch (error) {
-        // Membership endpoint checks workspace access before returning members.
         if (
           sameAuthIdentity(identity) &&
           identity.userId === userId &&
           error instanceof ApiError &&
           (error.status === 403 || error.status === 404)
-        ) {
+        )
           clearKnowledgeScope(queryClient, qk.knowledge.workspace(userId!, workspaceId!));
-        }
         throw error;
       }
     },
-    enabled: Boolean(userId && workspaceId),
+    enabled: Boolean(userId && workspaceId) && access.enabled,
   });
 }
 

@@ -5,12 +5,20 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn, isAppAdmin } from "@/lib/utils";
 import { APP_NAME, ROUTES } from "@/lib/constants";
-import { LayoutDashboard, MessageSquare, UserCircle, ShieldAlert, Workflow } from "lucide-react";
+import {
+  BookOpen,
+  LayoutDashboard,
+  MessageSquare,
+  UserCircle,
+  ShieldAlert,
+  Workflow,
+} from "lucide-react";
 import { useSidebarStore, useAuthStore } from "@/stores";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui";
 import { isRouteActive, localizeHref } from "@/lib/active-route";
 
 const navigation = [
+  { nameKey: "knowledge", href: ROUTES.KNOWLEDGE, icon: BookOpen },
   { nameKey: "dashboard", href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { nameKey: "chat", href: ROUTES.CHAT, icon: MessageSquare },
   { nameKey: "workflows", href: ROUTES.WORKFLOWS, icon: Workflow },
