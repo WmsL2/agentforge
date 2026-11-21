@@ -27,7 +27,7 @@ On document detail 404, a separate existing base Hook refetch confirms whether t
 
 Single file, nonempty, maximum 10 × 1024 × 1024 bytes inclusive. Case-insensitive extensions PDF, DOCX, TXT, MD and MARKDOWN. MIME mappings follow the actual backend parser. Only absent browser MIME is completed with the canonical MIME; this wraps the original file bytes and retains filename and lastModified. Nonempty incompatible MIME, including unsupported Markdown aliases, is explicitly rejected with a localized explanation.
 
-The server remains responsible for signatures, safe archive expansion and actual content parsing. The form never sets multipart Content-Type/boundary. Pending UI describes uploading and synchronous parsing, uses a synchronous duplicate-submit lock, disables inputs and never shows fabricated progress. Failed HTTP/network requests retain the selected file for manual retry. No automatic POST retry or Index API request occurs.
+The server remains responsible for signatures, safe archive expansion and actual content parsing. The form never sets multipart Content-Type/boundary. Pending UI describes uploading and synchronous parsing, uses a synchronous duplicate-submit lock, disables inputs and never shows fabricated progress. Failed HTTP/network requests retain the selected file for manual retry. The UI and React Query do not proactively retry uploads or start Index API requests. The existing apiClient can perform an identity-safe retry after authentication refresh; this behavior is unchanged, so this is not a claim that HTTP POST can never be resent.
 
 HTTP 201 ready closes the form and refreshes the list using existing invalidation. HTTP 201 failed means saved: the list refreshes, selected input is cleared, a safe parse reason is shown, and the form no longer offers upload submission. The saved document remains readable as metadata and downloadable/deletable. Unknown parse states never enable preview.
 
@@ -73,7 +73,7 @@ The new component tests exercise real QueryClient, Knowledge Hooks, Auth Store a
 
 Coverage includes scope admission, pagination and last-row delete, list retry, all allowed formats, empty/oversize/exact-limit/MIME handling, real multipart body, duplicate submit, 201 ready/failed, retained input on errors, safe translations for all real parser codes, fresh metadata and scope rejection, explicit bounded inert preview, unavailable/mismatched content, binary bytes/Unicode filenames/URL cleanup, error and late-download suppression, latest-wins, precise delete cache cleanup, role gates/revalidation, actual workspace/base changes, logout/account/same-user transitions and old callback isolation.
 
-Final executed results are recorded in section 13. No thresholds, old assertions, dependency versions or CI configuration are weakened.
+Initial implementation results are recorded in section 13; current review correction results are recorded in section 14. No thresholds, old assertions, dependency versions or CI configuration are weakened.
 
 ## 12. Known limitations and deferred features
 
@@ -86,7 +86,7 @@ Final executed results are recorded in section 13. No thresholds, old assertions
 - Index management/polling, embedding/chunks, search/ask, Workflow knowledge node, edit/reparse, OCR, batch upload and Atomic 4 remain deferred. No backend, database, dependency, version or CI change.
 
 
-## 13. Executed final verification (Windows)
+## 13. Historical initial implementation verification (Windows, before PR #33 review corrections)
 
 Runtime: Windows, Node v22.13.0, Bun 1.3.14, Next.js 15.5.23.
 
@@ -108,4 +108,53 @@ Raw local logs (ignored, not committed): `frontend/node_modules/.cache/atomic3-{
 
 Final change inventory: five new files (three implementation files, one component-test file, this document); four modified files (base-detail integration, existing test HTTP fixture, en/pl translations). Backend, migrations, auth coordination, Knowledge data layer, dependencies/lockfiles, CI and version surfaces are unchanged.
 
-Final branch/HEAD remain `main` / `c9397015c8a257e232abb2cbdd8a3ef66a690db0`. All changes are local and unstaged. No branch creation/switch, add, commit, push, merge, reset, stash, PR, tag or release occurred. Atomic 4 was not started. Awaiting ChatGPT review.
+At that initial implementation checkpoint, branch/HEAD remained `main` / `c9397015c8a257e232abb2cbdd8a3ef66a690db0`. All changes are local and unstaged. No branch creation/switch, add, commit, push, merge, reset, stash, PR, tag or release occurred. Atomic 4 was not started. Awaiting ChatGPT review.
+
+
+## 14. PR #33 final review corrections
+
+### Baseline and scope
+
+Initial clean worktree verified on `review/v012-atomic3-document-management`, HEAD `379c1c2491122bc57c669c9e3138461a91a6e621`. PR #33 is user-reported as open/unmerged. This correction changes only this document, `knowledge-document-management.test.tsx` and `knowledge-document-utils.ts`.
+
+### CI #180: Blob test compatibility
+
+User-provided [CI #180](https://github.com/WmsL2/agentforge/actions/runs/44705737167) result: 536 passed / 1 failed. The download test called `blob.arrayBuffer()` directly and failed with `TypeError: blob.arrayBuffer is not a function`. Blob/File implementations differ across Node/jsdom runtimes; this was a test byte-reading compatibility issue, not a reason to change production download behavior.
+
+Before correction, the selected original download test passed on the local Windows runtime (1 passed). Thus the Linux CI failure was not reproduced by that local test; its error is recorded from the supplied CI evidence. The correction factors the document test's existing FileReader byte-reading code into a local `blobBytes()` helper, using the same capability check and arrayBuffer/FileReader fallback as the existing Knowledge API tests. Both the download test and empty-MIME byte-preservation test reuse it. Actual download bytes `[0, 255, 10, 13]`, Unicode filename, disconnected temporary anchor and delayed Object URL revocation assertions are preserved.
+
+No production download logic, global Blob/File/FormData constructors, global Vitest setup/configuration, CI configuration, coverage include list or threshold was changed.
+
+### Extension validation: red before green
+
+The old split/pop accepted bare allowed names such as `txt` and hidden names such as `.txt` without a real suffix. Added 13 filename rejection cases before changing production code, then executed:
+
+`bun run test:run -- src/components/knowledge/knowledge-document-management.test.tsx -t 'rejects filenames without a Path suffix'`
+
+Actual result on the original implementation: exit 1, **11 failed / 2 passed**. The other 87 tests were deselected by the name filter, not permanently skipped. The failing names were `txt`, `pdf`, `docx`, `md`, `markdown`, `TXT`, `.txt`, `.PDF`, `.docx`, `.md`, `.markdown`; trailing-dot cases `report.` and `report.pdf.` already passed rejection.
+
+Read the actual parser's `Path(filename).suffix.lower()` call and checked the existing local backend Python 3.12.10 standard library, without starting a service. A suffix requires the final dot to occur after the first filename character. Empty final suffix is unsupported by the existing MIME allowlist. The minimal production correction uses lastIndexOf and extracts a lowercased suffix only when that dot index is greater than zero. It does not strip all leading dots: Python 3.12 Path considers `..pdf` to have `.pdf`, while `.pdf` has no suffix.
+
+Four additional positive cases cover `REPORT.PDF`, `report.v2.pdf`, `.report.pdf` and `notes.v2.MARKDOWN`. They verify existing typed files are returned unchanged and empty-MIME completion preserves filename, lastModified and original bytes. Existing MIME mismatch validation and all 537 original tests remain intact. Total new regression tests: **17** (13 negative, 4 positive).
+
+### Final local verification
+
+Final corrected-source results (Windows Node v22.13.0 / Bun 1.3.14) are recorded below. Logs use the ignored prefix `frontend/node_modules/.cache/atomic3-fix-*.log`; `atomic3-fix-red.log` retains the expected red result, `atomic3-fix-blob-before.log` the original Windows download result and `atomic3-fix-target.log` the corrected document suite.
+
+Docker Desktop remains user-closed. No Docker start/resume, container creation, backend service startup or installation of a Linux environment was performed. Linux Node 24 and real browser/backend integration are not executed for this correction; latest GitHub CI remains pending for these uncommitted local changes. Atomic 4 was not started.
+
+
+| Final correction check | Actual result |
+| --- | --- |
+| Document component targeted suite | PASS, 104 tests / 1 file, exit 0. |
+| `bun run lint` | PASS, exit 0; 0 errors, 13 existing warnings. |
+| `bun run type-check` | PASS, exit 0. |
+| `bun run test:run` | PASS, 554 tests / 29 files: original 537 plus 17 new filename regressions, no skipped tests. |
+| `bun run test:coverage` | PASS, 554 tests / 29 files, exit 0. |
+| `bun run build` | PASS, exit 0; existing runtime-config deprecation and unrelated accessibility warnings remain. |
+| `git diff --check` | PASS. |
+| Linux Node 24 / latest GitHub CI / browser-backend integration | NOT RUN for this local correction. |
+
+Coverage remains restricted to the original four configured files, with unchanged thresholds and aggregate statements/lines 69.23%, branches 100%, functions 60.86%. These figures do not measure the document UI itself. Logs for lint, type-check, test-run, test-coverage and build use the same `atomic3-fix-` prefix.
+
+Final worktree: exactly the three specified tracked files modified, no new files, all unstaged. Branch and HEAD remain `review/v012-atomic3-document-management` / `379c1c2491122bc57c669c9e3138461a91a6e621`. No branch creation/switch, git add/commit/push/merge/reset/stash, PR/tag/release action or Atomic 4 work occurred. Awaiting ChatGPT review; no automatic commit or push.

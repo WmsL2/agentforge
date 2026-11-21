@@ -78,6 +78,19 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+// jsdom Blob/File may lack arrayBuffer, including on the Linux CI runtime.
+async function blobBytes(blob: Blob): Promise<number[]> {
+  const buffer =
+    typeof blob.arrayBuffer === "function"
+      ? await blob.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as ArrayBuffer);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(blob);
+        });
+  return Array.from(new Uint8Array(buffer));
+}
 let client: QueryClient,
   unbind: () => void,
   workspaces: WorkspaceRead[],
@@ -480,7 +493,7 @@ it("downloads untouched blob with Unicode metadata filename and cleans anchor an
   await userEvent.click(screen.getByRole("button", { name: "Download original" }));
   await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1));
   const blob = vi.mocked(URL.createObjectURL).mock.calls[0]![0] as Blob;
-  expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([0, 255, 10, 13]);
+  expect(await blobBytes(blob)).toEqual([0, 255, 10, 13]);
   const anchor = vi.mocked(HTMLAnchorElement.prototype.click).mock
     .instances[0] as unknown as HTMLAnchorElement;
   expect(anchor.download).toBe("真实文档.txt");
@@ -842,13 +855,7 @@ it("preserves actual bytes when completing empty MIME", async () => {
   const original = new File([new Uint8Array([0, 195, 169, 255])], "Żółć.md");
   const result = prepareDocument(original);
   if (!("file" in result)) throw new Error("Expected valid file");
-  const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(result.file);
-  });
-  expect([...new Uint8Array(bytes)]).toEqual([0, 195, 169, 255]);
+  expect(await blobBytes(result.file)).toEqual([0, 195, 169, 255]);
 });
 
 it("retains delete confirmation on document 404 without clearing the workspace", async () => {
@@ -925,4 +932,45 @@ it("isolates selected file and late upload success after actual workspace switch
   expect(screen.getByRole("dialog")).toBeInTheDocument();
   expect((screen.getByLabelText("File") as HTMLInputElement).files![0]!.name).toBe("new.txt");
   expect(route.push).not.toHaveBeenCalled();
+});
+
+it.each([
+  "txt",
+  "pdf",
+  "docx",
+  "md",
+  "markdown",
+  "TXT",
+  ".txt",
+  ".PDF",
+  ".docx",
+  ".md",
+  ".markdown",
+  "report.",
+  "report.pdf.",
+])("rejects filenames without a Path suffix: %s", (filename) => {
+  expect(prepareDocument(new File(["x"], filename))).toEqual({
+    error: "DOCUMENT_TYPE_UNSUPPORTED",
+  });
+});
+
+it.each([
+  ["REPORT.PDF", "application/pdf"],
+  ["report.v2.pdf", "application/pdf"],
+  [".report.pdf", "application/pdf"],
+  ["notes.v2.MARKDOWN", "text/markdown"],
+])("preserves valid suffix, filename and bytes: %s", async (filename, mime) => {
+  const bytes = [0, 255, 10, 13];
+  const typed = new File([new Uint8Array(bytes)], filename, { type: mime, lastModified: 42 });
+  const typedResult = prepareDocument(typed);
+  if (!("file" in typedResult)) throw new Error("Expected valid suffix");
+  expect(typedResult.file).toBe(typed);
+  const completed = prepareDocument(
+    new File([new Uint8Array(bytes)], filename, { lastModified: 42 }),
+  );
+  if (!("file" in completed)) throw new Error("Expected MIME completion");
+  expect(completed.file.name).toBe(filename);
+  expect(completed.file.type).toBe(mime);
+  expect(completed.file.lastModified).toBe(42);
+  expect(await blobBytes(completed.file)).toEqual(bytes);
 });

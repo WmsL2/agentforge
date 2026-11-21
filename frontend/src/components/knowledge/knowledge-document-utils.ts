@@ -50,7 +50,9 @@ export function prepareDocument(file?: File): { file: File } | { error: string }
   if (!file) return { error: "chooseFile" };
   if (!file.size) return { error: "DOCUMENT_EMPTY" };
   if (file.size > MAX_DOCUMENT_BYTES) return { error: "DOCUMENT_TOO_LARGE" };
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  // Path(filename).suffix requires a final dot after the first character.
+  const dot = file.name.lastIndexOf(".");
+  const extension = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : "";
   const allowed = Object.hasOwn(mimes, extension) ? mimes[extension] : undefined;
   if (!allowed) return { error: "DOCUMENT_TYPE_UNSUPPORTED" };
   const mime = file.type.split(";", 1)[0]!.trim().toLowerCase();
