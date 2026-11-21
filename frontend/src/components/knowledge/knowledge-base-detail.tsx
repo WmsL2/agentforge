@@ -1,5 +1,10 @@
 "use client";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@/lib/api-client";
+import { clearKnowledgeScope } from "@/lib/knowledge/knowledge-lifecycle";
+import { qk } from "@/lib/query-keys";
+import { KnowledgeDocumentManagement } from "./knowledge-document-management";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -22,6 +27,7 @@ export function KnowledgeBaseDetail({
   workspaceName,
 }: KnowledgeContentProps & { knowledgeBaseId: string; workspaceName: string }) {
   const capture = useKnowledgeLease();
+  const client = useQueryClient();
   const t = useTranslations("knowledgeManagement"),
     locale = useLocale(),
     router = useRouter();
@@ -100,7 +106,23 @@ export function KnowledgeBaseDetail({
           ) : (
             <p>{t("readOnly")}</p>
           )}
-          {/* Document management can be added here in a later Atomic. */}
+          <KnowledgeDocumentManagement
+            key={`${userId}/${workspaceId}/${knowledgeBaseId}`}
+            userId={userId}
+            workspaceId={workspaceId}
+            knowledgeBaseId={knowledgeBaseId}
+            canWrite={writable}
+            revalidate={revalidate}
+            checkBase={async () => {
+              const valid = capture();
+              const result = await query.refetch();
+              if (valid() && result.error instanceof ApiError && result.error.status === 404)
+                clearKnowledgeScope(
+                  client,
+                  qk.knowledge.base(userId, workspaceId, knowledgeBaseId),
+                );
+            }}
+          />
         </>
       )}
       {writable && dialog && (
