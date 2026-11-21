@@ -38,6 +38,7 @@ export interface DocumentScope {
   knowledgeBaseId: string;
   canWrite: boolean;
   revalidate: () => Promise<boolean>;
+  revalidateWrite?: () => Promise<boolean>;
   checkBase: () => Promise<void>;
 }
 type Selection =

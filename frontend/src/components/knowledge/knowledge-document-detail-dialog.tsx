@@ -27,6 +27,7 @@ import {
   PREVIEW_CHAR_LIMIT,
   saveDocument,
 } from "./knowledge-document-utils";
+import { KnowledgeDocumentIndexPanel } from "./knowledge-document-index-panel";
 import type { DocumentScope } from "./knowledge-document-management";
 
 export function KnowledgeDocumentDetailDialog({
@@ -228,6 +229,12 @@ export function KnowledgeDocumentDetailDialog({
                 </Button>
               )}
             </div>
+            <KnowledgeDocumentIndexPanel
+              key={`${scope.userId}/${scope.workspaceId}/${scope.knowledgeBaseId}/${documentId}`}
+              {...scope}
+              document={data}
+              onFailure={handleFailure}
+            />
             {preview && data.parse_status === "ready" && (
               <DocumentPreview
                 key={documentId}

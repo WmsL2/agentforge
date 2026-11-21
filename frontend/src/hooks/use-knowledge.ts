@@ -133,11 +133,37 @@ export function useKnowledgeIndexStatus(
   workspaceId?: string,
   knowledgeBaseId?: string,
   documentId?: string,
+  options: {
+    pollActive?: boolean;
+    awaitJob?: { id: string; until: number };
+    isCurrent?: () => boolean;
+  } = {},
 ) {
   const identity = useIdentity(userId);
-  return useQuery({
+  const pollingIdentity = authIdentity();
+  return useQuery<K.KnowledgeIndexStatusRead>({
     ...readPolicy,
-    refetchInterval: false,
+    ...(options.pollActive ? { refetchOnWindowFocus: false, refetchOnReconnect: false } : {}),
+    refetchIntervalInBackground: false,
+    refetchInterval: options.pollActive
+      ? (query) => {
+          const data = query.state.data;
+          if (
+            !identity ||
+            !sameAuthIdentity(pollingIdentity) ||
+            options.isCurrent?.() === false ||
+            pollingIdentity.userId !== userId ||
+            query.state.status !== "success" ||
+            !data ||
+            data.document_id !== documentId ||
+            !["not_indexed", "pending", "running", "succeeded", "failed"].includes(data.status)
+          )
+            return false;
+          if (options.awaitJob && data.job_id !== options.awaitJob.id)
+            return Date.now() < options.awaitJob.until ? 3000 : false;
+          return data.status === "pending" || data.status === "running" ? 3000 : false;
+        }
+      : false,
     queryKey: qk.knowledge.index(
       userId ?? "",
       workspaceId ?? "",
@@ -146,7 +172,15 @@ export function useKnowledgeIndexStatus(
     ),
     enabled: identity && Boolean(workspaceId && knowledgeBaseId && documentId),
     queryFn: ({ signal }) => {
-      if (!identity || !workspaceId || !knowledgeBaseId || !documentId) aborted();
+      if (
+        !identity ||
+        !workspaceId ||
+        !knowledgeBaseId ||
+        !documentId ||
+        (options.pollActive && !sameAuthIdentity(pollingIdentity)) ||
+        options.isCurrent?.() === false
+      )
+        aborted();
       return knowledgeApi.getIndexStatus(workspaceId!, knowledgeBaseId!, documentId!, {
         signal,
         userId: userId,

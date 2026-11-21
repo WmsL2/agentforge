@@ -19,6 +19,7 @@ export interface KnowledgeContentProps {
   pathname: string;
   canWrite: boolean;
   revalidate: () => Promise<boolean>;
+  revalidateWrite?: () => Promise<boolean>;
 }
 export function KnowledgeBaseList({
   userId,
