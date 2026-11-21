@@ -160,6 +160,7 @@ function response(url: string, options: RequestInit = {}) {
       documents = documents.filter((item) => item.id !== d);
       return new Response(null, { status: 204 });
     }
+    if (parts[8] === "index") return Response.json({ document_id: d, job_id: null, status: "not_indexed", active_generation_id: null, chunk_count: 0, embedding_model: null, index_version: null, error_code: null });
     if (parts[8] === "content")
       return Response.json({
         document_id: d,

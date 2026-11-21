@@ -23,6 +23,7 @@ export function KnowledgeBaseDetail({
   pathname,
   canWrite,
   revalidate,
+  revalidateWrite,
   knowledgeBaseId,
   workspaceName,
 }: KnowledgeContentProps & { knowledgeBaseId: string; workspaceName: string }) {
@@ -113,6 +114,7 @@ export function KnowledgeBaseDetail({
             knowledgeBaseId={knowledgeBaseId}
             canWrite={writable}
             revalidate={revalidate}
+            revalidateWrite={revalidateWrite}
             checkBase={async () => {
               const valid = capture();
               const result = await query.refetch();

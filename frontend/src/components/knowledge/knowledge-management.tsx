@@ -1,6 +1,6 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -194,7 +194,11 @@ function KnowledgeWorkspace({
 }) {
   const t = useTranslations("knowledgeManagement");
   const members = useWorkspaceMembers(userId, workspace.id, FRESH_ACCESS);
-  const verified = members.isSuccess && members.isFetchedAfterMount && !members.isFetching;
+  const writeCheck = useRef(false);
+  const capture = useKnowledgeLease();
+  // Keep the verified reader mounted during its own write preflight, but hide writes.
+  const verified =
+    members.isSuccess && members.isFetchedAfterMount && (!members.isFetching || writeCheck.current);
   const membership = verified
     ? members.data.find(
         (member) => member.user_id === userId && member.workspace_id === workspace.id,
@@ -218,12 +222,34 @@ function KnowledgeWorkspace({
       />
     );
   if (!verified || !membership) return <LoadingState label={t("checkingAccess")} />;
-  const canWrite = membership.role === "owner" || membership.role === "admin";
+  const canWrite =
+    !members.isFetching && (membership.role === "owner" || membership.role === "admin");
   const props = {
     userId,
     workspaceId: workspace.id,
     pathname,
     canWrite,
+    revalidateWrite: async () => {
+      if (writeCheck.current) return false;
+      const valid = capture();
+      if (!valid()) return false;
+      writeCheck.current = true;
+      try {
+        const result = await members.refetch();
+        return (
+          valid() &&
+          result.isSuccess &&
+          result.data.some(
+            (member) =>
+              member.user_id === userId &&
+              member.workspace_id === workspace.id &&
+              (member.role === "owner" || member.role === "admin"),
+          )
+        );
+      } finally {
+        writeCheck.current = false;
+      }
+    },
     revalidate: async () => {
       const result = await members.refetch();
       return (
