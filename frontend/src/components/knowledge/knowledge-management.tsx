@@ -195,8 +195,9 @@ function KnowledgeWorkspace({
   const t = useTranslations("knowledgeManagement");
   const members = useWorkspaceMembers(userId, workspace.id, FRESH_ACCESS);
   const writeCheck = useRef(false);
+  const readFlight = useRef<Promise<boolean> | null>(null);
   const capture = useKnowledgeLease();
-  // Keep the verified reader mounted during its own write preflight, but hide writes.
+  // Keep verified readers mounted during an explicit action preflight, but hide writes.
   const verified =
     members.isSuccess && members.isFetchedAfterMount && (!members.isFetching || writeCheck.current);
   const membership = verified
@@ -229,6 +230,33 @@ function KnowledgeWorkspace({
     workspaceId: workspace.id,
     pathname,
     canWrite,
+    revalidateRead: () => {
+      if (readFlight.current) return readFlight.current;
+      if (writeCheck.current) return Promise.resolve(false);
+      const valid = capture();
+      if (!valid()) return Promise.resolve(false);
+      writeCheck.current = true;
+      const promise = (async () => {
+        try {
+          const result = await members.refetch();
+          return (
+            valid() &&
+            result.isSuccess &&
+            result.data.some(
+              (member) =>
+                member.user_id === userId &&
+                member.workspace_id === workspace.id &&
+                ["owner", "admin", "member"].includes(member.role),
+            )
+          );
+        } finally {
+          writeCheck.current = false;
+          readFlight.current = null;
+        }
+      })();
+      readFlight.current = promise;
+      return promise;
+    },
     revalidateWrite: async () => {
       if (writeCheck.current) return false;
       const valid = capture();

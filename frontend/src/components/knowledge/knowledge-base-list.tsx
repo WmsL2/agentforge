@@ -20,6 +20,7 @@ export interface KnowledgeContentProps {
   canWrite: boolean;
   revalidate: () => Promise<boolean>;
   revalidateWrite?: () => Promise<boolean>;
+  revalidateRead?: () => Promise<boolean>;
 }
 export function KnowledgeBaseList({
   userId,
