@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { KnowledgePlayground } from "./knowledge-playground";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import { clearKnowledgeScope } from "@/lib/knowledge/knowledge-lifecycle";
@@ -24,6 +25,7 @@ export function KnowledgeBaseDetail({
   canWrite,
   revalidate,
   revalidateWrite,
+  revalidateRead,
   knowledgeBaseId,
   workspaceName,
 }: KnowledgeContentProps & { knowledgeBaseId: string; workspaceName: string }) {
@@ -107,6 +109,23 @@ export function KnowledgeBaseDetail({
           ) : (
             <p>{t("readOnly")}</p>
           )}
+          <KnowledgePlayground
+            key={`playground/${userId}/${workspaceId}/${knowledgeBaseId}`}
+            userId={userId}
+            workspaceId={workspaceId}
+            knowledgeBaseId={knowledgeBaseId}
+            revalidateRead={revalidateRead}
+            revalidate={revalidate}
+            checkBase={async () => {
+              const valid = capture();
+              const result = await query.refetch();
+              if (valid() && result.error instanceof ApiError && result.error.status === 404)
+                clearKnowledgeScope(
+                  client,
+                  qk.knowledge.base(userId, workspaceId, knowledgeBaseId),
+                );
+            }}
+          />
           <KnowledgeDocumentManagement
             key={`${userId}/${workspaceId}/${knowledgeBaseId}`}
             userId={userId}
