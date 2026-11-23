@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType }
 import { AlertTriangle, CheckCircle2, RotateCcw, Save, ShieldAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import { authIdentity } from "@/lib/auth-identity";
+import { useAuthStore } from "@/stores/auth-store";
 import { Button } from "@/components/ui";
 import { useWorkflowMutations, useWorkspaceMembers } from "@/hooks";
-import { ApiError, getApiErrorMessage } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import { fromCanvasGraph, toCanvasGraph, type CanvasGraph } from "@/lib/workflow/canvas-adapter";
 import type { ConnectionProblem } from "@/lib/workflow/canvas-rules";
 import { workflowApi } from "@/lib/workflow/workflow-api";
@@ -60,9 +62,23 @@ function withPresentationState(current: CanvasGraph, next: CanvasGraph): CanvasG
   };
 }
 
-function requestError(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return getApiErrorMessage(error.data, error.message || fallback);
-  return error instanceof Error ? error.message : fallback;
+function requestError(
+  error: unknown,
+  fallback: string,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) return t("safeErrors.forbidden");
+    if (error.status === 404) return t("safeErrors.notFound");
+    if (error.status >= 500) return t("safeErrors.service");
+    if (error.status === 0) return t("safeErrors.network");
+  }
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error && error.message === "network unavailable")
+  )
+    return t("safeErrors.network");
+  return fallback;
 }
 
 function comparableJson(value: unknown): unknown {
@@ -81,7 +97,18 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(comparableJson(left)) === JSON.stringify(comparableJson(right));
 }
 
-export function WorkflowCanvasEditor({
+export function WorkflowCanvasEditor(props: WorkflowCanvasEditorProps) {
+  useAuthStore((state) => state.user);
+  const identity = authIdentity();
+  return (
+    <WorkflowCanvasEditorSession
+      key={`${props.userId}/${props.workflow.workspace_id}/${props.workflow.id}/${identity.generation}/${identity.transitionEpoch}`}
+      {...props}
+    />
+  );
+}
+
+function WorkflowCanvasEditorSession({
   workflow,
   userId,
   onDirtyChange,
@@ -219,7 +246,7 @@ export function WorkflowCanvasEditor({
       } catch (error) {
         if (!isCurrentRequest(request)) return null;
         setValidation(null);
-        setValidationError(requestError(error, t("validationServiceFailed")));
+        setValidationError(requestError(error, t("validationServiceFailed"), t));
         return null;
       }
     },
@@ -346,7 +373,7 @@ export function WorkflowCanvasEditor({
       onSaved?.(updated);
     } catch (error) {
       if (!isCurrentRequest(request, false)) return;
-      setSaveError(requestError(error, t("saveFailed")));
+      setSaveError(requestError(error, t("saveFailed"), t));
     } finally {
       finishOperation(request);
     }
@@ -469,7 +496,10 @@ export function WorkflowCanvasEditor({
             <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
               {issues.map((issue, index) => (
                 <li key={`${issue.code}-${issue.node_id}-${issue.edge_id}-${index}`}>
-                  {issue.message}
+                  {issue.code.startsWith("knowledge_") ||
+                  issue.code === "agent_knowledge_base_id_invalid"
+                    ? t("knowledge.serverInvalid")
+                    : issue.message}
                   {issue.node_id && ` [node: ${issue.node_id}]`}
                   {issue.edge_id && ` [edge: ${issue.edge_id}]`}
                 </li>
@@ -499,6 +529,7 @@ export function WorkflowCanvasEditor({
             addValue: t("addValue"),
             addAgent: t("addAgent"),
             addApproval: t("addApproval"),
+            addKnowledge: t("addKnowledge"),
             deleteNode: t("deleteNode"),
             deleteEdge: t("deleteEdge"),
           }}
@@ -506,6 +537,10 @@ export function WorkflowCanvasEditor({
         <aside aria-label={t("inspector.title")}>
           <NodeEditorComponent
             node={selectedNode}
+            userId={userId}
+            scopeAuthorized={members.isSuccess && !members.isFetching && Boolean(membership)}
+            workspaceId={workflow.workspace_id}
+            workflowId={workflow.id}
             draft={selectedNode ? drafts[selectedNode.id] : undefined}
             editable={canEdit}
             disabled={operation !== "idle" || mutations.update.isPending}

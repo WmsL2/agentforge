@@ -42,6 +42,7 @@ export interface WorkflowCanvasProps {
     addValue: string;
     addAgent: string;
     addApproval: string;
+    addKnowledge?: string;
     deleteNode: string;
     deleteEdge: string;
   };
@@ -164,7 +165,7 @@ export function WorkflowCanvas({
   );
 
   const addNode = useCallback(
-    (kind: "value" | "agent" | "approval") => {
+    (kind: "value" | "agent" | "approval" | "knowledge") => {
       if (!editable) return;
       onChange({ ...graph, nodes: [...graph.nodes, nextNode(graph, kind)] }, true);
     },
@@ -186,6 +187,12 @@ export function WorkflowCanvas({
           <Plus className="h-4 w-4" />
           {labels.addApproval}
         </Button>
+        {labels.addKnowledge && (
+          <Button type="button" size="sm" disabled={!editable} onClick={() => addNode("knowledge")}>
+            <Plus className="h-4 w-4" />
+            {labels.addKnowledge}
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
