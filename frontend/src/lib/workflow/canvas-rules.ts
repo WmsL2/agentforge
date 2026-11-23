@@ -43,9 +43,11 @@ export function connectionProblem(
   return null;
 }
 
-type CreatableNodeKind = "value" | "agent" | "approval";
+type CreatableNodeKind = "value" | "agent" | "approval" | "knowledge";
 
 function initialConfig(kind: CreatableNodeKind): Record<string, unknown> {
+  if (kind === "knowledge")
+    return { knowledge_base_id: "", query_source: "literal", query: "", top_k: 5 };
   if (kind === "agent") return { runner: "langgraph", instruction: "" };
   if (kind === "approval") return { prompt: "" };
   return { value: null };

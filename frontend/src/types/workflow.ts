@@ -1,6 +1,6 @@
 export type JsonObject = Record<string, unknown>;
 
-export type WorkflowNodeKind = "start" | "value" | "agent" | "approval" | "end";
+export type WorkflowNodeKind = "start" | "value" | "agent" | "knowledge" | "approval" | "end";
 
 export interface WorkflowNode {
   id: string;
@@ -82,6 +82,17 @@ export type WorkflowValidationCode =
   | "agent_instruction_invalid"
   | "agent_model_invalid"
   | "agent_config_unknown_field"
+  | "agent_knowledge_base_id_invalid"
+  | "knowledge_base_id_required"
+  | "knowledge_base_id_invalid"
+  | "knowledge_query_source_required"
+  | "knowledge_query_source_invalid"
+  | "knowledge_query_required"
+  | "knowledge_query_invalid"
+  | "knowledge_input_key_required"
+  | "knowledge_input_key_invalid"
+  | "knowledge_top_k_invalid"
+  | "knowledge_config_unknown_field"
   | "approval_prompt_required"
   | "approval_prompt_invalid"
   | "approval_config_unknown_field";
