@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import messages from "../messages/en.json";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 import {
   initial,
   install,
@@ -14,20 +15,155 @@ import {
 
 test.use({ storageState: ".playwright/.auth/user.json" });
 const node = (page: Page, key: string) => page.locator(`.react-flow__node[data-id="${key}"]`);
-async function connect(page: Page, from: string, to: string) {
-  const source = node(page, from).locator(".react-flow__handle.source");
-  const target = node(page, to).locator(".react-flow__handle.target");
-  await expect(source).toBeVisible();
-  await expect(target).toBeVisible();
-  const start = await source.boundingBox(),
-    end = await target.boundingBox();
-  if (!start || !end) throw new Error("Visible connection handles must have bounds");
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await expect(page.locator(`.react-flow__edge[data-id="${from}-to-${to}"]`)).toHaveCount(1);
+async function connectionSnapshot(canvas: Locator, from: string, to: string) {
+  return canvas.evaluate(
+    (root, { from, to, rejectionMessages }) => {
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const describe = (el: Element | null) =>
+        el
+          ? {
+              tag: el.tagName,
+              class: el.getAttribute("class"),
+              nodeId: el.getAttribute("data-nodeid"),
+              id: el.getAttribute("data-id"),
+            }
+          : null;
+      const handles = (
+        [
+          { id: from, type: "source" },
+          { id: to, type: "target" },
+        ] as const
+      ).map(({ id, type }) => {
+        const el = root.querySelector(
+          `.react-flow__node[data-id="${id}"] .react-flow__handle.${type}`,
+        );
+        if (!el) return { id, type, found: false, usable: false };
+        const r = el.getBoundingClientRect(),
+          x = r.x + r.width / 2,
+          y = r.y + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        const inViewport =
+          r.width > 0 &&
+          r.height > 0 &&
+          r.left >= 0 &&
+          r.top >= 0 &&
+          r.right <= innerWidth &&
+          r.bottom <= innerHeight;
+        const connectable =
+          el.classList.contains("connectable") &&
+          el.classList.contains(type === "source" ? "connectablestart" : "connectableend");
+        const hitHandle = hit === el || (hit !== null && el.contains(hit));
+        return {
+          id,
+          type,
+          found: true,
+          bounds: box(el),
+          class: el.getAttribute("class"),
+          attributes: Object.fromEntries(
+            ["data-nodeid", "data-handleid", "data-handlepos", "data-id", "aria-disabled"].map(
+              (k) => [k, el.getAttribute(k)],
+            ),
+          ),
+          inViewport,
+          connectable,
+          hit: describe(hit),
+          hitHandle,
+          usable: inViewport && connectable && hitHandle,
+        };
+      });
+      return {
+        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        canvas: box(root),
+        transform: root.querySelector(".react-flow__viewport")?.getAttribute("style"),
+        handles,
+        edgeIds: [...root.querySelectorAll(".react-flow__edge")].map((el) =>
+          el.getAttribute("data-id"),
+        ),
+        rejections: rejectionMessages.filter((text) => document.body.innerText.includes(text)),
+      };
+    },
+    { from, to, rejectionMessages: Object.values(messages.workflows.canvas.connectionProblems) },
+  );
 }
+async function stableCanvas(canvas: Locator) {
+  // Read-only, condition-driven layout observation. No fixed sleep or state access.
+  const stable = await canvas.evaluate(
+    (root) =>
+      new Promise<boolean>((resolve) => {
+        let previous = "",
+          unchanged = 0,
+          frames = 0;
+        const sample = () => {
+          const rect = root.getBoundingClientRect();
+          const signature = JSON.stringify([
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            root.querySelector(".react-flow__viewport")?.getAttribute("style"),
+            [...root.querySelectorAll(".react-flow__node")].map((el) => {
+              const r = el.getBoundingClientRect();
+              return [r.x, r.y, r.width, r.height];
+            }),
+          ]);
+          unchanged = signature === previous ? unchanged + 1 : 0;
+          previous = signature;
+          if (unchanged >= 3) return resolve(true);
+          if (++frames >= 120) return resolve(false);
+          requestAnimationFrame(sample);
+        };
+        sample();
+      }),
+  );
+  expect(stable, "Canvas geometry and viewport transform must settle before connecting").toBe(true);
+}
+async function connect(page: Page, from: string, to: string) {
+  const canvas = page.locator(".react-flow");
+  try {
+    await expect(page.getByRole("button", { name: "Add Knowledge", exact: true })).toBeEnabled();
+    await expect(canvas).toHaveCount(1);
+    await canvas.evaluate((el) =>
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }),
+    );
+    await canvas.locator(".react-flow__controls-fitview").click();
+    await stableCanvas(canvas);
+    const source = node(page, from).locator(".react-flow__handle.source");
+    const target = node(page, to).locator(".react-flow__handle.target");
+    await expect(source).toBeInViewport();
+    await expect(target).toBeInViewport();
+    const before = await connectionSnapshot(canvas, from, to);
+    console.info("Workflow connection before click", JSON.stringify(before));
+    expect(
+      before.handles.every((handle) => handle.usable),
+      "Both editable handles must be simultaneously in viewport and receive a center hit",
+    ).toBe(true);
+    // 12.12.0 defaults connectOnClick=true and exposes clickconnecting on the armed source.
+    await source.click();
+    await expect(source).toHaveClass(/clickconnecting/);
+    await stableCanvas(canvas);
+    const armed = await connectionSnapshot(canvas, from, to);
+    expect(
+      armed.handles.every((handle) => handle.usable),
+      "Recheck live DOM geometry/hits after source selection",
+    ).toBe(true);
+    await target.click();
+    await expect(canvas.locator(`.react-flow__edge[data-id="${from}-to-${to}"]`)).toHaveCount(1);
+  } catch (error) {
+    try {
+      console.error(
+        "Workflow connection failure DOM",
+        JSON.stringify(await connectionSnapshot(canvas, from, to)),
+      );
+    } catch {
+      console.error("Workflow connection DOM diagnostic unavailable");
+    }
+    throw error;
+  }
+}
+
 async function open(page: Page, state: BrowserState) {
   await install(page, state);
   await page.goto(`/workflows/${WF}?workspace_id=${WS}`);

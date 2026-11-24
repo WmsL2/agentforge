@@ -11,6 +11,7 @@ import {
   KB,
   FOREIGN,
   DOC,
+  graph,
   TEXT,
   type BrowserState,
 } from "../../../e2e/fixtures/knowledge-api";
@@ -31,14 +32,15 @@ beforeEach(async () => {
     state,
   );
 });
-async function request(path: string, method = "GET", multipart = false) {
+async function request(path: string, method = "GET", multipart = false, jsonBody?: unknown) {
   let response: { status: number; body?: string | Buffer } | undefined;
   await handler({
     request: () => ({
       url: () => `http://localhost:3000/api${path}`,
       method: () => method,
       headers: () => (multipart ? { "content-type": "multipart/form-data; boundary=fixture" } : {}),
-      postData: () => undefined,
+      postData: () => (jsonBody === undefined ? undefined : JSON.stringify(jsonBody)),
+      postDataJSON: () => jsonBody,
       postDataBuffer: () =>
         Buffer.from(
           `--fixture\r\nContent-Disposition: form-data; name="file"; filename="证据.txt"\r\n\r\n${TEXT}\r\n--fixture--`,
@@ -53,6 +55,57 @@ async function request(path: string, method = "GET", multipart = false) {
 }
 const path = (workspace = WS, knowledgeBase = KB, doc = DOC) =>
   `/workspaces/${workspace}/knowledge-bases/${knowledgeBase}/documents/${doc}`;
+const postOnly = [
+  `/workspaces/${WS}/knowledge-bases/${KB}/search`,
+  `/workspaces/${WS}/knowledge-bases/${KB}/ask`,
+  "/workflows/validate",
+];
+it.each(
+  postOnly.flatMap((endpoint) =>
+    ["GET", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((method) => [endpoint, method]),
+  ),
+)("%s refuses %s before body processing or state changes", async (endpoint, method) => {
+  const before = structuredClone(state);
+  let response: { status: number } | undefined;
+  const forbiddenRead = () => {
+    throw new Error("Wrong HTTP methods must not consume headers or body");
+  };
+  await handler({
+    request: () => ({
+      url: () => `http://localhost:3000/api${endpoint}`,
+      method: () => method,
+      headers: forbiddenRead,
+      postData: forbiddenRead,
+      postDataJSON: forbiddenRead,
+      postDataBuffer: forbiddenRead,
+    }),
+    fulfill: async (value: typeof response) => {
+      response = value;
+    },
+  } as unknown as Route);
+  expect(response?.status).toBe(405);
+  expect(state).toEqual(before);
+});
+it.each(["search", "ask", "validate"])("%s retains the valid POST contract", async (endpoint) => {
+  const url =
+    endpoint === "validate"
+      ? "/workflows/validate"
+      : `/workspaces/${WS}/knowledge-bases/${KB}/${endpoint}`;
+  const payload =
+    endpoint === "validate"
+      ? graph()
+      : endpoint === "search"
+        ? { query: "growth", top_k: 3 }
+        : { question: "growth?" };
+  const response = await request(url, "POST", false, payload);
+  expect(response.status).toBe(200);
+  const body = JSON.parse(String(response.body));
+  if (endpoint === "validate") {
+    expect(body.is_valid).toBe(true);
+    expect(state.validated).toBe(JSON.stringify(payload));
+  } else if (endpoint === "search") expect(body).toMatchObject({ query: "growth", total: 1 });
+  else expect(body).toMatchObject({ status: "answered" });
+});
 it.each(["", "/content", "/download", "/index"])(
   "document %s enforces exact ownership and IDs without mutation",
   async (action) => {

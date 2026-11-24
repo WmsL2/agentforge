@@ -205,6 +205,11 @@ export async function install(page: Page, state: BrowserState) {
       url = new URL(req.url()),
       path = url.pathname,
       method = req.method();
+    // Enforce method contracts before touching headers/body or recording mutable fixture state.
+    const postOnly =
+      path === "/api/workflows/validate" ||
+      /^\/api\/workspaces\/[^/]+\/knowledge-bases\/[^/]+\/(search|ask)$/.test(path);
+    if (postOnly && method !== "POST") return json(route, 405, { detail: "Method not allowed" });
     const multipart = req.headers()["content-type"]?.startsWith("multipart/form-data");
     const body: unknown = multipart
       ? req.postDataBuffer()?.toString("utf8")

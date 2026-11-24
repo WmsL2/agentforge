@@ -166,3 +166,53 @@ Final local verification (Windows, same existing Bun/Node environment):
 Logs: `frontend/node_modules/.cache/atomic8-review1-{target,lint,type-check,test-run,test-coverage,build,discovery}.log`.
 
 Playwright execution after repair is NOT RUN locally: no live frontend/backend login environment was available, and the real authentication setup was not bypassed. The 42-case CI Chromium subset and all old tests are retained. Local static/unit/build evidence must not be described as a repaired Chromium PASS. Docker, WSL and paid providers were not started; production business logic, dependencies, version, CI configuration and authentication setup remain unchanged. All modifications remain unstaged on the same branch/HEAD, awaiting ChatGPT review and the next authorized CI run.
+
+## 18. Review Fix 2 — React Flow browser connection repair
+
+### Baseline and actual CI #195
+
+Initial read-only checks confirmed clean `review/v012-atomic8-integration-release`, exact HEAD `e0b84b6096e6786edbe263903552f05741f71fa8`. All changes remain local/unstaged on that same branch/HEAD. This section supersedes earlier current-branch accounting, not historical verification records.
+
+Read the actual [CI #195 frontend job log](https://github.com/WmsL2/agentforge/actions/runs/45350163043/job/138294321851): frontend 997 tests / 38 files passed; Playwright 41 passed / 1 failed. The same first connection edge assertion failed on all three attempts: `.react-flow__edge[data-id="start-to-knowledge-1"]` expected 1, received 0. Existing 26 browser scenarios and Knowledge 8/8 passed; Workflow was 7/8. Backend E2E and Security Scan PASS are supplied CI context; this repair independently read the frontend job log only. No screenshot or trace artifact was inspected or claimed.
+
+### Confirmed facts versus hypotheses
+
+- Add Knowledge, Fit View, Knowledge selection/configuration and Apply reached completion before the failed connection assertion.
+- The old helper used visibility and a bounding box, then coordinate mouse events. Visibility alone does not establish viewport containment, lack of occlusion or receiving the pointer event. It did not re-scroll/re-fit after Apply or observe layout stability.
+- Locked @xyflow/react 12.12.0 Handle source reads connectOnClick from configuration, defaults it to true, arms the first click via connectionClickStartHandle, validates the target through @xyflow/system XYHandle.isValid and calls the normal onConnect path. The armed Handle exposes clickconnecting in DOM.
+- EdgeWrapper really renders the asserted data-id. WorkflowCanvas generates `${source}-to-${target}` IDs. The requested graph's new edges do not violate the existing start/end/duplicate/cycle rules. Editor selection uses withPresentationState to preserve current graph edges, rather than replacing them with presentation-only state.
+- The CI log alone does not show actual scroll position, hit targets, connectable classes or whether later state changes removed an edge. Post-Apply scrolling, viewport transform/layout or occlusion remain hypotheses. No production Canvas defect is established, and no production code is changed.
+
+### Connection interaction repair and diagnostic assertions
+
+Only the failing test's connection helper changes. After Apply and before each connection it verifies the real Add Knowledge control is enabled, scrolls the actual canvas to the viewport center, clicks actual Fit View again and waits for stable DOM geometry/viewport transform across consecutive animation frames. The bounded stability observation performs no graph/state mutation or fixed sleep.
+
+Both Handles must be in the viewport, connectable in the required direction and hit by elementFromPoint at their live centers. The helper uses one source.click(), asserts the documented clickconnecting DOM class, rechecks layout and both live hits after selection, then performs one target.click(). This is the locked version's supported user interaction, not a fallback or silent retry. The rendered edge assertion remains unchanged, and actual persisted PATCH edges, both query modes, Apply/Validate/Save/Reload and graph metadata assertions remain.
+
+Before connecting and on failure, bounded safe console diagnostics include viewport dimensions/scroll, canvas/Handle bounds, viewport transform, Handle classes and allowlisted data attributes, center hit-test element tag/class/IDs, rendered edge IDs, and only the six known localized connection-rejection messages. No cookies, tokens, arbitrary DOM/HTML, input values or protected result bodies are dumped. Failure diagnostics rethrow the original error. These observations will provide actual environment evidence in the next CI run; local source review is not browser success evidence.
+
+### Fixture HTTP method contracts
+
+Actual backend routes and frontend facades define Search, Ask and Workflow Validate as POST. Their fixture now returns 405 for any other method before reading headers/body, recording calls or mutating state. Added 18 wrong-method cases (GET/PUT/PATCH/DELETE/HEAD/OPTIONS across three endpoints) with throwing body-access sentinels and complete fixture-state equality checks. Added three valid POST cases to retain existing behavior. All original eight fixture tests remain intact.
+
+The fixture target is now 29 tests. Canvas/Editor/Adapter/rules plus fixture targeted regression passed 84 tests / 5 files. The seven previously passing Workflow browser cases, eight Knowledge cases, auth setup, CI spec list, production source, dependencies, backend and previous fixes remain unchanged. Only the connection helper used by the one failing browser scenario and the explicitly requested fixture contracts are repaired.
+
+### Verification and known limitations
+
+Actual final local results:
+
+| Check | Result |
+| --- | --- |
+| Fixture + Canvas/Editor/Adapter/rules targeted tests | PASS, 84 tests / 5 files, including all 29 fixture tests. |
+| `bun run lint` | PASS, exit 0; 0 errors / 13 existing warnings. |
+| `bun run type-check` | PASS. |
+| `bun run test:run` | PASS, 1018 tests / 38 files; all original 997 plus 21 new fixture cases, no skips. |
+| `bun run test:coverage` | PASS, 1018 tests / 38 files; include/threshold configuration unchanged. Aggregate for the original four-file scope remains 69.23% statements/lines, 100% branches and 60.86% functions. |
+| `bun run build` | PASS, exit 0; existing unrelated warnings remain. |
+| Existing CI Chromium spec list, `--list` | PASS discovery, all 42 tests / 6 files retained, including original auth setup. |
+| Browser connection execution | NOT RUN locally. |
+| `git diff --check` and changed-file whitespace | PASS. |
+
+Logs: `frontend/node_modules/.cache/atomic8-review2-{target,lint,type-check,test-run,test-coverage,build,discovery}.log`.
+
+Browser Execution after this repair is NOT RUN: no safe live authenticated frontend/backend environment was listening locally. No --no-deps, replacement setup, server/container/WSL/paid provider startup or CI bypass was used. The chosen interaction is source-supported and guarded by DOM assertions, but actual connection success and the true CI root cause require the next real browser run. No timeout was increased, no force click or graph injection was added, and no previously passing test was weakened. Awaiting ChatGPT review; no commit/push/branch/PR/tag/release or v0.13 action.
