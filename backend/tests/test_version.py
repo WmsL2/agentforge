@@ -10,7 +10,7 @@ from app import __version__
 from app.main import create_app
 from cli.commands import cli
 
-EXPECTED_VERSION = "0.11.0"
+EXPECTED_VERSION = "0.12.0"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 

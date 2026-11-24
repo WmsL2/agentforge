@@ -1139,6 +1139,8 @@ jobs:
           e2e/auth.spec.ts
           e2e/home.spec.ts
           e2e/workflow-execution.spec.ts
+          e2e/knowledge-management.spec.ts
+          e2e/workflow-knowledge.spec.ts
           --project=chromium
         working-directory: frontend
         env:

@@ -4,7 +4,7 @@ Enterprise Agent Workflow Platform
 
 中文：企业级 Agent 工作流平台。
 
-> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。当前开发线的 Backend、Frontend 与运行时展示元数据统一为 v0.11.0。元数据本身不代表已经创建 Git tag 或 GitHub Release；正式发布状态以仓库 Tag 和 GitHub Release 为准。
+> AgentForge 使用成熟的 FastAPI + Next.js 全栈工程能力作为 Web Engineering Foundation。当前开发线的 Backend、Frontend 与运行时展示元数据统一为 v0.12.0。元数据本身不代表已经创建 Git tag 或 GitHub Release；正式发布状态以仓库 Tag 和 GitHub Release 为准。
 
 ---
 
@@ -63,6 +63,25 @@ v0.1 建设并验证了稳定的工程基础，包括：
   node configuration, saved-revision execution, Run Inspector, human approval,
   and controlled-API Chromium integration coverage. Publication status is
   determined by the repository's tags and GitHub Releases, not this description.
+
+## v0.12 — Knowledge Frontend
+
+v0.11 提供 Knowledge backend 与 RAG 执行能力；v0.12 将已有后端能力接入浏览器，
+不替换 Agent Platform Core、Workflow Engine 或持久化执行模型。
+
+- Workspace 范围内的知识库 CRUD、私有文档上传、解析预览、原文件下载与删除。
+- 索引任务提交、状态轮询、重建确认，以及失败重建仍保留旧有效索引的展示。
+- Search 与单轮 Knowledge Agent Ask，显示真实检索结果、回答及后端 Sources。
+- React Flow Knowledge 节点和可选 Agent Knowledge Binding，保留 Draft / Apply /
+  服务端 Validate-before-Save 与 revision conflict 保护。
+- 根据 Run 的 definition_snapshot 展示 Knowledge / Agent 执行结果，保留 Raw JSON，
+  隔离认证会话、延迟响应及已确认 403/404 后的缓存正文。
+- 新增浏览器集成测试使用真实页面与受控 HTTP fixtures；它们不等于真实全栈 Staging 验证。
+
+当前仅为 **v0.12.0 发布准备，尚未发布**。参见
+[v0.12 release preparation](docs/release-v0.12.md) 与
+[Atomic 8 集成记录](docs/v0.12/atomic8-integration-release.md)，了解实际验证、未执行项目和发布检查清单。
+Web Engineering Foundation 与自研 Agent Platform Core 的边界保持不变。
 
 ## v0.10 — Workflow Frontend
 
