@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import messages from "../../../messages/en.json";
 import { WorkflowExecutionPanel } from "./workflow-execution-panel";
 import { useAuthStore } from "@/stores/auth-store";
+import { workflowRunReadKey } from "@/lib/workflow/workflow-run-lifecycle";
 import { qk } from "@/lib/query-keys";
 import { createDefaultWorkflowGraph } from "@/lib/workflow/default-graph";
 import type { RunStepRead, User, WorkflowRead, WorkflowRunRead } from "@/types";
@@ -140,7 +141,9 @@ function deferred() {
 }
 beforeEach(() => {
   useAuthStore.getState().setUser(A);
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 } },
+  });
   workflow = {
     id: uuid(10),
     workspace_id: uuid(11),
@@ -171,6 +174,178 @@ afterEach(() => {
   useAuthStore.getState().setUser(null);
 });
 
+it.each(["detail", "steps"])(
+  "same-user relogin starts an independent %s request before the old response finishes",
+  async (target) => {
+    const old = deferred();
+    const path = pathFor(r3, target === "steps" ? "/steps" : "");
+    let reads = 0;
+    intercept = (p) => {
+      if (p !== path) return undefined;
+      if (++reads === 1) return old.promise;
+      return Promise.resolve(
+        Response.json(
+          target === "steps"
+            ? [makeStep(r3, { ...evidence, query: "NEW-SESSION" })]
+            : { ...makeRun(), input: { session: "NEW-SESSION" } },
+        ),
+      );
+    };
+    mount();
+    await select();
+    await waitFor(() => expect(reads).toBe(1));
+    const oldSignal = fetchMock.mock.calls.find(([url]) => String(url).split("?")[0] === path)![1]
+      .signal as AbortSignal;
+    const oldKey = workflowRunReadKey(
+      target === "steps"
+        ? qk.workflowRuns.steps(A.id, workflow.id, r3)
+        : qk.workflowRuns.detail(A.id, workflow.id, r3),
+    );
+    await act(async () => {
+      useAuthStore.getState().logout();
+      useAuthStore.getState().setUser(A);
+    });
+    expect(oldSignal.aborted).toBe(true);
+    await select();
+    await region();
+    expect(reads).toBe(2);
+    const newKey = workflowRunReadKey(
+      target === "steps"
+        ? qk.workflowRuns.steps(A.id, workflow.id, r3)
+        : qk.workflowRuns.detail(A.id, workflow.id, r3),
+    );
+    expect(newKey).not.toEqual(oldKey);
+    await act(async () =>
+      old.resolve(
+        Response.json(
+          target === "steps"
+            ? [makeStep(r3, { ...evidence, query: "OLD-SESSION-SECRET" })]
+            : { ...makeRun(), input: { session: "OLD-SESSION-SECRET" } },
+        ),
+      ),
+    );
+    expect(document.body).not.toHaveTextContent("OLD-SESSION-SECRET");
+    expect(JSON.stringify(client.getQueryData(newKey))).toContain("NEW-SESSION");
+    expect(JSON.stringify(client.getQueryData(oldKey)) ?? "").not.toContain("OLD-SESSION-SECRET");
+    expect(fetchMock.mock.calls.every(([, options]) => options.method === "GET")).toBe(true);
+  },
+);
+it("does not show cached or requested execution data for a different authenticated user", async () => {
+  const view = mount();
+  await select();
+  await region();
+  const before = fetchMock.mock.calls.length;
+  view.rerender(panel(B.id));
+  expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/actual evidence/)).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.length).toBe(before);
+});
+it("foreign Step input and output never enter raw JSON", async () => {
+  steps.set(r3, [
+    { ...makeStep(r4, { secret: "FOREIGN-STEP-OUTPUT" }), input: { secret: "FOREIGN-STEP-INPUT" } },
+  ]);
+  mount();
+  await select();
+  await screen.findByText(/unavailable for interpretation/);
+  expect(document.body).not.toHaveTextContent("FOREIGN-STEP-OUTPUT");
+  expect(document.body).not.toHaveTextContent("FOREIGN-STEP-INPUT");
+});
+it("foreign Trace payload never enters raw JSON", async () => {
+  intercept = (path) =>
+    path === pathFor(r3, "/trace")
+      ? Promise.resolve(
+          Response.json([
+            {
+              id: uuid(42),
+              run_id: r4,
+              kind: "tool_completed",
+              step_id: null,
+              payload: { secret: "FOREIGN-TRACE-PAYLOAD" },
+              created_at: "now",
+            },
+          ]),
+        )
+      : undefined;
+  mount();
+  await select();
+  await region();
+  await screen.findByText(/unavailable for interpretation/);
+  expect(document.body).not.toHaveTextContent("FOREIGN-TRACE-PAYLOAD");
+});
+it.each(
+  [403, 404].flatMap((status) =>
+    ["detail", "steps", "trace", "history"].map((target) => [status, target] as const),
+  ),
+)("cached protected JSON is hidden after status %s from %s", async (status, target) => {
+  intercept = undefined;
+  const view = mount();
+  await select();
+  await region();
+  const path =
+    target === "history"
+      ? `/api/workflows/${workflow.id}/runs`
+      : pathFor(r3, target === "detail" ? "" : `/${target}`);
+  intercept = (p) =>
+    p === path
+      ? Promise.resolve(Response.json({ detail: "PRIVATE-DENIAL" }, { status }))
+      : undefined;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  const key =
+    target === "history"
+      ? qk.workflowRuns.list(A.id, workflow.id, 0, 10)
+      : target === "detail"
+        ? qk.workflowRuns.detail(A.id, workflow.id, r3)
+        : target === "steps"
+          ? qk.workflowRuns.steps(A.id, workflow.id, r3)
+          : qk.workflowRuns.trace(A.id, workflow.id, r3);
+  await waitFor(() => expect(client.getQueryState(workflowRunReadKey(key))?.status).toBe("error"), {
+    timeout: 4000,
+  });
+  await waitFor(() => expect(screen.queryByText(/actual evidence/)).not.toBeInTheDocument());
+  expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent("TRACE-ONLY-FAKE.pdf");
+  expect(document.body).not.toHaveTextContent("PRIVATE-DENIAL");
+  view.unmount();
+});
+it("failed revalidation of a cached remounted run does not verify old results", async () => {
+  const view = mount();
+  await select();
+  await region();
+  view.unmount();
+  intercept = (path) =>
+    path === pathFor() ? Promise.resolve(Response.json({}, { status: 503 })) : undefined;
+  mount();
+  await select();
+  await screen.findByText("The selected run could not be loaded.", {}, { timeout: 4000 });
+  expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
+});
+it("does not restore denied cached JSON during retry until fresh authorization succeeds", async () => {
+  mount();
+  await select();
+  await region();
+  intercept = (path) =>
+    path === pathFor() ? Promise.resolve(Response.json({}, { status: 403 })) : undefined;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText(
+    "You do not have permission to access this execution resource.",
+    {},
+    { timeout: 4000 },
+  );
+  expect(document.body).not.toHaveTextContent("actual evidence");
+  const retry = deferred();
+  intercept = (path) => (path === pathFor() ? retry.promise : undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(
+      client.getQueryState(workflowRunReadKey(qk.workflowRuns.detail(A.id, workflow.id, r3)))
+        ?.fetchStatus,
+    ).toBe("fetching"),
+  );
+  expect(document.body).not.toHaveTextContent("actual evidence");
+  await act(async () => retry.resolve(Response.json(makeRun())));
+  expect(await region()).toHaveTextContent("actual evidence");
+});
+
 it("integrates actual results beside raw JSON and preserves Trace separately", async () => {
   mount();
   await select();
@@ -180,6 +355,33 @@ it("integrates actual results beside raw JSON and preserves Trace separately", a
   expect(screen.getByText("tool_completed")).toBeInTheDocument();
   expect(screen.getAllByText("Output", { selector: "summary" }).length).toBeGreaterThan(0);
   expect(screen.getByText(/#1 · node · knowledge · completed/)).toBeInTheDocument();
+});
+it("revalidates a historical run after remount within the production five-minute cache window", async () => {
+  const view = mount();
+  await select();
+  await region();
+  const count = fetchMock.mock.calls.filter(
+    ([url]) => String(url).split("?")[0] === pathFor(),
+  ).length;
+  view.unmount();
+  mount();
+  await select();
+  await region();
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).split("?")[0] === pathFor()).length,
+  ).toBe(count + 1);
+});
+it("revalidates A to B to A with the production five-minute cache", async () => {
+  mount();
+  await select();
+  await region();
+  await select(r4);
+  await region();
+  await select();
+  await region();
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).split("?")[0] === pathFor()).length,
+  ).toBe(2);
 });
 it.each([true, false])(
   "uses historical r3 binding=%s despite opposite current canvas config",
@@ -252,8 +454,10 @@ it.each([true, false])(
   },
 );
 it("does not interpret cached detail/steps until both fresh HTTP reads finish", async () => {
-  client.setQueryData(qk.workflowRuns.detail(A.id, workflow.id, r3), makeRun());
-  client.setQueryData(qk.workflowRuns.steps(A.id, workflow.id, r3), [makeStep()]);
+  client.setQueryData(workflowRunReadKey(qk.workflowRuns.detail(A.id, workflow.id, r3)), makeRun());
+  client.setQueryData(workflowRunReadKey(qk.workflowRuns.steps(A.id, workflow.id, r3)), [
+    makeStep(),
+  ]);
   const detail = deferred(),
     rows = deferred();
   intercept = (path) =>

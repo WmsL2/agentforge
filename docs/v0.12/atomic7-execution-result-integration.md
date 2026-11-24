@@ -1,5 +1,7 @@
 # v0.12 Atomic 7 — Execution Result Integration
 
+Sections 1–14 record the original implementation and its historical validation. Review Fix 1 below records the current review-branch corrections; its query lifecycle and Git accounting supersede the corresponding original implementation notes. Final Source Review remains pending ChatGPT review.
+
 ## 1. Baseline verification
 
 Started from clean `main`, exact HEAD `b05aad53e432d493bc1871d59c7679c8893b206d`. Initial status and diff whitespace checks passed. Atomic 6 / PR #36 is the merged baseline, with 850 frontend tests / 33 files and 26 historical Playwright tests. Version remains 0.11.0.
@@ -101,3 +103,62 @@ No Atomic 8. No Backend Knowledge retrieval, Agent runtime, Tool Platform, Workf
 All changes remain local and unstaged on main at the exact baseline HEAD. No branch creation/switch, git add/commit/push/merge/reset/stash/rebase, PR/tag/release. Docker/containers and Atomic 2 leftovers were not operated; WSL, Backend, PostgreSQL, Redis and Celery were not started. Awaiting ChatGPT Implementation Report Review.
 
 Final file accounting: 3 tracked modifications (execution panel and en/pl translations), 6 untracked additions (result parser/component, three test files and this document). Staged diff is empty. Hooks, API facade, auth identity/store, WorkflowDetail, current editor, backend and existing tests remain unchanged.
+
+## 15. Review Fix 1 — 2026-11-24
+
+### Baseline and reproduction
+
+Initial worktree was clean on `review/v012-atomic7-execution-result-integration`, exact HEAD `201e5bb921b0f59434f9e94ec0fb562640a7987b`. Initial diff whitespace check passed. PR #37 is the supplied open review context; this fix does not declare Final Source Review PASS.
+
+The production Providers config uses staleTime `5 * 60 * 1000` and gcTime `30 * 60 * 1000`. The original integration fixture used React Query's default staleTime=0 and therefore missed the production interaction. After changing the test defaults to production values, two new focused remount/A→B→A tests failed against the original implementation: 2 matched tests failed; the other 21 tests were not selected by the name filter. No test was disabled or removed. Reproduction log: `frontend/node_modules/.cache/atomic7-fix1-repro.log`.
+
+### Production Cache Compatibility
+
+`isFetchedAfterMount` correctly prevents interpreting a cached result as a fresh read, but the five-minute fresh cache could prevent the required read from starting. The guard remains. History/Detail/Steps/Trace read hooks now explicitly use local staleTime=0 and refetchOnMount="always", so a mount or history selection revalidates automatically even under the unchanged global production defaults. QueryClient still retains its configured cache and gcTime. No global staleTime, Providers code or polling interval changed: active 3000ms, paused 10000ms, terminal false. No per-render refetch effect or repeating request loop was added. Remount/A→B→A tests assert the expected request counts.
+
+### Authentication Request Isolation and Query Cancellation
+
+The original component key isolated local React state only. Existing query keys could share both successful data and an in-flight promise across a same-user login, and the facade did not pass signal/identityGuard for these reads.
+
+New local `workflow-run-lifecycle.ts` appends the existing Auth Identity generation and transitionEpoch to each read key while keeping the original resource prefix intact for invalidation. New sessions cannot share an old flight or reuse its cached response as permission verification. This is scoped to execution reads; the global query-key catalog and global QueryClient are unchanged. Historical entries can remain until their existing gcTime expires, but are not selectable by the new session's keys.
+
+Every History/Detail/Steps/Trace query subscribes to the existing auth state and verifies that the authenticated user matches its requested user. The query function captures the identity represented by its key, consumes React Query's AbortSignal, forwards an AbortController signal and identityGuard through Workflow API to apiClient, and checks identity again before returning. A local synchronous auth subscription aborts active transports when identity becomes invalid; QueryClient cancellation and observer unmount also reach the signal. Abort failures are not retried. Ordinary GET failures retain one retry. Even a mocked transport that ignores abort cannot commit a late response after the identity check.
+
+Run details seeded after submission are written under the originating session key. Existing prefix invalidation still refreshes current execution queries. Submission/approval POSTs, approval cache/read behavior, permissions and mutation retry policy were not rewritten; no automatic POST retry was added. No Auth Store, Auth Coordinator, apiClient, Knowledge Lifecycle or backend RBAC change.
+
+### Raw JSON Scope Protection
+
+An unauthenticated/request-user mismatch does not mount the execution session. Run/Workflow mismatch continues to hide associated results. Foreign RunStep input/output and foreign TraceEvent payload are replaced by the existing safe unavailable message; their protected JSON is never rendered.
+
+An explicit 403/404 from any of the four execution reads blocks the selected run's cached bodies and structured results, including during a pending retry. Fresh successful authorization can restore them. Denied history rows are hidden. Ordinary same-session background refetch can retain diagnostic JSON while structured output is unverified. Valid current-session malformed output and ordinary Agent JSON remain reviewable. Step/Trace errors do not masquerade as retrieval emptiness.
+
+### Additional Regression Tests and Fixture Changes
+
+All original 947 tests remain, with no assertion removed, weakened or skipped. Added 21 tests: 17 execution HTTP-boundary regressions and 4 real-hook lifecycle tests. They cover production fresh-cache remount and A→B→A, cached pending/success/failed revalidation, same-user logout/relogin followed immediately by the same Run, independent new-session Detail and Steps requests before old responses finish, synchronous old-signal cancellation, no late cache/UI adoption, mismatched request user, foreign Step/Trace raw JSON, cached 403/404 for each of History/Detail/Steps/Trace, denial during retry and successful recovery, explicit QueryClient cancellation, transitionEpoch key isolation, and identity loss while consuming an HTTP body.
+
+The tests use real QueryClient/Hooks/facade/apiClient/Auth Store and mocked HTTP responses; logout/relogin transitions use the existing Auth Store API. They do not claim real cookie-handler/backend authentication integration.
+
+Two existing fixture adjustments were necessary to represent the real protocol: (1) the 40-test mocked execution-panel suite now establishes authenticated user-1, matching the panel's supplied user, instead of relying on an unauthenticated panel; every original assertion is unchanged. (2) existing HTTP integration cache seeds now use the auth-session read key, and their QueryClient defaults match production five-minute freshness/thirty-minute retention. Original integration assertions remain intact. The existing current-session cache freshness test now exercises actual seeded session data rather than an unused bare resource key.
+
+### Actual Verification Results
+
+Windows, Node v22.13.0 / Bun 1.3.14. Final commands executed after code/test changes:
+
+| Command/check | Actual result |
+| --- | --- |
+| Lifecycle and related targeted regression | PASS, 286 tests / 8 files. |
+| `bun run lint` | PASS, exit 0; 0 errors / 13 existing warnings. |
+| `bun run type-check` | PASS, exit 0. |
+| `bun run test:run` | PASS, 968 tests / 37 files; original 947 plus 21 new, no skips. |
+| `bun run test:coverage` | PASS, 968 tests / 37 files. |
+| `bun run build` | PASS, exit 0; existing runtime-config deprecation and unrelated lint warnings remain. |
+| `git diff --check` and separate new-file whitespace checks | PASS. |
+| Linux Node 24 / Playwright / real Backend E2E / real Provider | NOT RUN. |
+
+Targeted files: workflow-knowledge-execution (38), workflow-execution-panel (40), use-workflow-runs (2), new use-workflow-run-lifecycle (4), knowledge-run-results (59), workflow-knowledge-results (17), workflow-detail (3), knowledge-playground (123). Logs: `frontend/node_modules/.cache/atomic7-fix1-{repro,target,regression,lint,type-check,test-run,test-coverage,build}.log`.
+
+Coverage includes and thresholds remain unchanged; aggregate statements/lines 69.23%, branches 100%, functions 60.86% still refer to the original four-file scope, not the new lifecycle/UI. No dependencies, lockfiles, CI, version or schema changes.
+
+### Git and remaining limitations
+
+Current fix changes six tracked files (this document, execution panel, its mocked test fixture, execution integration tests, run hooks and Workflow API), and adds two files (execution lifecycle helper and real-hook tests). All changes are local and unstaged; branch/HEAD remain the exact review baseline. No branch creation/switch, add/commit/push/merge/reset/stash/rebase, PR/tag/release or Atomic 8 action occurred. Docker, containers, WSL, Backend and real Providers were not started or used. Local passing checks are not Final Source Review approval; awaiting ChatGPT Review.

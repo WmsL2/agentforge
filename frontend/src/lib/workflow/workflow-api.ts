@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, type RequestOptions } from "@/lib/api-client";
 import type {
   ApprovalDecisionRequest,
   ApprovalRequestRead,
@@ -14,6 +14,8 @@ import type {
   WorkflowUpdate,
   WorkflowValidationRead,
 } from "@/types";
+
+type RunReadOptions = Pick<RequestOptions, "signal" | "identityGuard">;
 
 interface Pagination {
   skip?: number;
@@ -47,16 +49,17 @@ export const workflowApi = {
     apiClient.post<WorkflowValidationRead>("/workflows/validate", graph),
   submitAsyncRun: (workflowId: string, input: JsonObject) =>
     apiClient.post<WorkflowRunRead>(`${workflowPath(workflowId)}/runs/async`, { input }),
-  listWorkflowRuns: (workflowId: string, pagination: Pagination = {}) =>
+  listWorkflowRuns: (workflowId: string, pagination: Pagination = {}, options?: RunReadOptions) =>
     apiClient.get<WorkflowRunList>(`${workflowPath(workflowId)}/runs`, {
+      ...options,
       params: paginationParams(pagination),
     }),
-  getWorkflowRun: (workflowId: string, runId: string) =>
-    apiClient.get<WorkflowRunRead>(runPath(workflowId, runId)),
-  getWorkflowRunSteps: (workflowId: string, runId: string) =>
-    apiClient.get<RunStepRead[]>(`${runPath(workflowId, runId)}/steps`),
-  getWorkflowTrace: (workflowId: string, runId: string) =>
-    apiClient.get<TraceEventRead[]>(`${runPath(workflowId, runId)}/trace`),
+  getWorkflowRun: (workflowId: string, runId: string, options?: RunReadOptions) =>
+    apiClient.get<WorkflowRunRead>(runPath(workflowId, runId), options),
+  getWorkflowRunSteps: (workflowId: string, runId: string, options?: RunReadOptions) =>
+    apiClient.get<RunStepRead[]>(`${runPath(workflowId, runId)}/steps`, options),
+  getWorkflowTrace: (workflowId: string, runId: string, options?: RunReadOptions) =>
+    apiClient.get<TraceEventRead[]>(`${runPath(workflowId, runId)}/trace`, options),
   getPendingApproval: (workflowId: string, runId: string) =>
     apiClient.get<ApprovalRequestRead>(`${runPath(workflowId, runId)}/approvals/pending`),
   approveAsync: (
