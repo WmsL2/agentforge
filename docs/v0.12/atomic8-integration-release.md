@@ -114,3 +114,55 @@ See [release preparation](../release-v0.12.md) for user operations, deployment/u
 ## 16. Git restrictions
 
 All modifications remain local on main at the exact baseline HEAD and unstaged. No branch creation/switch, git add/commit/push/merge/reset/stash/rebase, PR/tag/Release, remote mutation or v0.13 work. Docker, WSL, legacy containers, database/Backend/worker services and real providers were not started or modified. No new dependency, schema or production business capability was introduced.
+
+## 17. Unified Review Fix 1 — PR CI #194 browser repair
+
+This section records the review corrections on `review/v012-atomic8-integration-release` at unchanged HEAD `b441390f36150a20245f4c5dfba228bb495a54bd`. Initial status was clean and diff whitespace check passed. Earlier sections describe the original main preparation, not the current branch or the repaired browser execution status. PR #39 remains the supplied open review context; no new PR or publication action is taken.
+
+### Actual CI #194 evidence
+
+Read the actual [test-frontend job log](https://github.com/WmsL2/agentforge/actions/runs/45345404283/job/138278619515) through the GitHub connector. It records 989 frontend tests / 37 files passed, and Chromium 40 passed / 2 failed. The original 26 browser tests passed; each new eight-case Knowledge/Workflow spec had one failure. Backend and Security Scan PASS are supplied CI context; this repair independently read the frontend job log.
+
+The document lifecycle test failed after its multipart/preview/Unicode download and actual-byte assertions: the exact Close locator resolved to both the footer button and DialogContent's top-right close control. The new Knowledge-node editor test timed out waiting for the exact lowercase accessible name `fit view` before reaching its configuration/connection checks. These are real CI failures; no repaired Playwright PASS is claimed without execution.
+
+### Issue 1 — Document Fixture Resource Scope Protection
+
+The old fixture matched a fixed document ID prefix and returned the first document row, allowing metadata/content/download/index/deletion to ignore the actual document's parent scope. Upload also returned the first row instead of the newly created scoped resource.
+
+The router now parses exact document/subresource paths, finds a row by Workspace + Knowledge Base + Document ID, returns 404 for absent/foreign IDs and refuses unsupported methods. Upload stores and returns its own requested-parent row with a unique monotonic synthetic ID. Delete removes only that row. Index metadata/job/generation for additional documents is separate from the original document fixture. No production API/storage/business code changed.
+
+Added eight fixture-router unit contract tests for wrong Workspace/base/document, prefix/suffix confusion, unknown subroutes, metadata/content/download/index access, no unauthorized mutation, scoped upload response, selective deletion and index separation. These tests simulate the fixture's Route boundary only; they are not browser execution evidence and do not mock a production React component/Hook.
+
+### Issue 2 — Complete authorization denial/retry/recovery browser timing
+
+Both explicit and bound Workflow scenarios now queue exactly 403 → first 503 → automatic retry 503 → authorized 200. Separate promise gates hold the first failure, retry and recovery response. The spec checks request arrival order, awaits response completion, verifies structured and raw bodies remain hidden while each request is held and after the retry, and does not permit recovery until the authorized response actually completes. A browser animation-frame barrier checks rendered state after the completed retry; no arbitrary fixed sleep or enlarged timeout is used. The exact four-request order and drained queue are asserted, so early authorized recovery cannot skip the real retry.
+
+### Issue 3 — Dialog Close locator
+
+Reviewed `knowledge-document-detail-dialog.tsx` and shared `ui/dialog.tsx`. Both expose a Close accessible name. The test now presses Escape on the actual Document details dialog and asserts it is unmounted before continuing cancel-delete and confirmed-delete. Original multipart, preview, Unicode filename and exact downloaded-byte checks are retained. No production Dialog change, first/nth workaround or deleted assertion.
+
+### Issue 4 — Locked React Flow control and real connections
+
+Reviewed WorkflowCanvas/Editor plus installed/locked @xyflow/react 12.12.0 and @xyflow/system. Controls uses `.react-flow__controls-fitview`; both title and aria-label resolve to `Fit View` (case-sensitive). The test asserts these attributes and clicks that actual control. It retains real Add Knowledge, Apply, server validation before PATCH, revision Save/Reload and both exclusive query modes.
+
+Connections use real source/target handle bounds and Playwright mouse down/move/up, without force clicks or graph/React state injection. The test verifies the rendered edge IDs and the actual persisted PATCH graph contains start → knowledge-1 and knowledge-1 → end. It does not merely extend the old timeout. The changed interactions still require actual authenticated browser execution in the next CI run.
+
+### Actual local verification and boundaries
+
+Final local verification (Windows, same existing Bun/Node environment):
+
+| Check | Actual result |
+| --- | --- |
+| Fixture router targeted tests | PASS, 8 tests / 1 file. |
+| `bun run lint` | PASS, exit 0; 0 errors / 13 existing warnings. |
+| `bun run type-check` | PASS. |
+| `bun run test:run` | PASS, 997 tests / 38 files; original 989 plus 8 fixture tests, no skips. |
+| `bun run test:coverage` | PASS, 997 tests / 38 files. Original include/threshold policy unchanged; aggregate still 69.23% statements/lines, 100% branches, 60.86% functions for the original four-file scope. |
+| `bun run build` | PASS, exit 0; existing unrelated warnings remain. |
+| Existing CI spec list, Chromium `--list` | PASS discovery, 42 tests / 6 files, including unchanged real auth setup. |
+| Repaired browser execution | NOT RUN locally; awaiting the next actual CI execution. |
+| `git diff --check` and separate new-file whitespace check | PASS. |
+
+Logs: `frontend/node_modules/.cache/atomic8-review1-{target,lint,type-check,test-run,test-coverage,build,discovery}.log`.
+
+Playwright execution after repair is NOT RUN locally: no live frontend/backend login environment was available, and the real authentication setup was not bypassed. The 42-case CI Chromium subset and all old tests are retained. Local static/unit/build evidence must not be described as a repaired Chromium PASS. Docker, WSL and paid providers were not started; production business logic, dependencies, version, CI configuration and authentication setup remain unchanged. All modifications remain unstaged on the same branch/HEAD, awaiting ChatGPT review and the next authorized CI run.

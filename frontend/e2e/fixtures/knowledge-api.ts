@@ -135,6 +135,11 @@ function valid(graph: WorkflowGraph) {
     )
   );
 }
+interface DocumentIndexState {
+  indexPhase: K.KnowledgeIndexStatus;
+  generation: string | null;
+  job: K.KnowledgeIndexJobRead | null;
+}
 export function initial(mode: "explicit" | "bound" | "ordinary" = "ordinary") {
   const workflow: WorkflowRead = {
     id: WF,
@@ -151,6 +156,7 @@ export function initial(mode: "explicit" | "bound" | "ordinary" = "ordinary") {
     role: "owner" as "owner" | "admin" | "member",
     bases: [base(), base(FOREIGN, WS2, "Other workspace secret")],
     documents: [] as K.KnowledgeDocumentRead[],
+    nextDocumentNumber: 20,
     workflow,
     runs: [] as WorkflowRunRead[],
     steps: {} as Record<string, RunStepRead[]>,
@@ -159,6 +165,7 @@ export function initial(mode: "explicit" | "bound" | "ordinary" = "ordinary") {
     indexPhase: "not_indexed" as K.KnowledgeIndexStatus,
     generation: null as string | null,
     job: null as K.KnowledgeIndexJobRead | null,
+    documentIndexes: {} as Record<string, DocumentIndexState>,
     searchError: false,
     emptySearch: false,
     askStatus: "answered" as K.KnowledgeAskStatus,
@@ -167,6 +174,8 @@ export function initial(mode: "explicit" | "bound" | "ordinary" = "ordinary") {
     calls: [] as { method: string; path: string; query: string; body: unknown }[],
     unexpected: [] as string[],
     denySteps: 0,
+    stepResponses: [] as { status: number; wait?: Promise<void> }[],
+    stepResponseStarts: [] as number[],
     indexPosts: 0,
     patches: 0,
   };
@@ -308,13 +317,30 @@ export async function install(page: Page, state: BrowserState) {
           expect(multipart).toBe(true);
           expect(String(body)).toContain('name="file"');
           expect(String(body)).toContain(TEXT);
-          state.documents.push(document());
-          return json(route, 201, state.documents[0]);
+          let number = state.nextDocumentNumber;
+          while (state.documents.some((d) => d.id === id(number))) number++;
+          state.nextDocumentNumber = number + 1;
+          const created = {
+            ...document(),
+            id: id(number),
+            workspace_id: selected.workspace_id,
+            knowledge_base_id: selected.id,
+          };
+          state.documents.push(created);
+          return json(route, 201, created);
         }
       }
-      if (tail?.startsWith(`documents/${DOC}`) && state.documents.length) {
-        const doc = state.documents[0]!;
-        if (tail.endsWith("/download"))
+      const documentMatch = tail?.match(/^documents\/([^/]+)(?:\/(content|download|index))?$/);
+      if (documentMatch) {
+        const doc = state.documents.find(
+          (d) =>
+            d.id === documentMatch[1] &&
+            d.workspace_id === selected.workspace_id &&
+            d.knowledge_base_id === selected.id,
+        );
+        if (!doc) return json(route, 404, { detail: "Not found" });
+        const action = documentMatch[2];
+        if (action === "download" && method === "GET")
           return route.fulfill({
             status: 200,
             contentType: "text/plain",
@@ -323,20 +349,28 @@ export async function install(page: Page, state: BrowserState) {
             },
             body: Buffer.from(TEXT),
           });
-        if (tail.endsWith("/content"))
+        if (action === "content" && method === "GET")
           return json(route, 200, {
-            document_id: DOC,
+            document_id: doc.id,
             content: TEXT,
             page_count: 1,
             parse_metadata: {},
           });
-        if (tail.endsWith("/index")) {
+        if (action === "index" && ["GET", "POST"].includes(method)) {
+          const index =
+            doc.id === DOC
+              ? state
+              : (state.documentIndexes[doc.id] ??= {
+                  indexPhase: "not_indexed",
+                  generation: null,
+                  job: null,
+                });
           if (method === "POST") {
             state.indexPosts++;
-            state.indexPhase = "pending";
-            state.job = {
+            index.indexPhase = "pending";
+            index.job = {
               id: id(60 + state.indexPosts),
-              document_id: DOC,
+              document_id: doc.id,
               status: "pending",
               embedding_model: "fixture-embedding",
               embedding_dimensions: 1536,
@@ -346,26 +380,28 @@ export async function install(page: Page, state: BrowserState) {
               error_code: null,
               created_at: timestamp,
             };
-            return json(route, 202, state.job);
+            return json(route, 202, index.job);
           }
-          if (state.indexPhase === "succeeded")
-            state.generation = state.job?.index_generation_id ?? id(70);
+          if (index.indexPhase === "succeeded")
+            index.generation = index.job?.index_generation_id ?? id(70);
           return json(route, 200, {
-            document_id: DOC,
-            job_id: state.job?.id ?? null,
-            status: state.indexPhase,
-            active_generation_id: state.generation,
-            chunk_count: state.generation ? 1 : 0,
-            embedding_model: state.generation ? "fixture-embedding" : null,
-            index_version: state.generation ? "v1" : null,
-            error_code: state.indexPhase === "failed" ? "EMBEDDING_TIMEOUT" : null,
+            document_id: doc.id,
+            job_id: index.job?.id ?? null,
+            status: index.indexPhase,
+            active_generation_id: index.generation,
+            chunk_count: index.generation ? 1 : 0,
+            embedding_model: index.generation ? "fixture-embedding" : null,
+            index_version: index.generation ? "v1" : null,
+            error_code: index.indexPhase === "failed" ? "EMBEDDING_TIMEOUT" : null,
           });
         }
-        if (method === "DELETE") {
-          state.documents = [];
+        if (!action && method === "DELETE") {
+          state.documents = state.documents.filter((d) => d !== doc);
+          delete state.documentIndexes[doc.id];
           return route.fulfill({ status: 204 });
         }
-        return json(route, 200, doc);
+        if (!action && method === "GET") return json(route, 200, doc);
+        return json(route, 405, { detail: "Method not allowed" });
       }
     }
     if (path === "/api/workflows/validate") {
@@ -424,10 +460,21 @@ export async function install(page: Page, state: BrowserState) {
     if (runMatch) {
       const run = state.runs.find((r) => r.id === runMatch[1]);
       if (!run) return json(route, 404, { detail: "Not found" });
-      if (runMatch[2] === "steps")
+      if (runMatch[2] === "steps") {
+        const queued = state.stepResponses.shift();
+        if (queued) {
+          state.stepResponseStarts.push(queued.status);
+          await queued.wait;
+          return json(
+            route,
+            queued.status,
+            queued.status === 200 ? (state.steps[run.id] ?? []) : { detail: "unavailable" },
+          );
+        }
         return state.denySteps
           ? json(route, state.denySteps, { detail: "unavailable" })
           : json(route, 200, state.steps[run.id] ?? []);
+      }
       if (runMatch[2] === "trace") return json(route, 200, state.traces[run.id] ?? []);
       run.status = state.runPhase;
       return json(route, 200, run);

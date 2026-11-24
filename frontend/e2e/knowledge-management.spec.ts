@@ -107,7 +107,8 @@ test("Document multipart upload, metadata, preview, exact download bytes and con
   const bytes: Buffer[] = [];
   for await (const chunk of stream!) bytes.push(Buffer.from(chunk));
   expect(Buffer.concat(bytes)).toEqual(Buffer.from(TEXT));
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog.press("Escape");
+  await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Delete document 证据.txt", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
   expect(state.documents).toHaveLength(1);
