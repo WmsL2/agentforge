@@ -13,8 +13,11 @@ import {
   useWorkspaceMembers,
   useWorkflowTrace,
 } from "@/hooks";
-import { ApiError, getApiErrorMessage } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import { isJsonObject, parseSafeJson } from "@/lib/json-value";
+import { authIdentity } from "@/lib/auth-identity";
+import { useAuthStore } from "@/stores/auth-store";
+import { WorkflowKnowledgeResults } from "./workflow-knowledge-results";
 import type { WorkflowEditorState } from "./workflow-canvas-editor";
 import type { JsonObject, WorkflowRead, WorkflowRunRead } from "@/types";
 import {
@@ -84,11 +87,7 @@ function displayError(
 ): string {
   if (error instanceof ApiError && error.status === 403) return forbidden;
   if (error instanceof ApiError && error.status === 404) return notFound;
-  return error instanceof ApiError
-    ? getApiErrorMessage(error.data, error.message || fallback)
-    : error instanceof Error
-      ? error.message
-      : fallback;
+  return fallback;
 }
 
 function timestamp(value: string | null): string {
@@ -130,11 +129,18 @@ function JsonView({
   );
 }
 
-export function WorkflowExecutionPanel({
-  workflow,
-  userId,
-  editorState,
-}: WorkflowExecutionPanelProps) {
+export function WorkflowExecutionPanel(props: WorkflowExecutionPanelProps) {
+  useAuthStore();
+  const identity = authIdentity();
+  return (
+    <WorkflowExecutionSession
+      key={`${props.userId}/${props.workflow.workspace_id}/${props.workflow.id}/${identity.generation}/${identity.transitionEpoch}`}
+      {...props}
+    />
+  );
+}
+
+function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExecutionPanelProps) {
   const t = useTranslations("workflows.execution");
   const [inputText, setInputText] = useState("{}");
   const [page, setPage] = useState(0);
@@ -205,7 +211,9 @@ export function WorkflowExecutionPanel({
     members.isSuccess && (membership?.role === "owner" || membership?.role === "admin");
   const history = useWorkflowRuns(userId, workflow.id, page * PAGE_SIZE, PAGE_SIZE);
   const run = useWorkflowRun(userId, workflow.id, selectedRunId);
-  const selectedMismatch = Boolean(run.data && run.data.workflow_id !== workflow.id);
+  const selectedMismatch = Boolean(
+    run.data && (run.data.workflow_id !== workflow.id || run.data.id !== selectedRunId),
+  );
   const relatedRunId = selectedMismatch ? undefined : selectedRunId;
   const selectedStatus = selectedMismatch ? undefined : run.data?.status;
   const steps = useWorkflowRunSteps(userId, workflow.id, relatedRunId, selectedStatus);
@@ -217,6 +225,15 @@ export function WorkflowExecutionPanel({
     Boolean(canDecide && selectedStatus === "paused"),
   );
   const mutations = useWorkflowRunMutations(userId, workflow.id);
+  const resultReady =
+    authIdentity().userId === userId &&
+    run.isSuccess &&
+    run.isFetchedAfterMount &&
+    !run.isFetching &&
+    steps.isSuccess &&
+    steps.isFetchedAfterMount &&
+    !steps.isFetching &&
+    !selectedMismatch;
 
   useEffect(() => {
     if (!relatedRunId || !selectedStatus) {
@@ -286,7 +303,9 @@ export function WorkflowExecutionPanel({
         if (!isCurrentRequest(request)) return;
         setSubmitIssues(structuredIssues(error));
         setSubmitError(
-          displayError(error, t("submitFailed"), t("forbidden"), t("workflowNotFound")),
+          errorEnvelope(error)?.code === "WORKFLOW_DISPATCH_FAILED"
+            ? t("dispatchFailedSafe")
+            : displayError(error, t("submitFailed"), t("forbidden"), t("workflowNotFound")),
         );
       }
     } finally {
@@ -334,7 +353,9 @@ export function WorkflowExecutionPanel({
       } else {
         if (!isCurrentRequest(request)) return;
         setActionMessage(
-          displayError(error, t("approvalFailed"), t("forbidden"), t("approvalNotFound")),
+          error instanceof ApiError && error.status === 409
+            ? t("approvalConflictSafe")
+            : displayError(error, t("approvalFailed"), t("forbidden"), t("approvalNotFound")),
         );
         if (error instanceof ApiError && error.status === 409) await mutations.refreshRun(runId);
       }
@@ -559,6 +580,13 @@ export function WorkflowExecutionPanel({
                         <JsonView label={t("input")} value={step.input} copyLabel={t("copy")} />
                         <JsonView label={t("output")} value={step.output} copyLabel={t("copy")} />
                       </div>
+                      <WorkflowKnowledgeResults
+                        workflowId={workflow.id}
+                        runId={selectedRunId}
+                        run={run.data}
+                        step={step}
+                        ready={resultReady}
+                      />
                     </div>
                   ))}
               </div>
