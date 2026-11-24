@@ -1,6 +1,6 @@
 # v0.12 Atomic 7 — Execution Result Integration
 
-Sections 1–14 record the original implementation and its historical validation. Review Fix 1 below records the current review-branch corrections; its query lifecycle and Git accounting supersede the corresponding original implementation notes. Final Source Review remains pending ChatGPT review.
+Sections 1–14 record the original implementation and its historical validation. Review Fix 1 and Review Fix 2 below record successive review corrections; the latest section supersedes earlier lifecycle and Git accounting where applicable. Final Source Review remains pending ChatGPT review.
 
 ## 1. Baseline verification
 
@@ -162,3 +162,55 @@ Coverage includes and thresholds remain unchanged; aggregate statements/lines 69
 ### Git and remaining limitations
 
 Current fix changes six tracked files (this document, execution panel, its mocked test fixture, execution integration tests, run hooks and Workflow API), and adds two files (execution lifecycle helper and real-hook tests). All changes are local and unstaged; branch/HEAD remain the exact review baseline. No branch creation/switch, add/commit/push/merge/reset/stash/rebase, PR/tag/release or Atomic 8 action occurred. Docker, containers, WSL, Backend and real Providers were not started or used. Local passing checks are not Final Source Review approval; awaiting ChatGPT Review.
+
+## 16. Review Fix 2 — Authorization Denial Persistence
+
+### Baseline and root cause
+
+Initial checks confirmed a clean `fix/v012-atomic7-query-lifecycle` at exact HEAD `fa63d2a5c15a8b840df17027dc4161bf3186bcae`. PR #38 / CI #191 / 968 frontend tests and 26 Playwright tests are supplied baseline context, not new local verification.
+
+Before production changes, eight real HTTP-boundary regressions reproduced the issue for History, Detail, Steps and Trace: 200 → 403 → 503, and 200 → 404 → network failure. All eight failed because cached protected JSON reappeared. The other 38 integration tests were outside the reproduction name filter, not disabled. Reproduction log: `frontend/node_modules/.cache/atomic7-fix2-repro.log`.
+
+React Query retains old data after a failed refetch. The panel previously derived access denial solely from the latest query error, so a transient error could overwrite a confirmed 403/404. Detail/Steps freshness checks could still block structured interpretation, while cached JSON reappeared; History/Trace failures could also lift the combined structured-result block.
+
+### Authorization denial persistence and recovery
+
+Each execution read now has a local cache-only denial record under its unchanged session/resource read key plus `authorization-denied`. It has a disabled observer and makes no HTTP request. A record initialized to false means no confirmed denial is recorded; it does not verify any cached response or replace the existing freshness guards.
+
+The shared guarded request records true only for an identity-current 403/404. It clears only that exact resource's record after a fresh successful HTTP read passes the existing AbortSignal/identity checks. Pending, cancellation, 500/503, network failures and another resource's success leave the record unchanged. Late successful responses from cancelled requests cannot clear it. Mutation cache seeds, ordinary rerenders and remounts do not clear it.
+
+The panel reads these persistent flags in addition to its existing mismatch/error checks, preserving the protection of selected structured results and raw JSON. History rows also respect the History denial flag. Run-scoped records remain associated with the denied Run through A → B → A and do not block a different legitimate Run. History records follow their existing workflow/pagination resource key. User/generation/transitionEpoch key isolation remains unchanged, so a new authenticated session cannot inherit another session's denial or authorize its data.
+
+The denial record uses the existing QueryClient retention defaults and remains observed alongside its read. Clearing the whole cache removes the protected data too; this fix introduces no new global QueryClient configuration or permanent global map. Existing session keys, polling intervals, local freshness policy, transport guards, ordinary Agent handling and legal JSON diagnostics are retained. No backend or global authentication change.
+
+### Retry policy
+
+History/Detail/Steps/Trace now share an explicit retry predicate: 403/404 and AbortError receive no automatic retry; temporary HTTP/network errors retain the previous single retry. HTTP tests assert one denial request and two transient-failure attempts. Submission/approval mutation behavior is unchanged.
+
+### Regression tests
+
+Added 21 tests: eight denial → transient-failure cases, four per-resource pending/other-success/cancellation/fresh-success cases, three Run A → B → A cases, two user/session-isolation cases and four retry-policy cases. Tests check both structured results and protected raw bodies, using the existing real hooks/facade/apiClient/Auth Store and production five-minute/thirty-minute QueryClient defaults with mocked HTTP.
+
+The original 968 tests remain. The cancellation test now explicitly identifies all four original protected-data queries and retains the no-data-adoption assertion for each; it additionally checks four cache-only denial records remain false. This distinguishes new boolean metadata from protected HTTP response data without weakening the original cancellation assertion. No existing test was deleted or disabled.
+
+Final targeted execution-panel/lifecycle regression: PASS, 105 tests / 4 files (execution integration 55, execution panel 40, real-hook lifecycle 8, polling/query-key tests 2). Logs use `frontend/node_modules/.cache/atomic7-fix2-{repro,target,lint,type-check,test-run,test-coverage,build}.log`.
+
+### Actual verification results — 2026-11-24
+
+Windows, Node v22.13.0 / Bun 1.3.14. All commands completed against the final code/test changes:
+
+| Command/check | Actual result |
+| --- | --- |
+| Execution-panel and lifecycle targeted regression | PASS, 105 tests / 4 files. |
+| `bun run lint` | PASS, exit 0; 0 errors / 13 existing warnings. |
+| `bun run type-check` | PASS, exit 0. |
+| `bun run test:run` | PASS, 989 tests / 37 files; original 968 plus 21 new, no skips. |
+| `bun run test:coverage` | PASS, 989 tests / 37 files. |
+| `bun run build` | PASS, exit 0; existing runtime-config deprecation and unrelated warnings remain. |
+| `git diff --check` / changed-file whitespace check | PASS. |
+
+Coverage configuration and thresholds remain unchanged. Aggregate statements/lines 69.23%, branches 100%, functions 60.86% still describe the original four included files, not coverage of this authorization state/UI. No dependency, lockfile, CI, schema or version change.
+
+### Git boundaries and limitations
+
+Only this document, execution panel, run hooks, local run lifecycle helper and their two lifecycle/integration test files change (six tracked files, no new files). All work remains unstaged on the exact review-fix branch/HEAD. No branch creation/switch, add/commit/push/merge/reset/stash/rebase, PR/tag/release or Atomic 8. No Docker, WSL, Backend or real Provider was started. Linux Node 24, local Playwright, real Backend/Provider/auth-cookie-handler integration and browser visual verification are NOT RUN. Passing local tests do not constitute Final Source Review approval; awaiting ChatGPT review.

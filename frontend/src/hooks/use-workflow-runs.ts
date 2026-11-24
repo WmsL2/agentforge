@@ -1,10 +1,15 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { useAuthStore } from "@/stores/auth-store";
 import { authIdentity } from "@/lib/auth-identity";
-import { workflowRunReadKey, workflowRunRequest } from "@/lib/workflow/workflow-run-lifecycle";
+import {
+  workflowRunReadKey,
+  workflowRunRequest,
+  workflowRunDenialKey,
+  workflowRunReadRetry,
+} from "@/lib/workflow/workflow-run-lifecycle";
 
 import { qk } from "@/lib/query-keys";
 import { workflowApi } from "@/lib/workflow/workflow-api";
@@ -16,6 +21,17 @@ import type {
   WorkflowRunStatus,
 } from "@/types";
 
+// Cache-only state has the same session/resource lifetime as its associated read.
+function useRunAuthorization(key: QueryKey) {
+  const client = useQueryClient();
+  const denied = useQuery({
+    queryKey: workflowRunDenialKey(key),
+    enabled: false,
+    initialData: false,
+  });
+  return { denied: denied.data === true, scope: { client, key } };
+}
+
 export const workflowRunRefetchInterval = (status: WorkflowRunStatus | undefined) => {
   if (status === "pending" || status === "running") return 3000;
   if (status === "paused") return 10000;
@@ -25,40 +41,56 @@ export const workflowRunRefetchInterval = (status: WorkflowRunStatus | undefined
 export function useWorkflowRuns(userId: string, workflowId: string, skip: number, limit: number) {
   useAuthStore();
   const identity = authIdentity();
-  return useQuery({
-    queryKey: workflowRunReadKey(qk.workflowRuns.list(userId, workflowId, skip, limit), identity),
+  const key = workflowRunReadKey(qk.workflowRuns.list(userId, workflowId, skip, limit), identity);
+  const authorization = useRunAuthorization(key);
+  const query = useQuery({
+    queryKey: key,
     queryFn: ({ signal }) =>
-      workflowRunRequest(userId, identity, signal, (signal, identityGuard) =>
-        workflowApi.listWorkflowRuns(workflowId, { skip, limit }, { signal, identityGuard }),
+      workflowRunRequest(
+        userId,
+        identity,
+        signal,
+        (signal, identityGuard) =>
+          workflowApi.listWorkflowRuns(workflowId, { skip, limit }, { signal, identityGuard }),
+        authorization.scope,
       ),
     enabled: Boolean(identity.userId === userId && userId && workflowId),
-    retry: (count, error) => error.name !== "AbortError" && count < 1,
+    retry: workflowRunReadRetry,
     // A selected execution read must revalidate even under the global five-minute cache.
     staleTime: 0,
     refetchOnMount: "always",
   });
+  return { ...query, authorizationDenied: authorization.denied };
 }
 
 export function useWorkflowRun(userId: string, workflowId: string, runId?: string) {
   useAuthStore();
   const identity = authIdentity();
-  return useQuery({
-    queryKey: workflowRunReadKey(
-      qk.workflowRuns.detail(userId, workflowId, runId ?? "none"),
-      identity,
-    ),
+  const key = workflowRunReadKey(
+    qk.workflowRuns.detail(userId, workflowId, runId ?? "none"),
+    identity,
+  );
+  const authorization = useRunAuthorization(key);
+  const query = useQuery({
+    queryKey: key,
     queryFn: ({ signal }) =>
-      workflowRunRequest(userId, identity, signal, (signal, identityGuard) =>
-        workflowApi.getWorkflowRun(workflowId, runId!, { signal, identityGuard }),
+      workflowRunRequest(
+        userId,
+        identity,
+        signal,
+        (signal, identityGuard) =>
+          workflowApi.getWorkflowRun(workflowId, runId!, { signal, identityGuard }),
+        authorization.scope,
       ),
     enabled: Boolean(identity.userId === userId && userId && workflowId && runId),
-    retry: (count, error) => error.name !== "AbortError" && count < 1,
+    retry: workflowRunReadRetry,
     // A selected execution read must revalidate even under the global five-minute cache.
     staleTime: 0,
     refetchOnMount: "always",
     refetchInterval: (query) => workflowRunRefetchInterval(query.state.data?.status),
     refetchIntervalInBackground: false,
   });
+  return { ...query, authorizationDenied: authorization.denied };
 }
 
 export function useWorkflowRunSteps(
@@ -69,23 +101,31 @@ export function useWorkflowRunSteps(
 ) {
   useAuthStore();
   const identity = authIdentity();
-  return useQuery({
-    queryKey: workflowRunReadKey(
-      qk.workflowRuns.steps(userId, workflowId, runId ?? "none"),
-      identity,
-    ),
+  const key = workflowRunReadKey(
+    qk.workflowRuns.steps(userId, workflowId, runId ?? "none"),
+    identity,
+  );
+  const authorization = useRunAuthorization(key);
+  const query = useQuery({
+    queryKey: key,
     queryFn: ({ signal }) =>
-      workflowRunRequest(userId, identity, signal, (signal, identityGuard) =>
-        workflowApi.getWorkflowRunSteps(workflowId, runId!, { signal, identityGuard }),
+      workflowRunRequest(
+        userId,
+        identity,
+        signal,
+        (signal, identityGuard) =>
+          workflowApi.getWorkflowRunSteps(workflowId, runId!, { signal, identityGuard }),
+        authorization.scope,
       ),
     enabled: Boolean(identity.userId === userId && userId && workflowId && runId),
-    retry: (count, error) => error.name !== "AbortError" && count < 1,
+    retry: workflowRunReadRetry,
     // A selected execution read must revalidate even under the global five-minute cache.
     staleTime: 0,
     refetchOnMount: "always",
     refetchInterval: workflowRunRefetchInterval(status),
     refetchIntervalInBackground: false,
   });
+  return { ...query, authorizationDenied: authorization.denied };
 }
 
 export function useWorkflowTrace(
@@ -96,23 +136,31 @@ export function useWorkflowTrace(
 ) {
   useAuthStore();
   const identity = authIdentity();
-  return useQuery({
-    queryKey: workflowRunReadKey(
-      qk.workflowRuns.trace(userId, workflowId, runId ?? "none"),
-      identity,
-    ),
+  const key = workflowRunReadKey(
+    qk.workflowRuns.trace(userId, workflowId, runId ?? "none"),
+    identity,
+  );
+  const authorization = useRunAuthorization(key);
+  const query = useQuery({
+    queryKey: key,
     queryFn: ({ signal }) =>
-      workflowRunRequest(userId, identity, signal, (signal, identityGuard) =>
-        workflowApi.getWorkflowTrace(workflowId, runId!, { signal, identityGuard }),
+      workflowRunRequest(
+        userId,
+        identity,
+        signal,
+        (signal, identityGuard) =>
+          workflowApi.getWorkflowTrace(workflowId, runId!, { signal, identityGuard }),
+        authorization.scope,
       ),
     enabled: Boolean(identity.userId === userId && userId && workflowId && runId),
-    retry: (count, error) => error.name !== "AbortError" && count < 1,
+    retry: workflowRunReadRetry,
     // A selected execution read must revalidate even under the global five-minute cache.
     staleTime: 0,
     refetchOnMount: "always",
     refetchInterval: workflowRunRefetchInterval(status),
     refetchIntervalInBackground: false,
   });
+  return { ...query, authorizationDenied: authorization.denied };
 }
 
 export function usePendingWorkflowApproval(

@@ -232,7 +232,12 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
   );
   const mutations = useWorkflowRunMutations(userId, workflow.id);
   const protectedBlocked =
-    selectedMismatch || [history.error, run.error, steps.error, trace.error].some(accessDenied);
+    selectedMismatch ||
+    history.authorizationDenied ||
+    run.authorizationDenied ||
+    steps.authorizationDenied ||
+    trace.authorizationDenied ||
+    [history.error, run.error, steps.error, trace.error].some(accessDenied);
   const resultReady =
     authIdentity().userId === userId &&
     run.isSuccess &&
@@ -463,7 +468,8 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
             <p className="text-muted-foreground">{t("historyEmpty")}</p>
           )}
           <div className="space-y-2">
-            {!accessDenied(history.error) &&
+            {!history.authorizationDenied &&
+              !accessDenied(history.error) &&
               history.data?.items.map((item) =>
                 item.workflow_id !== workflow.id ? (
                   <p role="alert" className="text-destructive text-sm" key={item.id}>

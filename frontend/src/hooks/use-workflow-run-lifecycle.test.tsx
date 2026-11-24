@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/stores/auth-store";
 import { blockAuthProbes } from "@/lib/auth-transition";
-import { workflowRunReadKey } from "@/lib/workflow/workflow-run-lifecycle";
+import { workflowRunReadKey, workflowRunReadRetry } from "@/lib/workflow/workflow-run-lifecycle";
+import { ApiError } from "@/lib/api-client";
 import { qk } from "@/lib/query-keys";
 import {
   useWorkflowRun,
@@ -77,12 +78,32 @@ it("QueryClient cancellation aborts all four transport signals and prevents cach
   await act(async () => {
     for (const complete of resolve) complete(Response.json({ secret: "CANCELLED" }));
   });
-  expect(
-    client
-      .getQueryCache()
-      .getAll()
-      .every((query) => query.state.data === undefined),
-  ).toBe(true);
+  const queries = client.getQueryCache().getAll();
+  const protectedQueries = queries.filter(
+    (query) => query.queryKey.at(-1) !== "authorization-denied",
+  );
+  expect(protectedQueries).toHaveLength(4);
+  expect(protectedQueries.every((query) => query.state.data === undefined)).toBe(true);
+  const denialQueries = queries.filter((query) => query.queryKey.at(-1) === "authorization-denied");
+  expect(denialQueries).toHaveLength(4);
+  expect(denialQueries.every((query) => query.state.data === false)).toBe(true);
+});
+it.each([403, 404])("never automatically retries access denial %s", (status) => {
+  expect(workflowRunReadRetry(0, new ApiError(status, "denied"))).toBe(false);
+});
+it("never retries AbortError", () => {
+  expect(workflowRunReadRetry(0, new DOMException("cancelled", "AbortError"))).toBe(false);
+});
+it("retains one retry for temporary HTTP/network errors", () => {
+  for (const error of [
+    new ApiError(500, "temporary"),
+    new ApiError(503, "temporary"),
+    new ApiError(0, "network"),
+    new TypeError("network"),
+  ]) {
+    expect(workflowRunReadRetry(0, error)).toBe(true);
+    expect(workflowRunReadRetry(1, error)).toBe(false);
+  }
 });
 it("transition epoch partitions cache keys independently of user ID", () => {
   const key = qk.workflowRuns.detail("a", "wf", "run");

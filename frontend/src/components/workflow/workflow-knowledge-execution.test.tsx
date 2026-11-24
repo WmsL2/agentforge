@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import messages from "../../../messages/en.json";
 import { WorkflowExecutionPanel } from "./workflow-execution-panel";
 import { useAuthStore } from "@/stores/auth-store";
-import { workflowRunReadKey } from "@/lib/workflow/workflow-run-lifecycle";
+import { workflowRunReadKey, workflowRunDenialKey } from "@/lib/workflow/workflow-run-lifecycle";
 import { qk } from "@/lib/query-keys";
 import { createDefaultWorkflowGraph } from "@/lib/workflow/default-graph";
 import type { RunStepRead, User, WorkflowRead, WorkflowRunRead } from "@/types";
@@ -132,6 +132,33 @@ async function select(id = r3) {
   fireEvent.click(await screen.findByRole("button", { name: new RegExp(id) }));
 }
 const region = () => screen.findByRole("region", { name: "Knowledge Retrieval" });
+type Resource = "history" | "detail" | "steps" | "trace";
+const resourcePath = (target: Resource) =>
+  target === "history"
+    ? `/api/workflows/${workflow.id}/runs`
+    : pathFor(r3, target === "detail" ? "" : `/${target}`);
+const resourceKey = (target: Resource) =>
+  workflowRunReadKey(
+    target === "history"
+      ? qk.workflowRuns.list(A.id, workflow.id, 0, 10)
+      : target === "detail"
+        ? qk.workflowRuns.detail(A.id, workflow.id, r3)
+        : target === "steps"
+          ? qk.workflowRuns.steps(A.id, workflow.id, r3)
+          : qk.workflowRuns.trace(A.id, workflow.id, r3),
+  );
+async function refreshFailure(target: Resource, status: number) {
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(
+    () =>
+      expect(
+        (client.getQueryState(resourceKey(target))?.error as { status?: number })?.status,
+      ).toBe(status),
+    { timeout: 4000 },
+  );
+}
+const resourceReads = (target: Resource) =>
+  fetchMock.mock.calls.filter(([url]) => String(url).split("?")[0] === resourcePath(target)).length;
 function deferred() {
   let resolve!: (response: Response) => void;
   const promise = new Promise<Response>((r) => {
@@ -346,6 +373,115 @@ it("does not restore denied cached JSON during retry until fresh authorization s
   expect(await region()).toHaveTextContent("actual evidence");
 });
 
+it.each(["history", "detail", "steps", "trace"] as const)(
+  "%s denial survives pending, other-resource success and cancellation until its own fresh success",
+  async (target) => {
+    mount();
+    await select();
+    await region();
+    intercept = (path) =>
+      path === resourcePath(target)
+        ? Promise.resolve(Response.json({}, { status: 403 }))
+        : undefined;
+    await refreshFailure(target, 403);
+    const deniedKey = workflowRunDenialKey(resourceKey(target));
+    expect(client.getQueryData(deniedKey)).toBe(true);
+    const pending = deferred();
+    intercept = (path) => (path === resourcePath(target) ? pending.promise : undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(client.getQueryState(resourceKey(target))?.fetchStatus).toBe("fetching"),
+    );
+    await waitFor(() => {
+      for (const other of ["history", "detail", "steps", "trace"] as const)
+        if (other !== target)
+          expect(client.getQueryState(resourceKey(other))?.fetchStatus).toBe("idle");
+    });
+    expect(client.getQueryData(deniedKey)).toBe(true);
+    expect(document.body).not.toHaveTextContent("actual evidence");
+    expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
+    await act(async () => {
+      await client.cancelQueries({ queryKey: resourceKey(target), exact: true });
+    });
+    // A successful late response from a cancelled request cannot reauthorize.
+    await act(async () =>
+      pending.resolve(
+        Response.json(
+          target === "history"
+            ? { items: [...runs.values()], total: runs.size }
+            : target === "detail"
+              ? makeRun()
+              : target === "steps"
+                ? [makeStep()]
+                : [],
+        ),
+      ),
+    );
+    expect(client.getQueryData(deniedKey)).toBe(true);
+    expect(document.body).not.toHaveTextContent("actual evidence");
+    intercept = undefined;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await region()).toHaveTextContent("actual evidence");
+    expect(client.getQueryData(deniedKey)).toBe(false);
+  },
+);
+it.each(["detail", "steps", "trace"] as const)(
+  "Run A's %s denial does not block B, and survives A -> B -> A",
+  async (target) => {
+    mount();
+    await select();
+    await region();
+    intercept = (path) =>
+      path === resourcePath(target)
+        ? Promise.resolve(Response.json({}, { status: 403 }))
+        : undefined;
+    await refreshFailure(target, 403);
+    intercept = (path) =>
+      path === resourcePath(target)
+        ? Promise.resolve(Response.json({}, { status: 503 }))
+        : undefined;
+    await select(r4);
+    expect(await region()).toHaveTextContent("r4 query");
+    await select(r3);
+    await waitFor(
+      () =>
+        expect(
+          (client.getQueryState(resourceKey(target))?.error as { status?: number })?.status,
+        ).toBe(503),
+      { timeout: 4000 },
+    );
+    expect(document.body).not.toHaveTextContent("actual evidence");
+    expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
+  },
+);
+it.each(["same-user", "account"])(
+  "denials are isolated after %s authentication change",
+  async (change) => {
+    const view = mount();
+    await select();
+    await region();
+    intercept = (path) =>
+      path === resourcePath("steps")
+        ? Promise.resolve(Response.json({}, { status: 403 }))
+        : undefined;
+    await refreshFailure("steps", 403);
+    const oldKey = workflowRunDenialKey(resourceKey("steps"));
+    expect(client.getQueryData(oldKey)).toBe(true);
+    await act(async () => {
+      useAuthStore.getState().logout();
+      useAuthStore.getState().setUser(change === "account" ? B : A);
+    });
+    intercept = undefined;
+    if (change === "account") view.rerender(panel(B.id));
+    await select();
+    await region();
+    expect(client.getQueryData(oldKey)).toBe(true);
+    const key = workflowRunReadKey(
+      qk.workflowRuns.steps(change === "account" ? B.id : A.id, workflow.id, r3),
+    );
+    expect(client.getQueryData(workflowRunDenialKey(key))).toBe(false);
+  },
+);
 it("integrates actual results beside raw JSON and preserves Trace separately", async () => {
   mount();
   await select();
@@ -355,6 +491,39 @@ it("integrates actual results beside raw JSON and preserves Trace separately", a
   expect(screen.getByText("tool_completed")).toBeInTheDocument();
   expect(screen.getAllByText("Output", { selector: "summary" }).length).toBeGreaterThan(0);
   expect(screen.getByText(/#1 · node · knowledge · completed/)).toBeInTheDocument();
+});
+it.each(
+  (["history", "detail", "steps", "trace"] as const).flatMap(
+    (target) =>
+      [
+        [target, 403, 503],
+        [target, 404, 0],
+      ] as const,
+  ),
+)("persists denial for %s after 200 -> %s -> %s", async (target, denial, failure) => {
+  mount();
+  await select();
+  await region();
+  intercept = (path) =>
+    path === resourcePath(target)
+      ? Promise.resolve(Response.json({}, { status: denial }))
+      : undefined;
+  const beforeDenial = resourceReads(target);
+  await refreshFailure(target, denial);
+  expect(resourceReads(target)).toBe(beforeDenial + 1);
+  expect(document.body).not.toHaveTextContent("actual evidence");
+  intercept = (path) => {
+    if (path !== resourcePath(target)) return undefined;
+    return failure
+      ? Promise.resolve(Response.json({}, { status: failure }))
+      : Promise.reject(new TypeError("network failure"));
+  };
+  const beforeFailure = resourceReads(target);
+  await refreshFailure(target, failure);
+  expect(resourceReads(target)).toBe(beforeFailure + 2);
+  expect(document.body).not.toHaveTextContent("actual evidence");
+  expect(document.body).not.toHaveTextContent("TRACE-ONLY-FAKE.pdf");
+  expect(screen.queryByRole("region", { name: "Knowledge Retrieval" })).not.toBeInTheDocument();
 });
 it("revalidates a historical run after remount within the production five-minute cache window", async () => {
   const view = mount();
