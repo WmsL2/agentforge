@@ -323,7 +323,31 @@
       "confirmReject": "Odrzucić prośbę i anulować wstrzymane uruchomienie?",
       "approvalAccepted": "Akceptację przyjęto do asynchronicznego wznowienia. Zakończenie uruchomienia nie jest jeszcze potwierdzone.",
       "rejectionAccepted": "Odrzucenie zapisano. Odświeżanie uruchomienia w celu potwierdzenia statusu.",
-      "approvalFailed": "Nie udało się zapisać decyzji."
+      "approvalFailed": "Nie udało się zapisać decyzji.",
+      "knowledgeResults": {
+        "retrieval": "Wyszukiwanie wiedzy",
+        "query": "Zapytanie",
+        "results": "Wyniki",
+        "total": "Łącznie",
+        "filename": "Nazwa pliku",
+        "chunk_id": "ID fragmentu",
+        "document_id": "ID dokumentu",
+        "content": "Treść",
+        "page_start": "Strona początkowa",
+        "page_end": "Strona końcowa",
+        "similarity_score": "Wynik podobieństwa",
+        "empty": "Nie zwrócono dopasowań wyszukiwania.",
+        "agent": "Odpowiedź agenta wiedzy",
+        "sources": "Źródła dowodów",
+        "noEvidence": "Zwrócono niewystarczające dowody. Nie oznacza to braku dokumentów ani błędu indeksowania.",
+        "noSources": "Nie zwrócono źródeł.",
+        "invalid": "Nie można zinterpretować wyniku tego kroku jako wyniku wiedzy. Sprawdź surowy JSON.",
+        "truncated": "Tekst skrócono do {count} punktów kodowych Unicode.",
+        "unavailable": "Interpretacja wyniku jest niedostępna do czasu zweryfikowania wybranego uruchomienia i kroków.",
+        "similarityHelp": "Podobieństwo mierzy trafność wyszukiwania, a nie poprawność odpowiedzi ani pewność."
+      },
+      "dispatchFailedSafe": "Nie udało się wysłać uruchomienia.",
+      "approvalConflictSafe": "Decyzja została już podjęta."
     },
     "errors": {
       "loadWorkspaces": "Nie udało się pobrać przestrzeni",

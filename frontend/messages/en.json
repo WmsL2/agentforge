@@ -323,7 +323,31 @@
       "confirmReject": "Reject this request and cancel the paused run?",
       "approvalAccepted": "Approval was accepted for asynchronous resume. Run completion is not yet confirmed.",
       "rejectionAccepted": "Rejection was saved. Refreshing the run to confirm its resulting status.",
-      "approvalFailed": "The approval decision could not be saved."
+      "approvalFailed": "The approval decision could not be saved.",
+      "knowledgeResults": {
+        "retrieval": "Knowledge Retrieval",
+        "query": "Query",
+        "results": "Results",
+        "total": "Total",
+        "filename": "Filename",
+        "chunk_id": "Chunk ID",
+        "document_id": "Document ID",
+        "content": "Content",
+        "page_start": "Page Start",
+        "page_end": "Page End",
+        "similarity_score": "Similarity Score",
+        "empty": "No retrieval matches were returned.",
+        "agent": "Knowledge Agent Answer",
+        "sources": "Evidence Sources",
+        "noEvidence": "Insufficient supporting evidence was returned. This does not mean the documents are missing or indexing failed.",
+        "noSources": "No sources were returned.",
+        "invalid": "This step output cannot be interpreted as a knowledge result. Review the raw JSON.",
+        "truncated": "Text truncated to {count} Unicode code points.",
+        "unavailable": "The result is unavailable for interpretation until the selected run and steps are verified.",
+        "similarityHelp": "Similarity measures retrieval relevance, not answer accuracy or confidence."
+      },
+      "dispatchFailedSafe": "dispatch failed",
+      "approvalConflictSafe": "already decided"
     },
     "errors": {
       "loadWorkspaces": "Could not load workspaces",
