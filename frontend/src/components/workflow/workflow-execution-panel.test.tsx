@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import messages from "../../../messages/en.json";
+import { useAuthStore } from "@/stores/auth-store";
 import { ApiError } from "@/lib/api-client";
 import { createDefaultWorkflowGraph } from "@/lib/workflow/default-graph";
 import type {
@@ -164,6 +165,15 @@ function panel(
 describe("WorkflowExecutionPanel", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    useAuthStore
+      .getState()
+      .setUser({
+        id: "user-1",
+        email: "test@example.com",
+        is_active: true,
+        role: "user",
+        created_at: "now",
+      });
     selectedRun = run();
     mutations = mutationSet();
     mocks.useWorkspaceMembers.mockReturnValue(members());

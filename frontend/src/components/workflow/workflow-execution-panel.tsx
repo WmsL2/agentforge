@@ -90,6 +90,10 @@ function displayError(
   return fallback;
 }
 
+function accessDenied(error: unknown) {
+  return error instanceof ApiError && [403, 404].includes(error.status);
+}
+
 function timestamp(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -132,6 +136,8 @@ function JsonView({
 export function WorkflowExecutionPanel(props: WorkflowExecutionPanelProps) {
   useAuthStore();
   const identity = authIdentity();
+  const t = useTranslations("workflows.execution.knowledgeResults");
+  if (identity.userId !== props.userId) return <p role="status">{t("unavailable")}</p>;
   return (
     <WorkflowExecutionSession
       key={`${props.userId}/${props.workflow.workspace_id}/${props.workflow.id}/${identity.generation}/${identity.transitionEpoch}`}
@@ -225,6 +231,13 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
     Boolean(canDecide && selectedStatus === "paused"),
   );
   const mutations = useWorkflowRunMutations(userId, workflow.id);
+  const protectedBlocked =
+    selectedMismatch ||
+    history.authorizationDenied ||
+    run.authorizationDenied ||
+    steps.authorizationDenied ||
+    trace.authorizationDenied ||
+    [history.error, run.error, steps.error, trace.error].some(accessDenied);
   const resultReady =
     authIdentity().userId === userId &&
     run.isSuccess &&
@@ -233,7 +246,7 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
     steps.isSuccess &&
     steps.isFetchedAfterMount &&
     !steps.isFetching &&
-    !selectedMismatch;
+    !protectedBlocked;
 
   useEffect(() => {
     if (!relatedRunId || !selectedStatus) {
@@ -323,7 +336,7 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
     if (
       !canDecide ||
       selectedStatus !== "paused" ||
-      selectedMismatch ||
+      protectedBlocked ||
       approval.isLoading ||
       approval.isError ||
       !approval.data ||
@@ -368,7 +381,7 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
   const approvalActionable = Boolean(
     canDecide &&
     selectedStatus === "paused" &&
-    !selectedMismatch &&
+    !protectedBlocked &&
     !approval.isLoading &&
     !approval.isError &&
     approval.data?.status === "pending" &&
@@ -455,47 +468,49 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
             <p className="text-muted-foreground">{t("historyEmpty")}</p>
           )}
           <div className="space-y-2">
-            {history.data?.items.map((item) =>
-              item.workflow_id !== workflow.id ? (
-                <p role="alert" className="text-destructive text-sm" key={item.id}>
-                  {t("workflowMismatch")}
-                </p>
-              ) : (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={selectedRunId === item.id}
-                  className="hover:bg-muted/50 w-full rounded-lg border p-3 text-left"
-                  onClick={() => {
-                    setSelectedRun({ workflowId: workflow.id, runId: item.id });
-                    setActionMessage(null);
-                    setDispatchWarning(null);
-                  }}
-                >
-                  <span className="font-mono text-xs">{item.id}</span>
-                  <span className="mt-1 grid gap-1 text-sm sm:grid-cols-3">
-                    <span>
-                      {t("status")}: {item.status}
+            {!history.authorizationDenied &&
+              !accessDenied(history.error) &&
+              history.data?.items.map((item) =>
+                item.workflow_id !== workflow.id ? (
+                  <p role="alert" className="text-destructive text-sm" key={item.id}>
+                    {t("workflowMismatch")}
+                  </p>
+                ) : (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={selectedRunId === item.id}
+                    className="hover:bg-muted/50 w-full rounded-lg border p-3 text-left"
+                    onClick={() => {
+                      setSelectedRun({ workflowId: workflow.id, runId: item.id });
+                      setActionMessage(null);
+                      setDispatchWarning(null);
+                    }}
+                  >
+                    <span className="font-mono text-xs">{item.id}</span>
+                    <span className="mt-1 grid gap-1 text-sm sm:grid-cols-3">
+                      <span>
+                        {t("status")}: {item.status}
+                      </span>
+                      <span>
+                        {t("revision")}: r{item.workflow_revision}
+                      </span>
+                      <span>
+                        {t("created")}: {timestamp(item.created_at)}
+                      </span>
                     </span>
-                    <span>
-                      {t("revision")}: r{item.workflow_revision}
+                    <span className="text-muted-foreground mt-1 block text-xs">
+                      {t("started")}: {timestamp(item.started_at)} · {t("finished")}:{" "}
+                      {timestamp(item.finished_at)}
                     </span>
-                    <span>
-                      {t("created")}: {timestamp(item.created_at)}
-                    </span>
-                  </span>
-                  <span className="text-muted-foreground mt-1 block text-xs">
-                    {t("started")}: {timestamp(item.started_at)} · {t("finished")}:{" "}
-                    {timestamp(item.finished_at)}
-                  </span>
-                  {item.error && (
-                    <span className="text-destructive mt-1 block text-xs">
-                      {item.error.code}: {item.error.message}
-                    </span>
-                  )}
-                </button>
-              ),
-            )}
+                    {item.error && (
+                      <span className="text-destructive mt-1 block text-xs">
+                        {item.error.code}: {item.error.message}
+                      </span>
+                    )}
+                  </button>
+                ),
+              )}
           </div>
           <div className="flex items-center justify-between">
             <Button
@@ -547,7 +562,7 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
                 {t("workflowMismatch")}
               </p>
             )}
-            {run.data && !selectedMismatch && <RunDetails run={run.data} copyLabel={t("copy")} />}
+            {run.data && !protectedBlocked && <RunDetails run={run.data} copyLabel={t("copy")} />}
 
             <div>
               <h3 className="mb-2 font-semibold">{t("stepsTitle")}</h3>
@@ -557,38 +572,44 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
                   {t("stepsFailed")}
                 </p>
               )}
-              {!selectedMismatch && steps.data?.length === 0 && (
+              {!protectedBlocked && steps.data?.length === 0 && (
                 <p className="text-muted-foreground">{t("stepsEmpty")}</p>
               )}
               <div className="space-y-2">
-                {!selectedMismatch &&
-                  steps.data?.map((step) => (
-                    <div className="rounded-lg border p-3" key={step.id}>
-                      <p className="font-medium">
-                        #{step.sequence} · {step.node_id} · {step.node_kind} · {step.status}
+                {!protectedBlocked &&
+                  steps.data?.map((step) =>
+                    step.run_id !== selectedRunId ? (
+                      <p key={step.id} role="status">
+                        {t("knowledgeResults.unavailable")}
                       </p>
-                      <p className="text-muted-foreground text-xs">
-                        {timestamp(step.started_at)} → {timestamp(step.finished_at)} ·{" "}
-                        {step.duration_ms === null ? "—" : `${step.duration_ms} ms`}
-                      </p>
-                      {step.error && (
-                        <p className="text-destructive text-sm">
-                          {step.error.code}: {step.error.message}
+                    ) : (
+                      <div className="rounded-lg border p-3" key={step.id}>
+                        <p className="font-medium">
+                          #{step.sequence} · {step.node_id} · {step.node_kind} · {step.status}
                         </p>
-                      )}
-                      <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                        <JsonView label={t("input")} value={step.input} copyLabel={t("copy")} />
-                        <JsonView label={t("output")} value={step.output} copyLabel={t("copy")} />
+                        <p className="text-muted-foreground text-xs">
+                          {timestamp(step.started_at)} → {timestamp(step.finished_at)} ·{" "}
+                          {step.duration_ms === null ? "—" : `${step.duration_ms} ms`}
+                        </p>
+                        {step.error && (
+                          <p className="text-destructive text-sm">
+                            {step.error.code}: {step.error.message}
+                          </p>
+                        )}
+                        <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                          <JsonView label={t("input")} value={step.input} copyLabel={t("copy")} />
+                          <JsonView label={t("output")} value={step.output} copyLabel={t("copy")} />
+                        </div>
+                        <WorkflowKnowledgeResults
+                          workflowId={workflow.id}
+                          runId={selectedRunId}
+                          run={run.data}
+                          step={step}
+                          ready={resultReady}
+                        />
                       </div>
-                      <WorkflowKnowledgeResults
-                        workflowId={workflow.id}
-                        runId={selectedRunId}
-                        run={run.data}
-                        step={step}
-                        ready={resultReady}
-                      />
-                    </div>
-                  ))}
+                    ),
+                  )}
               </div>
             </div>
 
@@ -600,24 +621,34 @@ function WorkflowExecutionSession({ workflow, userId, editorState }: WorkflowExe
                   {t("traceFailed")}
                 </p>
               )}
-              {!selectedMismatch && trace.data?.length === 0 && (
+              {!protectedBlocked && trace.data?.length === 0 && (
                 <p className="text-muted-foreground">{t("traceEmpty")}</p>
               )}
               <div className="space-y-2">
-                {!selectedMismatch &&
-                  trace.data?.map((event) => (
-                    <div className="rounded-lg border p-3" key={event.id}>
-                      <p className="font-medium">{event.kind}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {timestamp(event.created_at)} · {t("stepId")}: {event.step_id ?? "—"}
+                {!protectedBlocked &&
+                  trace.data?.map((event) =>
+                    event.run_id !== selectedRunId ? (
+                      <p key={event.id} role="status">
+                        {t("knowledgeResults.unavailable")}
                       </p>
-                      <JsonView label={t("payload")} value={event.payload} copyLabel={t("copy")} />
-                    </div>
-                  ))}
+                    ) : (
+                      <div className="rounded-lg border p-3" key={event.id}>
+                        <p className="font-medium">{event.kind}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {timestamp(event.created_at)} · {t("stepId")}: {event.step_id ?? "—"}
+                        </p>
+                        <JsonView
+                          label={t("payload")}
+                          value={event.payload}
+                          copyLabel={t("copy")}
+                        />
+                      </div>
+                    ),
+                  )}
               </div>
             </div>
 
-            {selectedStatus === "paused" && (
+            {!protectedBlocked && selectedStatus === "paused" && (
               <div className="space-y-3 rounded-lg border p-4">
                 <h3 className="font-semibold">{t("approvalTitle")}</h3>
                 {members.isLoading && <p>{t("checkingPermission")}</p>}
