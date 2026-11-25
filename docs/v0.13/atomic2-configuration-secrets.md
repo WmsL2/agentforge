@@ -315,3 +315,142 @@ Final branch/HEAD remain the exact review baseline above. All six fixes are loca
 and unstaged, with no unauthorized file, Git, secret, data or infrastructure
 operations. Atomic 3 has not started. Await ChatGPT review; do not declare Final
 Source Review PASS or Atomic 2 COMPLETE.
+
+## 18. CI Fix 1 — targeted virtualenv security patch
+
+Date: 2026-11-25. This is a chronological addition; prior implementation and
+Review Fix evidence above remains historical and unchanged.
+
+### Baseline and supplied CI evidence
+
+Verified clean existing branch review/v013-atomic2-configuration-secrets at exact
+HEAD `e546c7501287596cc26f867cbc456a82a5c6449f`, repository
+D:/agent_project/agentforge, empty staging and passing initial git diff --check.
+Main baseline remains `03eea8fea45b0dcb7666f75b6009a63e1967d072`. Read AGENTS.md.
+No baseline repair, branch operation or remote mutation occurred.
+
+PR #41 / [CI #200](https://github.com/WmsL2/agentforge/actions/runs/45607040480)
+failed Security Scan, step Run pip-audit. The supplied independently reviewed log
+reported one vulnerability in virtualenv 21.14.11, **PYSEC-2026-4402**, fixed in
+21.14.13, with exit code 1. The supplied result says the other 14 applicable jobs
+succeeded and Docker was skipped; Final Source Review of the existing Atomic 2
+implementation was PASS. These are supplied remote evidence, not newly retrieved
+logs or a new CI execution. No local pre-fix pip-audit reproduction is claimed.
+
+### Dependency relationship and exact lock changes
+
+Local pyproject/lock/CI source confirms development dependencies → pre-commit
+4.6.2 → virtualenv 21.14.11. HEAD and main-baseline backend/uv.lock Git blob IDs
+both equal `d9461691bada5e7f866c2c427ec80366e132a726`, confirming this was an
+existing dependency vulnerability rather than a dependency introduced by Atomic 2.
+
+Using installed uv 0.12.5, ran from backend:
+
+```text
+uv lock --upgrade-package "virtualenv==21.14.13"
+```
+
+uv resolved 129 packages and updated only **virtualenv 21.14.11 → 21.14.13**.
+The complete diff is three replaced lock lines: version, sdist metadata and wheel
+metadata. The resolver supplied all URLs, hashes, sizes and upload times; none
+was manually generated or edited. Its dependency list and PyPI registry source
+are unchanged. Exact generated metadata:
+
+| Artifact | New metadata |
+| --- | --- |
+| sdist | virtualenv-21.14.13.tar.gz; SHA256 de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905; size 5570301; upload 2026-10-22T20:10:16.952Z |
+| wheel | virtualenv-21.14.13-py3-none-any.whl; SHA256 5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788; size 5557094; upload 2026-10-22T20:10:15.096Z |
+
+Full TOML comparison confirmed the package-name set, every unrelated package
+entry, pre-commit 4.6.2 and top-level lock metadata are unchanged. No global
+upgrade, direct dependency change, pyproject edit, vulnerability ignore or CI
+exception was introduced.
+
+### Lock/environment and security verification
+
+| Actual command/check | Result |
+| --- | --- |
+| uv --version; uv lock --help | uv 0.12.5; targeted --upgrade-package syntax confirmed |
+| uv lock --upgrade-package "virtualenv==21.14.13" | Exit 0; 129 packages resolved; target version available and compatible |
+| uv lock --check | Exit 0; lock current |
+| uv sync --locked --dev | Exit 0; virtualenv replaced; editable agentforge 0.12.0 rebuilt, no project metadata/version change |
+| Existing venv importlib.metadata version check | virtualenv 21.14.13, pre-commit 4.6.2 |
+| uv pip install pip-audit | Exit 0; installed audit tooling as existing CI does, without adding a project/lock dependency |
+| Installed lock-version comparison after audit-tool installation | PASS; all 127 installed packages represented in the platform lock match their locked versions |
+
+Security audit commands from backend and actual results:
+
+```text
+uv pip install pip-audit
+uv run pip-audit --progress-spinner=off
+PIP_AUDIT_EXIT_CODE=0
+
+uv run pip-audit --progress-spinner=off --timeout 10 -v
+PIP_AUDIT_EXIT_CODE=0
+```
+
+Both scans reported **No known vulnerabilities found**. PYSEC-2026-4402 was not
+reported and no additional vulnerability was reported. The first scan took
+several minutes without intermediate output, then returned a completed success
+result while its session was being checked. A diagnostic rerun with bounded
+socket timeout and verbose progress also completed successfully; its package
+progress explicitly included virtualenv 21.14.13. No ignore, skip-editable,
+no-deps or failure-handling bypass flag was used.
+
+Both results also disclosed the scanner's automatic coverage limitation:
+`agentforge (0.12.0)` could not be audited because it was not found on PyPI. This
+is the local editable first-party project, not the patched virtualenv dependency.
+No blanket claim of vulnerability-free application code or complete audit
+coverage is made; the tool's exit 0 and skip are recorded together.
+
+Audit tooling is pip-audit 2.10.1. It installed 18 additional local audit-tool
+packages, with no replacement/drift of project locked packages. These are local
+environment tooling, not new dependency entries. Verification environment is
+Windows/Python 3.12.10; CI uses Ubuntu/Python 3.12, so local audit/regression does
+not establish Linux CI success or audit platform-only packages absent locally.
+
+The initial sandbox uv command failed while persisting its interpreter cache
+(access denied), before changing the lock. Retried using the authorized normal
+cache/registry execution environment and succeeded. uv emitted two legacy package
+specifier-normalization warnings; TOML comparison confirmed no unrelated lock
+change. Sync/install used copy fallback because hardlinks were unavailable. An
+initial TOML comparison used system Python without tomllib and failed; rerunning
+with the existing backend Python 3.12 completed the comparison. These are tool
+environment diagnostics, not suppressed security findings.
+
+### Regression and static checks
+
+Repeated the approved precollection launcher: clear inherited application env,
+retain only Windows SYSTEMROOT/WINDIR/TEMP/TMP/PATH, set synthetic credentials,
+loopback DB/Redis hosts, POSTGRES_DB=offline_no_connect, ENVIRONMENT=local,
+AGENTFORGE_ENV_FILE=none and PYTEST_DISABLE_PLUGIN_AUTOLOAD=1; only then import
+pytest/app/conftest. Explicitly loaded anyio.pytest_plugin. No live flag or actual
+dotenv file was used. The effective pytest selection was:
+
+```text
+tests/core tests/api/test_health.py tests/worker tests/knowledge
+tests/agent_runtime tests/composition -q --tb=short
+```
+
+| Actual command/check | Result |
+| --- | --- |
+| Existing backend Python with isolated pytest.main and -p anyio.pytest_plugin / selection above | 347 passed, 0 failed/errors/skips; 54 existing Pydantic json_encoders deprecation warnings |
+| .venv/Scripts/ruff.exe check app tests cli (cwd backend) | Exit 0, all checks passed |
+| .venv/Scripts/ruff.exe format --check app/core/config.py app/api/routes/v1/health.py tests/core/test_config.py tests/api/test_health.py tests/worker/test_celery_app.py | Exit 0, all five files already formatted; no source formatted/modified |
+| .venv/Scripts/ty.exe check (cwd backend) | Exit 0; same two pre-existing warnings in unchanged workflow background durability/executor |
+| Full lock diff and TOML comparison; git diff --check; final scope/branch/HEAD/staging checks | PASS; only two authorized modified files, no untracked files, unchanged branch/HEAD and empty staging |
+
+### Scope, remaining boundaries and handoff
+
+Only backend/uv.lock and this document are authorized modifications. No app/test
+source, pyproject, frontend dependency, CI, version metadata or earlier audit
+document changes. All changes stay local/unstaged on the exact review branch/HEAD.
+
+Real service/infrastructure/Provider tests, migrations, Docker/WSL/server startup,
+actual secret/dotenv reads, production deployment, full-stack staging and new PR
+CI remain NOT RUN. No branch switch/create, stage/commit/amend/push, PR operation,
+merge/reset/stash/rebase, tag or Release. No pre-commit removal, pip-audit disable,
+advisory ignore or weakened CI handling. Registry/vulnerability access is limited
+to this authorized remediation and audit. Atomic 3 has not started. Do not claim
+PR CI SUCCESS before GitHub executes an authorized new commit; do not declare
+Atomic 2 COMPLETE. Await ChatGPT CI Fix Report Review.
