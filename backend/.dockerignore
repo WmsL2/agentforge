@@ -39,6 +39,9 @@ build/
 # Development files
 .env
 .env.local
+.env.*
+!.env.example
+!.env.prod.example
 *.db
 *.sqlite
 

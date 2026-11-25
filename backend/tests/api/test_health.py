@@ -114,3 +114,33 @@ async def test_readiness_marks_llm_unhealthy_when_generic_key_is_missing(
         "provider": "custom-provider",
         "detail": "API key missing",
     }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["/health/ready", "/ready"])
+@pytest.mark.parametrize("failure", ["database", "redis", "redis_false"])
+async def test_readiness_never_discloses_exception_secrets(
+    client,
+    mock_db_session,
+    mock_redis,
+    endpoint,
+    failure,
+    caplog,
+):
+    secret = "postgresql://synthetic-user:synthetic-secret-marker@private-host/db"
+    if failure == "database":
+        mock_db_session.execute = AsyncMock(side_effect=RuntimeError(secret))
+        code = "DATABASE_CONNECTION_FAILED"
+    elif failure == "redis":
+        mock_redis.ping = AsyncMock(side_effect=RuntimeError(secret))
+        code = "REDIS_CONNECTION_FAILED"
+    else:
+        mock_redis.ping = AsyncMock(return_value=False)
+        code = "REDIS_PING_FAILED"
+    response = await client.get(f"{settings.API_V1_STR}{endpoint}")
+    assert response.status_code == 503
+    service = "database" if failure == "database" else "redis"
+    assert response.json()["checks"][service]["error"] == code
+    assert response.json()[service] == response.json()["checks"][service]
+    assert "synthetic-secret-marker" not in response.text + caplog.text
+    assert "private-host" not in response.text + caplog.text
