@@ -15,6 +15,12 @@ file forces production mode; a conflicting process/constructor environment is
 rejected. `AGENTFORGE_ENV_FILE=none` disables dotenv discovery for offline tests
 and containers. An empty/missing selected production file fails safely.
 
+`make run-prod` explicitly sets ENVIRONMENT=production and selects the absolute
+backend/.env.prod path before invoking uv. That path remains valid when
+`uv run --directory backend` changes the execution directory. Inherited local
+mode is overridden; a missing production file fails closed without falling back
+to development configuration. Normal `make run` remains the development entry.
+
 Precedence: explicit constructor fields > process environment > selected dotenv
 > model defaults. Production mode is locked against downgrade. Explicit
 `Settings(_env_file=None, ...)` bypasses file selection/discovery but still reads
@@ -45,6 +51,13 @@ inputs; `REDIS_URL` is computed from Redis inputs. They are not full-URL input
 fields. SQLAlchemy constructs DB URLs and percent encoding protects Redis
 credentials. Bare/bracketed IPv6 is supported. Reserved characters, Unicode,
 spaces and literal percent sequences remain part of the original credential.
+
+Production POSTGRES_DB must survive both async and sync SQLAlchemy string-URL
+parsers exactly, with no query parameters. Question marks (including a trailing
+`?` or query-like `?sslmode=...`) are deliberately unsupported database-name
+syntax and rejected. Names with hyphens, underscores, dots, spaces, Unicode,
+slashes, hash, percent or @ remain supported when they round-trip unchanged.
+No SQL identifier rewriting or credential-encoding change is performed.
 
 `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` default to computed REDIS_URL.
 Local/development/test may explicitly override them, including CI Redis DB 15.

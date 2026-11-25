@@ -185,3 +185,133 @@ A4: truthful Worker/LLM health semantics, effective role probes, full handler/fo
 All 14 changed/new files are authorized and remain local/unstaged on unchanged main/HEAD. No real dotenv/authentication storage/private secret was read, no production secret file was created, no private data/media was modified, no service/infrastructure was started/stopped/inspected, and no network Provider request or database migration occurred. Windows event-loop internal socketpair is not a database/broker/service test. Separate Python import subprocesses load configuration only.
 
 No branch creation/switch, git add/commit/push/merge/reset/stash/rebase, PR/tag/Release, CI edit, dependency/lockfile change or remote mutation. Configuration validation and static wiring are implemented; actual production deployment success is NOT claimed. Await ChatGPT Implementation Report Review; do not declare Atomic 2 COMPLETE or begin Atomic 3.
+
+## 17. Review Fix 1 — RF-01 / RF-02
+
+Date: 2026-11-25. This chronological record supersedes the earlier current-branch
+accounting only. Sections 1–16 and their 163/329/330-test results remain historical
+Atomic 2 implementation evidence; they are not new review-fix test executions.
+
+### Exact review baseline
+
+Verified repository D:/agent_project/agentforge, existing branch
+`review/v013-atomic2-configuration-secrets`, exact HEAD
+`6998e4c45ad8a2c3af0fae1c4fb4cf007d7a2a2d`, parent
+`03eea8fea45b0dcb7666f75b6009a63e1967d072`, clean initial working tree, empty staging
+area and passing git diff --check. Read AGENTS.md. No branch or baseline repair
+was performed. ChatGPT's remote review is supplied context; these fixes were
+verified against the actual local source.
+
+### RF-01 — production server entry point
+
+Static reproduction: Makefile run-prod previously only invoked
+`uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000`.
+backend/cli/commands.py server_run does not select production mode/configuration;
+its module imports app.main before running the server. Consequently the old
+recipe permitted development dotenv discovery/local mode. No server was started
+to reproduce or verify this source defect.
+
+Correction: the recipe now prefixes the existing invocation with
+`ENVIRONMENT=production AGENTFORGE_ENV_FILE="$(abspath backend/.env.prod)"`.
+GNU Make resolves the quoted absolute path from the repository before uv changes
+its working directory to backend. Inline assignments override inherited local
+mode/file selectors. The existing Settings selected-file check rejects a missing
+production input instead of falling back, even if other environment values exist.
+Normal make run is unchanged; CLI/configuration architecture is not redesigned.
+
+Regression coverage statically checks the exact recipe, quoted absolute-path
+expression, backend execution directory and unchanged development recipe. It
+expands the path expression for a temporary synthetic repository containing
+spaces, applies only the two environment assignments, changes to its backend
+directory, checks missing-file rejection with a synthetic development .env present,
+then checks valid production selection using temporary synthetic credentials.
+It never invokes make, uv, the CLI or a server. Existing production Compose
+entry-point assertions remain in place. Makefile's baseline no-final-newline
+convention was preserved to avoid an unrelated change.
+
+### RF-02 — PostgreSQL database-name round trip
+
+Offline reproduction with installed **SQLAlchemy 2.0.52**, not the reviewer's
+2.0.50: URL.create(..., database="my?sslmode=disable").render_as_string followed
+by make_url produces database `my` and query `{"sslmode": "disable"}`. Both
+postgresql+asyncpg and postgresql schemes are covered in the new regression.
+The earlier username/password encoding remains correct and unchanged.
+
+Small correction: after existing required-field/host validation, production
+Settings parses both generated URL strings and rejects any database mismatch or
+nonempty query with the fixed validation message
+`POSTGRES_DB: DATABASE_NAME_URL_UNSAFE`. The existing bootstrap boundary exposes
+only CONFIGURATION_INVALID, without the rejected database name, credentials or
+raw exception context. Local/test policy, SQLAlchemy consumers, Alembic,
+connection URL schemes, string attribute types and credential builders are unchanged.
+
+ASCII question marks, including query-like names and a trailing question mark,
+are deliberately unsupported production database-name syntax because the
+existing string URL contract cannot preserve them. No percent-encoding workaround
+or identifier rewrite was introduced. Supported names are preserved verbatim:
+ordinary names, hyphens/underscores, dots, spaces (including boundary spaces),
+Unicode, slash, hash, percent sequences and @, provided both parsers round-trip
+them with no query parameters. This is a URL-contract check, not a claim that a
+database exists or that every PostgreSQL identifier rule has been validated.
+
+New tests cover nine supported names through both async and sync string parsers,
+the two-scheme defect reproduction, five query-like inputs and safe bootstrap
+diagnostics. Supported-name tests also retain reserved-character username/password
+assertions; all existing IPv6/SQLAlchemy dialect/Redis/Celery credential tests remain.
+No database connection or migration was executed.
+
+### Exact changed files
+
+Only these six existing authorized files changed; no untracked file was added:
+
+- Makefile — run-prod production selection only.
+- backend/app/core/config.py — production database URL round-trip validation.
+- backend/tests/core/test_config.py — RF-01 and RF-02 regression coverage.
+- ENV_VARS.md — entry-point and supported database-name contract.
+- docs/configuration.md — corresponding configuration reference updates.
+- docs/v0.13/atomic2-configuration-secrets.md — this chronological record.
+
+### Actual verification commands and results
+
+Before importing pytest/conftest/app, repeated section 12's approved inline
+launcher: clear inherited application environment, retain only Windows
+SYSTEMROOT/WINDIR/TEMP/TMP/PATH, set AGENTFORGE_ENV_FILE=none, ENVIRONMENT=local,
+synthetic SECRET_KEY/API_KEY/POSTGRES_PASSWORD, loopback database/Redis hosts,
+POSTGRES_DB=offline_no_connect and PYTEST_DISABLE_PLUGIN_AUTOLOAD=1. Explicitly
+load only anyio.pytest_plugin. Tests use temporary synthetic files, not actual
+repository dotenv files. Existing dependencies were used without installation.
+As previously approved, pytest ran outside the sandbox solely to permit Windows
+asyncio's internal socketpair; no database, Redis, Provider or service was contacted.
+
+| Actual command/check | Result |
+| --- | --- |
+| Existing backend/.venv/Scripts/python.exe, inline SQLAlchemy URL.create/make_url reproduction (no app import) | Version 2.0.52; supplied database/query defect reproduced; sampled nontrivial names preserved |
+| Isolated launcher with pytest.main(['-p', 'anyio.pytest_plugin', 'tests/core/test_config.py', 'tests/api/test_health.py', 'tests/worker/test_celery_app.py', '-q', '--tb=short']) | 185 passed, 54 existing Pydantic json_encoders warnings; 0 failed/errors/skips |
+| Same launcher with pytest.main(['-p', 'anyio.pytest_plugin', 'tests/core', 'tests/api/test_health.py', 'tests/worker', 'tests/knowledge', 'tests/agent_runtime', 'tests/composition', '-q', '--tb=short']) | 347 passed, 54 warnings; 0 failed/errors/skips |
+| .venv/Scripts/ruff.exe format app/core/config.py tests/core/test_config.py (cwd backend) | Formatted test additions; config already formatted |
+| .venv/Scripts/ruff.exe check app/core/config.py tests/core/test_config.py (cwd backend) | PASS |
+| .venv/Scripts/ruff.exe check app tests cli (cwd backend) | PASS, all checks passed |
+| .venv/Scripts/ruff.exe format --check app/core/config.py tests/core/test_config.py (cwd backend) | PASS, both files formatted |
+| .venv/Scripts/ty.exe check (cwd backend) | Exit 0; the same two pre-existing warnings in unchanged workflow background durability/executor files |
+| Static Makefile/production mapping checks included in configuration tests | PASS; run-prod absolute path, explicit mode, missing-file rejection, inherited-local override, normal run and existing Compose entry points covered |
+| git diff --check; git diff --cached --quiet; final inline scope/branch/HEAD/parent assertions | PASS at local handoff; only six authorized modifications, no untracked files, empty staging |
+
+Inspection commands were Get-Content for the request/AGENTS/explicit source/docs,
+rg targeted symbols, git rev-parse/status/diff, and inline installed-library
+reproduction; apply_patch performed the six scoped changes. A small Python byte
+write restored Makefile's original end-of-file convention. No Git mutation,
+dependency installation, Docker/Compose command, WSL or server command occurred.
+
+### NOT RUN, limitations and handoff
+
+Actual make run-prod/server startup, real production dotenv loading, database and
+Redis authentication/connectivity, migrations, Docker/WSL, Provider calls,
+production deployment, full-stack staging, restore drills and new CI all remain
+NOT RUN. Static recipe/configuration proof and offline URL parsing do not establish
+deployment success. Production database names containing ASCII ? must be changed
+by an authorized operator; this fix does not rename any existing database.
+
+Final branch/HEAD remain the exact review baseline above. All six fixes are local
+and unstaged, with no unauthorized file, Git, secret, data or infrastructure
+operations. Atomic 3 has not started. Await ChatGPT review; do not declare Final
+Source Review PASS or Atomic 2 COMPLETE.

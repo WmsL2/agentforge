@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -11,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 from redis.connection import parse_url as parse_redis_url
 from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import ConfigurationError, MCPStdioServerSettings, Settings, load_settings
@@ -333,6 +335,71 @@ def test_production_accepts_only_exact_canonical_override():
 
 
 @pytest.mark.parametrize(
+    "database",
+    [
+        "agentforge",
+        "tenant-prod_2026",
+        "tenant.prod",
+        "研究 库",
+        "tenant/path",
+        "tenant#part",
+        "tenant%40part",
+        "tenant@part",
+        " tenant ",
+    ],
+)
+def test_production_database_name_round_trip_preserves_supported_syntax(database):
+    password = " @:/#%?雪%40 end "
+    config = production(
+        POSTGRES_DB=database, POSTGRES_PASSWORD=password, POSTGRES_USER="user@:/#%? 雪"
+    )
+    for url in (config.DATABASE_URL, config.DATABASE_URL_SYNC):
+        assert isinstance(url, str)
+        parsed = make_url(url)
+        assert parsed.database == database
+        assert not parsed.query
+        assert parsed.username == "user@:/#%? 雪"
+        assert parsed.password == password
+
+
+@pytest.mark.parametrize("driver", ["postgresql+asyncpg", "postgresql"])
+def test_sqlalchemy_reproduces_database_name_query_injection(driver):
+    url = URL.create(
+        driver,
+        username="synthetic_user",
+        password="synthetic_password",
+        host="db",
+        database="my?sslmode=disable",
+    ).render_as_string(hide_password=False)
+    parsed = make_url(url)
+    assert parsed.database == "my"
+    assert dict(parsed.query) == {"sslmode": "disable"}
+
+
+@pytest.mark.parametrize(
+    "database",
+    [
+        "my?sslmode=disable",
+        "my?",
+        "my?sslmode=disable&application_name=synthetic-db-marker",
+        "?host=other",
+        "my?synthetic-db-marker",
+    ],
+)
+def test_production_rejects_database_names_that_introduce_url_queries(database):
+    with pytest.raises(ValidationError, match="POSTGRES_DB: DATABASE_NAME_URL_UNSAFE"):
+        production(POSTGRES_DB=database)
+    with pytest.raises(ConfigurationError) as caught:
+        load_settings(_env_file=None, **(production_values() | {"POSTGRES_DB": database}))
+    output = "".join(traceback.format_exception(caught.value))
+    assert "CONFIGURATION_INVALID" in output
+    assert database not in output
+    assert "synthetic-db-marker" not in output
+    assert "synthetic-postgres-credential" not in output
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"LLM_API_KEY": " "},
@@ -456,3 +523,55 @@ def test_tracked_production_yaml_roles_and_infrastructure_share_configuration():
     for line in (root / "Makefile").read_text(encoding="utf-8").splitlines():
         if "docker compose" in line and "docker-compose.prod.yml" in line:
             assert "--env-file backend/.env.prod" in line
+
+
+def test_run_prod_selects_absolute_production_file_without_starting_server(monkeypatch, tmp_path):
+    root = Path(__file__).resolve().parents[3]
+    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    recipe = re.search(r"^run-prod:\n\t([^\n]+)", makefile, re.MULTILINE).group(1)
+    assert 'AGENTFORGE_ENV_FILE="$(abspath backend/.env.prod)"' in recipe
+    synthetic_root = tmp_path / "synthetic repository with spaces"
+    backend = synthetic_root / "backend"
+    backend.mkdir(parents=True)
+    selected_file = backend / ".env.prod"
+    # Expand only the reviewed Make path expression; do not invoke make/uv/server.
+    tokens = shlex.split(recipe.replace("$(abspath backend/.env.prod)", str(selected_file)))
+    assert tokens[0] == "ENVIRONMENT=production"
+    assert tokens[1] == f"AGENTFORGE_ENV_FILE={selected_file}"
+    assert tokens[2:] == [
+        "uv",
+        "run",
+        "--directory",
+        "backend",
+        "agentforge",
+        "server",
+        "run",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ]
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setenv("AGENTFORGE_ENV_FILE", "none")
+    for token in tokens[:2]:
+        key, value = token.split("=", 1)
+        monkeypatch.setenv(key, value)
+    monkeypatch.chdir(backend)  # uv --directory backend changes execution cwd.
+    (backend / ".env").write_text(
+        "ENVIRONMENT=local\nPROJECT_NAME=forbidden-development\n", encoding="utf-8"
+    )
+    assert Path(os.environ["AGENTFORGE_ENV_FILE"]).is_absolute()
+    with pytest.raises(ConfigurationError, match="CONFIGURATION_SOURCE_INVALID"):
+        load_settings()  # Missing selected production file must not fall back.
+    selected_file.write_text(
+        "\n".join(
+            f"{key}={json.dumps(value) if isinstance(value, list) else str(value)}"
+            for key, value in production_values().items()
+        ),
+        encoding="utf-8",
+    )
+    config = load_settings()
+    assert config.ENVIRONMENT == "production"
+    assert config.PROJECT_NAME != "forbidden-development"
+    development = re.search(r"^run:\n\t([^\n]+)", makefile, re.MULTILINE).group(1)
+    assert development == "uv run --directory backend agentforge server run --reload"

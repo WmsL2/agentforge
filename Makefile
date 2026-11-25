@@ -276,7 +276,7 @@ run:
 
 
 run-prod:
-	uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000
+	ENVIRONMENT=production AGENTFORGE_ENV_FILE="$(abspath backend/.env.prod)" uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000
 
 
 routes:

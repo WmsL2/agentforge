@@ -20,7 +20,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from pydantic_settings.sources import DotEnvSettingsSource
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, make_url
 
 _ENV_FILE_UNSET = object()
 _PLACEHOLDERS = {
@@ -404,6 +404,10 @@ class Settings(BaseSettings):
                 raise ValueError("FLOWER_CREDENTIAL_FORMAT_INVALID")
             for name in ("POSTGRES_HOST", "REDIS_HOST"):
                 _host(getattr(self, name))
+            for url in (self.DATABASE_URL, self.DATABASE_URL_SYNC):
+                parsed = make_url(url)
+                if parsed.database != self.POSTGRES_DB or parsed.query:
+                    raise ValueError("POSTGRES_DB: DATABASE_NAME_URL_UNSAFE")
             for key, model, endpoint in (
                 ("LLM_API_KEY", "AI_MODEL", "LLM_BASE_URL"),
                 ("EMBEDDING_API_KEY", "EMBEDDING_MODEL", "EMBEDDING_BASE_URL"),

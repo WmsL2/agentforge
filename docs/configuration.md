@@ -20,6 +20,11 @@ locked. Empty production values cannot fall through. Production dotenv values do
 not expand variables; Compose credentials containing special characters must be
 single-quoted. Give raw credentials to Settings, never pre-encoded values.
 
+`make run-prod` sets ENVIRONMENT=production and AGENTFORGE_ENV_FILE to the
+absolute backend/.env.prod path. uv's backend working-directory change cannot
+redirect file selection; inherited local mode is overridden and a missing
+production file fails closed. Normal `make run` retains development behavior.
+
 ## Safe preflight
 
 After selecting production mode/file in the process environment, from backend:
@@ -89,6 +94,13 @@ Production validation: `API_KEY` cannot use the default value in
 Computed properties:
 - `DATABASE_URL` -- async connection string (`postgresql+asyncpg://...`)
 - `DATABASE_URL_SYNC` -- sync connection string for Alembic
+
+Production POSTGRES_DB must round-trip exactly through both string URL parsers
+without introducing query parameters. Question marks, including query-like
+`my?sslmode=disable` and trailing `?`, are deliberately unsupported and rejected
+with safe configuration diagnostics. Ordinary names and round-tripping names
+with hyphens, underscores, dots, spaces, Unicode, slash, hash, percent or @ are
+preserved. Username/password encoding and existing URL consumers are unchanged.
 
 ## Redis
 
