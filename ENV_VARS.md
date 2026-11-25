@@ -1,75 +1,142 @@
 # Environment variables
 
-Reference for `agentforge` runtime configuration. The
-authoritative source is `backend/.env.example` — this doc explains what each
-group is for and which are required vs optional.
+The authoritative model is `backend/app/core/config.py`. Public templates are
+`backend/.env.example` (development) and `backend/.env.prod.example` (production).
+Private `.env` and `.env.prod` files must never be committed, printed or copied
+into images. No actual production file is generated automatically.
 
-> Quick start: copy `backend/.env.example` to `backend/.env` and fill in the
-> blanks marked **Required**. Defaults are sensible for local development.
+## Source selection and precedence
 
-## Project
+Development discovers `.env` in the current directory, then its parent.
+Production never implicitly discovers or falls back to that development file.
+Set `ENVIRONMENT=production` for environment-only production loading, or set
+`AGENTFORGE_ENV_FILE` to an explicit private production file path. A selected
+file forces production mode; a conflicting process/constructor environment is
+rejected. `AGENTFORGE_ENV_FILE=none` disables dotenv discovery for offline tests
+and containers. An empty/missing selected production file fails safely.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `PROJECT_NAME` | optional | `agentforge` | Used in logs, OpenAPI title, email templates |
-| `DEBUG` | optional | `true` | When `true`, FastAPI returns full tracebacks |
-| `ENVIRONMENT` | optional | `local` | Free-form tag: `local` / `staging` / `production` |
-| `TIMEZONE` | optional | `UTC` | IANA TZ name (e.g. `Europe/Warsaw`) |
-| `BACKEND_URL` | optional | `http://localhost:8000` | Used by frontend BFF + email link generation |
-| `FRONTEND_URL` | optional | `http://localhost:3000` | Used by password-reset / magic-link emails |
+`make run-prod` explicitly sets ENVIRONMENT=production and selects the absolute
+backend/.env.prod path before invoking uv. That path remains valid when
+`uv run --directory backend` changes the execution directory. Inherited local
+mode is overridden; a missing production file fails closed without falling back
+to development configuration. Normal `make run` remains the development entry.
 
-## Auth & secrets
+Precedence: explicit constructor fields > process environment > selected dotenv
+> model defaults. Production mode is locked against downgrade. Explicit
+`Settings(_env_file=None, ...)` bypasses file selection/discovery but still reads
+process inputs; isolate the process environment when testing. Empty production
+values are preserved for validation, not skipped in favor of defaults.
+Production dotenv values are literal (no `${...}` expansion). For Compose,
+single-quote private dotenv secrets so `$`, `#` and spaces are literal. Never
+pre-percent-encode credentials. No credentials are trimmed or normalized.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SECRET_KEY` | **required in prod** | (generated) | JWT signing key. Rotating invalidates all tokens |
-| `API_KEY` | **required in prod** | (generated) | Static admin/service-to-service key for `X-API-Key` header |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | optional | `30` | JWT access token lifetime |
-| `REFRESH_TOKEN_EXPIRE_MINUTES` | optional | `10080` | JWT refresh token lifetime (7 days) |
+## Connection inputs and derived URLs
 
-## Database
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | **required** | `postgresql+asyncpg://...` | Full async connection string |
-| `DB_POOL_SIZE` | optional | `5` | Number of long-lived connections |
-| `DB_MAX_OVERFLOW` | optional | `10` | Burst capacity above pool size |
+| Input | Local default | Production contract |
+| --- | --- | --- |
+| `ENVIRONMENT` | local | production; development/local/staging/production are the only values |
+| `DEBUG`, `DB_ECHO` | false | explicitly false |
+| `POSTGRES_HOST`, `POSTGRES_PORT` | localhost, 5432 | explicit host/port; Compose uses db and configured port |
+| `POSTGRES_USER`, `POSTGRES_DB` | postgres, agentforge | explicit nonblank values |
+| `POSTGRES_PASSWORD` | empty | explicit non-placeholder secret |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` | localhost, 6379, 0 | explicit values; DB >= 0; port 1–65535 |
+| `REDIS_PASSWORD` | absent | explicit non-placeholder secret |
+| `SECRET_KEY` | insecure development placeholder | explicit non-placeholder, at least 32 characters |
+| `API_KEY` | insecure development placeholder | explicit non-placeholder secret |
+| `FLOWER_USER`, `FLOWER_PASSWORD` | empty | explicit user and non-placeholder password |
+| `CORS_ORIGINS` | localhost origins | explicit nonempty list, no wildcard |
 
-## LLM / AI
+`DATABASE_URL` and `DATABASE_URL_SYNC` are computed strings from PostgreSQL
+inputs; `REDIS_URL` is computed from Redis inputs. They are not full-URL input
+fields. SQLAlchemy constructs DB URLs and percent encoding protects Redis
+credentials. Bare/bracketed IPv6 is supported. Reserved characters, Unicode,
+spaces and literal percent sequences remain part of the original credential.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `LLM_PROVIDER` | optional | `openai` | Platform Runtime provider label / metadata only |
-| `LLM_API_KEY` | **required for Platform Runtime** | — | Credential for the configured OpenAI-compatible endpoint |
-| `LLM_BASE_URL` | optional | — | OpenAI-compatible endpoint base URL; omit for the client default |
-| `AI_MODEL` | optional | `gpt-5.5` | Provider-specific default model identifier |
-| `AI_TEMPERATURE` | optional | `0.7` | Runtime model temperature |
-| `OPENAI_API_KEY` | legacy template chat only | — | Retained for the inherited template chat subsystem; Platform Runtime does not read it |
+Production POSTGRES_DB must survive both async and sync SQLAlchemy string-URL
+parsers exactly, with no query parameters. Question marks (including a trailing
+`?` or query-like `?sslmode=...`) are deliberately unsupported database-name
+syntax and rejected. Names with hyphens, underscores, dots, spaces, Unicode,
+slashes, hash, percent or @ remain supported when they round-trip unchanged.
+No SQL identifier rewriting or credential-encoding change is performed.
 
-`LLM_PROVIDER` identifies the configured provider but does not choose a
-provider-specific runner. The Platform Runtime uses the OpenAI-compatible
-protocol through `LLM_API_KEY` and optional `LLM_BASE_URL`.
+`CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` default to computed REDIS_URL.
+Local/development/test may explicitly override them, including CI Redis DB 15.
+Supported production accepts only omission or exact equality to the canonical
+Redis-derived URL. Empty, unauthenticated, different-host/DB and other-scheme
+production overrides are rejected. Do not put these overrides in `.env.prod`.
 
-## Redis
+## Production credential policy
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `REDIS_URL` | **required** | `redis://localhost:6379/0` | Used by Celery broker, rate-limiter, session store |
+Missing, empty, whitespace-only, control-character and known placeholder secrets
+are rejected. Known placeholders include postgres/password/admin/secret,
+changeme/change-me, the existing JWT/API defaults, and change-me*, replace-*,
+your-* example prefixes (case-insensitive, comparison only). Legitimate secret
+values are preserved exactly, including leading/trailing spaces when not blank.
+Only SECRET_KEY has a general minimum length (32); operators must generate
+strong unique random values for all secrets. This policy is not an entropy test.
 
-## Frontend (`frontend/.env.local`)
+Flower uses comma-separated user:password entries. This supported single-account
+contract rejects colon/comma in either component and whitespace in the username;
+password controls are also rejected. A username such as admin is not itself a
+secret or proof of an insecure password. Production requires both fields.
 
-Separate from the backend `.env` above — `frontend/README.md` has the full table.
-The two that decide whether a deployment works at all:
+## Provider capabilities
 
-| Variable | Read by | Description |
-|---|---|---|
-| `NEXT_PUBLIC_WS_URL` | browser | WebSocket origin for chat. Inlined at **build** time, so it needs a rebuild to change, and it must be an address the browser can reach — not a Docker service name |
-| `COOKIE_SECURE` | server | `Secure` flag on the auth cookies. Unset follows `NODE_ENV`. A browser drops a `Secure` cookie served over plain `http://`, which makes every request after login return 401 — set `false` only for `http://` on a trusted network |
+| Field | Responsibility |
+| --- | --- |
+| `LLM_API_KEY`, `LLM_PROVIDER`, `AI_MODEL`, `LLM_BASE_URL` | Platform Runtime, OpenAI-compatible protocol; provider name is metadata |
+| `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_BASE_URL` | Knowledge indexing and retrieval |
+| `EMBEDDING_DIMENSIONS` | Production storage contract: exactly 1536 |
+| `OPENAI_API_KEY` | Legacy template chat only; never a Platform Runtime fallback |
+| `KNOWLEDGE_AGENT_ENABLED` | Existing dedicated Knowledge Agent flag; default false |
 
-## Validation
+Empty optional keys mean that capability is unavailable, not operational. Basic
+deterministic workflows need no Provider credential. In production, configured
+keys cannot be whitespace/placeholders; corresponding model/provider identities
+must be nonblank. Explicit endpoints must be syntactically valid HTTP(S) URLs
+with a host and valid optional port, without credentials/query/fragment/whitespace.
+Empty endpoints retain SDK defaults. Knowledge Agent enabled in production
+requires both LLM and Embedding keys/configuration. Full-platform staging also
+requires both. Positive timeout/batch/chunk/lease checks remain in Settings.
+Configuration validity never proves connectivity, availability or answer quality.
+
+## Production Compose contract
+
+All production Make targets use `--env-file backend/.env.prod`. Backend role
+service env_file inputs also use that file. Compose shell variables override
+interpolation-file values; a shared environment mapping explicitly supplies the
+same resolved DB/Redis/auth/Flower/CORS values to every backend role, and the
+same DB/Redis values to infrastructure. This prevents service env_file precedence
+from splitting credentials. Do not use bare Compose production commands that
+omit the explicit interpolation file. API, Worker, Beat and Flower force
+production, debug false, DB echo false and no dotenv discovery. Migration via
+API exec inherits that contract. Redis command/password arguments use YAML
+lists, not a shell-split command. This is static implementation, not runtime
+production authentication proof. Image identity, migration gating, network
+isolation/egress and TLS remain later Atomics.
+
+## Safe validation
+
+For a preconfigured environment-only production process, set ENVIRONMENT to
+production before starting it. For an explicit file, set AGENTFORGE_ENV_FILE to
+its private path first. Then, from backend with existing dependencies:
 
 ```bash
-# Confirm settings load without errors:
-cd backend && uv run python -c "from app.core.config import settings; print(settings.model_dump_json(indent=2))"
+python -c "from app.core.config import settings; print('CONFIGURATION_VALID')"
 ```
 
-If any **Required** var is missing, FastAPI raises `pydantic_settings.SettingsError` on startup — check the message for which field.
+This imports only the shared configuration module: no DB/Redis connection or
+Provider request. The bootstrap boundary emits CONFIGURATION_INVALID (optionally
+schema field names) or CONFIGURATION_SOURCE_INVALID and suppresses underlying
+exception values/chains. Never print Settings, validation errors with inputs,
+computed URLs, dotenv contents or `docker compose config` output against secrets.
+Direct Settings construction remains Pydantic's programmatic validation interface;
+bootstrap/operational code must use the global settings or load_settings boundary.
+
+## Other existing settings
+
+Project/timezone/media/upload, token expiry, pool sizing, MCP stdio, bounded
+recovery/indexing, rate-limit and frontend settings remain supported. See
+`docs/configuration.md` for details. Frontend BACKEND_URL is server-only;
+NEXT_PUBLIC_* are public build-time values and never carry secrets. Secure,
+HttpOnly cookies and their explicit COOKIE_SECURE policy remain unchanged.

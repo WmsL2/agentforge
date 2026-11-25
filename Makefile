@@ -162,20 +162,20 @@ docker-clean:
 # === Production =============================================================
 
 prod:
-	@test -f backend/.env || (echo "❌ backend/.env missing — copy backend/.env.example and fill real secrets" && exit 1)
-	docker compose --env-file backend/.env -f docker-compose.prod.yml up -d --build
+	@test -f backend/.env.prod || (echo "❌ backend/.env.prod missing — prepare private production configuration from backend/.env.prod.example" && exit 1)
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml up -d --build
 	@echo "▶ Waiting before applying migrations..."
 	@sleep 5
-	docker compose --env-file backend/.env -f docker-compose.prod.yml exec -T app agentforge db upgrade
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml exec -T app agentforge db upgrade
 	@echo "✅ Production stack started. Configure external Nginx with nginx/nginx.conf."
 
 
 prod-down:
-	docker compose --env-file backend/.env -f docker-compose.prod.yml down
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml down
 
 
 prod-logs:
-	docker compose --env-file backend/.env -f docker-compose.prod.yml logs -f
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml logs -f
 
 
 # === Setup ==================================================================
@@ -276,7 +276,7 @@ run:
 
 
 run-prod:
-	uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000
+	ENVIRONMENT=production AGENTFORGE_ENV_FILE="$(abspath backend/.env.prod)" uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000
 
 
 routes:
@@ -370,21 +370,21 @@ docker-frontend-build:
 # === Docker: production =====================================================
 
 docker-prod:
-	docker compose -f docker-compose.prod.yml up -d
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml up -d
 	@echo ""
 	@echo "✅ Production services started"
 
 
 docker-prod-down:
-	docker compose -f docker-compose.prod.yml down
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml down
 
 
 docker-prod-logs:
-	docker compose -f docker-compose.prod.yml logs -f
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml logs -f
 
 
 docker-prod-build:
-	docker compose -f docker-compose.prod.yml build
+	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml build
 
 
 # === Docker: individual services ===========================================

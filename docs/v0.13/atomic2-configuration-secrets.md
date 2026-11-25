@@ -1,0 +1,456 @@
+# AgentForge v0.13 — Atomic 2: Configuration & Secrets
+
+Date: 2026-11-25. Local implementation report for ChatGPT/maintainer review.
+Atomic 2 is not declared COMPLETE. Atomic 3 has not started. Changes remain unstaged.
+
+## 1. Exact baseline
+
+- Repository: `D:/agent_project/agentforge`; branch `main`.
+- Required and observed HEAD: `03eea8fea45b0dcb7666f75b6009a63e1967d072`.
+- Historical `v0.12.0` peeled tag: `6e4cca6bc188d829bc09431080b08ad86e37f3fb`.
+- Initial working tree/staging area empty; initial git diff --check passed; no baseline repair.
+- Atomic 1 COMPLETE, merged PR #40 and Main CI #199 SUCCESS (16/16 jobs) are supplied historical context, not freshly inspected remote evidence. No new CI ran.
+- Read AGENTS.md and accepted `docs/v0.13/atomic1-production-architecture-audit.md` / `docs/v0.13/roadmap.md`; historical audit and roadmap are unchanged.
+
+## 2. Local Source Review findings
+
+Reviewed the required tracked configuration, consumers, templates, deployment and test sources before editing. Inventory: `backend/app/core/config.py`, `backend/app/core/security.py`, `backend/app/clients/redis.py`, `backend/app/db/session.py`, `backend/alembic/env.py`, `backend/app/main.py`, `backend/app/worker/celery_app.py`, `backend/app/api/routes/v1/health.py`, `backend/app/api/deps.py`, `backend/app/composition/workflow_worker.py`, `backend/app/composition/knowledge_index_worker.py`, `backend/app/services/agent_runtime/runner/implementations/langgraph.py`, `backend/app/services/knowledge/embedding/provider.py`, `backend/.env.example`, `backend/.dockerignore`, `.gitignore`, `docker-compose.yml`, `docker-compose.prod.yml`, `Makefile`, `backend/Dockerfile`, `backend/tests/conftest.py`, `backend/tests/core/test_config.py`, `backend/tests/api/test_health.py`, `backend/tests/worker/test_celery_app.py`, `backend/pyproject.toml`, `.github/workflows/ci.yml`, `ENV_VARS.md`, `docs/configuration.md`. Used tracked searches for Settings construction/mutation, computed URL consumers, explicit Celery overrides and credentials. Inspected installed Pydantic dotenv, Redis parser and Flower authentication source where needed; no web/service/provider access.
+
+All 16 supplied baseline facts were confirmed; no contradiction required substituting another implementation assumption:
+
+| Baseline fact | Owning evidence |
+| --- | --- |
+| BaseSettings, current/parent dotenv discovery, direct DB/Redis credential interpolation | backend/app/core/config.py |
+| Independent Celery URL inputs | backend/app/worker/celery_app.py and Settings |
+| API unauthenticated Celery overrides, separately interpolated Worker/Beat/Flower URLs | docker-compose.prod.yml |
+| Shared development/production dotenv and inconsistent role environment | docker-compose.yml, docker-compose.prod.yml |
+| Partial JWT/API/CORS production validators | backend/app/core/config.py |
+| Raw readiness exception strings | backend/app/api/routes/v1/health.py |
+| Full Settings dump recommendation | ENV_VARS.md |
+| Explicit CI broker/result overrides, including DB 15 | .github/workflows/ci.yml |
+| 1536 embedding storage contract, existing Knowledge Agent flag | embedding/provider.py, Settings and worker composition |
+| Separate LLM / Embedding / legacy OpenAI credential responsibilities | langgraph.py, embedding/provider.py, Settings |
+| Active production-placeholder Redis password in development example | backend/.env.example |
+
+PostgreSQL production Compose had no postgres password fallback; that value existed in the development example. Existing Redis/Flower nonempty guards and Settings validators were preserved/extended, not treated as absent. Actual deployment behavior remains unverified.
+
+## 3. Existing implementation reused
+
+Kept Pydantic BaseSettings and attribute types, global settings import contract, JWT/Redis/SQLAlchemy/Alembic/Celery/Provider interfaces, OpenAI-compatible runtime, dedicated Knowledge Agent feature flag and positive timeout/batch/chunk/lease bounds. SQLAlchemy URL and standard-library quoting supply encoding without dependencies. python-dotenv and PyYAML were already installed; no dependency/lockfile changed.
+
+Celery task names, registration, schedules, acknowledgements, result expiry and dispatch architecture are unchanged. Existing health routes, response structure/flattened entries and 503 behavior remain; Worker/LLM health still means configuration-only until A4. Workflow/Knowledge/RBAC/session/durability/storage behavior is untouched.
+
+## 4. Configuration source and precedence contract
+
+| File/input | Contract |
+| --- | --- |
+| backend/.env.example | Public development template; production Redis placeholder removed |
+| backend/.env | Private development input; current-directory then parent discovery |
+| backend/.env.prod.example | Public incomplete production template; secrets empty |
+| backend/.env.prod | Private production input; NOT created or read by this task |
+| ENVIRONMENT=production | Environment-only production; no implicit dotenv discovery |
+| AGENTFORGE_ENV_FILE=explicit-path | Explicit production file, forces production mode; conflicting process/init mode rejected |
+| AGENTFORGE_ENV_FILE=none | Disable dotenv discovery; used for containers/offline tests |
+| Settings(_env_file=None, ...) | Explicit file isolation; process environment still applies |
+
+Constructor fields > process environment > selected dotenv > defaults. Production mode cannot be downgraded by higher-priority init fields when externally selected. Production flag/selector causes empty values to remain visible for validation; local empty-value convenience is retained. No source discovery runs at class definition time. Explicit production use of a file named .env is rejected; auto-discovered development input cannot establish accepted production settings.
+
+Production file values disable dotenv variable expansion while retaining Pydantic decoding and precedence. This preserves literal `${...}`, Unicode, percent sequences and spaces. For Compose, single-quote special-character secret values in the private file; shell interpolation has higher precedence. No secret copying/migration occurs. Ignore rules protect `.env` and private `.env.*` variants while excepting the two public examples; static checks used hypothetical paths only.
+
+## 5. Production validation policy
+
+Explicit inputs required: SECRET_KEY, API_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, POSTGRES_HOST/PORT/USER/DB, REDIS_HOST/PORT/DB, FLOWER_USER/PASSWORD, CORS_ORIGINS, DEBUG and DB_ECHO. Ports are 1–65535; Redis DB is nonnegative. Flags must be false; CORS origins must be nonempty and not contain wildcard. JWT minimum length remains 32.
+
+Secret values reject empty/whitespace-only values, ASCII controls/DEL, existing insecure defaults and common placeholders. Policy includes postgres/password/admin/secret/changeme/change-me and existing JWT/API defaults; case-insensitive change-me*, replace-* and your-* example prefixes are disallowed. Validation compares normalized values but preserves every accepted original character. This is not entropy estimation; operators remain responsible for strong unique random credentials. No arbitrary minimum length was added to non-JWT passwords.
+
+Flower's supported single user:password entry cannot contain colon/comma in either part; username also rejects whitespace/controls. A normal username such as admin is not itself a secret. FLOWER_PASSWORD follows the secret policy. Shared Settings validates these fields before the Celery app is used by Flower.
+
+## 6. Connection URL construction contract
+
+DATABASE_URL / DATABASE_URL_SYNC remain strings created by SQLAlchemy URL.create/render_as_string with the existing asyncpg/postgresql schemes. REDIS_URL quotes raw password exactly once and brackets IPv6. Do not pre-encode input credentials. Passwordless development Redis remains supported.
+
+Synthetic tests cover @, colon, slash, hash, percent, question mark, spaces, Unicode, literal percent-encoded-looking text, DNS/IPv4/bare and bracketed IPv6, custom ports and DB 15. Actual SQLAlchemy asyncpg/psycopg2 dialect argument conversion, Redis parse_url, Kombu connection parsing and Celery Redis backend parsing verify decoded values without connecting. Alembic retains the sync string consumer; its engine_from_config path does not require changing migration files. No migration was executed.
+
+## 7. Celery compatibility contract
+
+Absent broker/result overrides resolve to common REDIS_URL. Local/test explicit URLs retain their intended host/port/DB, including existing CI DB 15. Supported production permits omission or exact canonical string equality only; empty/unauthenticated/mismatched URLs fail validation. Semantically similar alternative URL strings are deliberately not normalized or silently accepted. Both attributes remain ordinary strings for existing consumers.
+
+Production Compose no longer constructs separate Celery URLs. A private production file containing legacy inconsistent overrides fails closed; it must omit them. No claim of successful running production publication/authentication is made.
+
+## 8. Production role consistency
+
+API, Worker, Beat and Flower use backend/.env.prod and the same YAML environment anchor, forcing production, DEBUG/DB_ECHO false and dotenv discovery disabled. The shared mapping propagates identical Compose-resolved PostgreSQL/Redis/auth/Flower/CORS values. DB infrastructure uses the same PostgreSQL interpolation, Redis argv/probe uses the same password/port interpolation, and their configured ports match the backend inputs. Thus a shell override cannot select one infrastructure credential while service env_file supplies a different backend credential.
+
+Redis command/healthcheck and PostgreSQL probe use argument lists, avoiding password/username shell splitting. Flower BASIC_AUTH is one mapped string, protected by delimiter validation. Migration exec in API inherits the same production environment/global Settings boundary. All eight production Make command invocations now explicitly pass --env-file backend/.env.prod.
+
+Static YAML and baseline comparisons confirm existing images, builds, names, networks, volumes, ports, dependencies, replica/resource declarations and restart policies are unchanged. Release-image consistency, migration gating and internal-network egress defects remain. No Compose execution/rendering or effective-container inspection occurred.
+
+## 9. Provider configuration policy
+
+LLM_API_KEY/LLM_PROVIDER/AI_MODEL/LLM_BASE_URL remain Platform Runtime settings; EMBEDDING_API_KEY/MODEL/BASE_URL/DIMENSIONS remain Knowledge settings; OPENAI_API_KEY is legacy only. Empty optional keys do not block deterministic workflows and do not make their capabilities operational. Configured production keys reject blanks/placeholders; model/provider identities must be nonblank. Explicit endpoints require syntactically valid HTTP(S), host/optional bounded port, no embedded credentials/query/fragment/whitespace; optional empty endpoints retain SDK defaults.
+
+Production embedding dimensions must remain 1536. KNOWLEDGE_AGENT_ENABLED=true requires valid LLM and Embedding configuration; legacy OPENAI_API_KEY cannot satisfy it. Full-platform staging requires both configurations. No new flags, Provider branch architecture or gating redesign. Syntax/config validity proves neither connectivity, commercial availability nor answer quality.
+
+## 10. Safe diagnostics
+
+load_settings is the small shared bootstrap boundary used by global settings, hence all existing import consumers. It catches ValidationError and source/SettingsError/other Exception failures without formatting raw exception values, nested locations, context messages or Settings. Only known top-level schema field names may accompany CONFIGURATION_INVALID; other source failures use CONFIGURATION_SOURCE_INVALID. The sanitized exception is raised outside its handler, so raw context/cause is not retained. hide_input_in_errors is supplementary, not the security boundary. Direct Settings retains programmatic Pydantic behavior; operational validation must use load_settings/global settings and never dump errors/values.
+
+Independent Python config-import tests cover malformed JSON, nested errors and secret-bearing input; no application server starts. Public readiness uses DATABASE_CONNECTION_FAILED, REDIS_CONNECTION_FAILED or REDIS_PING_FAILED, with existing structure/flattening/503 behavior. Neither route logs raw caught errors as a substitute. Full log/exception/structured-field redaction remains A4 work.
+
+## 11. Changed files and responsibilities
+
+| File | Responsibility |
+| --- | --- |
+| backend/app/core/config.py | Source selection, production validation, URLs and safe bootstrap |
+| backend/app/api/routes/v1/health.py | Bounded dependency failure codes only |
+| backend/.env.example | Development-only template, remove active production Redis password |
+| backend/.env.prod.example | New incomplete public production template |
+| docker-compose.prod.yml | Shared explicit production connection/env/auth contract, argument-safe credentials |
+| Makefile | Explicit production env-file on every production entry point |
+| .gitignore / backend/.dockerignore | Private dotenv variants protected; public examples allowed |
+| backend/tests/core/test_config.py | Source/precedence/validation/URL/diagnostics/static role tests |
+| backend/tests/api/test_health.py | Both ready aliases and all dependency-failure secret tests |
+| backend/tests/worker/test_celery_app.py | Existing task/schedule contract and real offline Celery parsers |
+| ENV_VARS.md / docs/configuration.md | Accurate inputs/computed URLs, production/Provider policy and safe preflight |
+| docs/v0.13/atomic2-configuration-secrets.md | This evidence/disposition report |
+
+Exactly the 14 authorized paths; no other source, CI, dependencies, lockfiles, accepted audit or version changes.
+
+## 12. Actual verification evidence
+
+### Isolation before pytest collection
+
+Each pytest invocation ran via the existing backend/.venv/Scripts/python.exe with an inline launcher. Before importing pytest/app/conftest, the launcher cleared inherited environment except Windows SYSTEMROOT/WINDIR/TEMP/TMP/PATH, then supplied only synthetic application inputs: AGENTFORGE_ENV_FILE=none, ENVIRONMENT=local, synthetic SECRET_KEY/API_KEY/POSTGRES_PASSWORD, POSTGRES_HOST and REDIS_HOST loopback, synthetic POSTGRES_DB, PYTEST_DISABLE_PLUGIN_AUTOLOAD=1. Only anyio.pytest_plugin was explicitly loaded. No live integration flag was enabled. Config source tests use temporary synthetic files. Test files were reviewed for real-service/subprocess operations before the broader selection; only Python configuration-import subprocesses were added, not service processes.
+
+Effective launcher test tail:
+
+```python
+os.chdir('backend')
+import pytest
+sys.exit(pytest.main([
+    '-p', 'anyio.pytest_plugin', 'tests/core', 'tests/api/test_health.py',
+    'tests/worker', 'tests/knowledge', 'tests/agent_runtime', 'tests/composition',
+    '-q', '--tb=short',
+]))
+```
+
+| Actual check | Result |
+| --- | --- |
+| Initial focused config + mocked health + Celery registration/parser tests | 163 passed, 54 existing Pydantic json_encoders deprecation warnings |
+| Broader reviewed offline regression after literal production-file/startup tests | 329 passed, 54 warnings |
+| Final broader regression after local-empty-value compatibility correction | 330 passed, 54 warnings; no failures/errors/skips |
+| .venv/Scripts/ruff.exe check app tests cli (cwd backend) | PASS, all checks passed |
+| ruff format --check on five changed Python files | PASS, all five formatted |
+| .venv/Scripts/ty.exe check (cwd backend) | Exit 0; two pre-existing warnings in unchanged workflow background durability/executor files |
+| Static PyYAML role/anchor/infra checks and baseline topology comparison | PASS; no Docker invocation |
+| git check-ignore --no-index for hypothetical private variants and public examples; ordered dockerignore pattern checks | PASS; no secret file created/read |
+| Production Make command env-file assertions | PASS |
+| git diff --check and separate untracked-file whitespace checks | PASS; exactly 12 authorized tracked modifications + 2 new files; 16 report sections/7 dispositions; main/HEAD/tag unchanged and staged diff empty |
+
+Diagnostics and corrections during verification: initial sandbox pytest reached configuration cases then hung before async health execution. A faulthandler run identified Windows asyncio socketpair's accept in event-loop initialization, before application/service activity. Those partial runs were interrupted, not counted as PASS. An attempted socket-wide no-network guard also blocked asyncio's internal socketpair and produced 14 setup errors; that launcher guard was removed. The approved isolated offline runs outside the sandbox then passed. This was a launcher/environment restriction, not an application test failure hidden by skipping tests. No DB/Redis/Provider connection occurred.
+
+Initial Ruff checks found three style issues and four unformatted changed files; targeted Ruff fixes/formatting resolved them. One subsequent Ruff invocation used an incorrect relative executable path after changing cwd and did not run; corrected final commands above passed. No dependency installation or lock update was used to repair verification.
+
+Executed command inventory: Get-Content for the attachment/AGENTS/explicit tracked files and selected installed library source; git rev-parse/branch/status/diff/show/grep/check-ignore; rg --files and targeted source searches; inline Python for safe source transformations, precollection-isolated pytest, static YAML/ignore/scope/whitespace checks; apply_patch; existing ruff check/check --fix --unsafe-fixes/format/format --check and ty check. Only authorized files were formatted. Windows asyncio diagnostic launchers used faulthandler; only those test processes were interrupted. No Docker, Compose or WSL command ran.
+
+## 13. Findings disposition
+
+| Finding | Local implementation disposition | Runtime/evidence boundary |
+| --- | --- | --- |
+| P0-01 | API/Worker/Beat/Flower now use canonical authenticated Redis-derived Celery contract; inconsistent overrides rejected | Offline parser/config/static YAML proof only; running production Redis auth/publication NOT RUN |
+| P1-01 | Distinct production public/private file contract and explicit source selection | No actual developer/production secrets migrated/read; deployed isolation NOT RUN |
+| P1-02 | Required production inputs, placeholders, flags, Flower and safe bootstrap validated | Operators must generate secrets; no entropy/connectivity/deployment certification |
+| P1-03 | SQLAlchemy DB URL building and Redis credential encoding; Celery uses canonical output | Actual dialect/Redis/Kombu/backend parsers tested offline; real connections NOT RUN |
+| P1-04 | Every production backend role sets production and shares inputs; migration exec inherits API | Static source/YAML proof; effective old dev-tag worker image behavior remains A3 |
+| P1-10 | Stable bounded codes on both readiness aliases without raw replacement logs | Mocked ASGI failure tests passed; full observability/redaction remains A4 |
+| P2-09 | Docs distinguish input/derived fields, development overrides/production contract; Settings dump removed | Safe import preflight proves config validity only |
+
+## 14. Remaining Atomic 3 and Atomic 4 responsibilities
+
+A3: release image identity including Worker/Beat/Flower dev tags, migration-success startup gate, complete reproducible deployment, resource/project/volume isolation, network topology/provider egress and actual configuration realization. Existing five-second post-start migration remains intentionally unchanged. Private production config must be supplied by an authorized operator.
+
+A4: truthful Worker/LLM health semantics, effective role probes, full handler/formatter/structured/exception log redaction, request/task correlation and minimal operational metrics. Config-only health checks and unrelated image/HTTP healthcheck defects remain. A5+ backup/restore/private-media maintenance and A6+ TLS/security/resource/cost policies are not implemented here. Other older documents may retain legacy deployment examples until their authorized cleanup.
+
+## 15. NOT RUN items
+
+- Full backend suite: not selected blindly; tests requiring DB, Redis, live integration, migration cycles, MCP subprocess services and commercial Providers were excluded from execution scope.
+- Real PostgreSQL/Redis/broker authentication, migrations and backend live E2E: prohibited in this Atomic.
+- Docker/Compose rendering/build/start/stop/restart/inspect, WSL startup and effective container settings: prohibited.
+- Full-stack/browser staging, real LLM/Embedding calls and commercial smoke: prohibited; config validity is not connectivity.
+- Paired DB/media backup/restore drill, reconciliation and private-data operations: prohibited.
+- New CI, PR/Main CI, publication and production deployment: no authorized Git/remote mutations.
+
+## 16. Implementation boundaries and limitations
+
+All 14 changed/new files are authorized and remain local/unstaged on unchanged main/HEAD. No real dotenv/authentication storage/private secret was read, no production secret file was created, no private data/media was modified, no service/infrastructure was started/stopped/inspected, and no network Provider request or database migration occurred. Windows event-loop internal socketpair is not a database/broker/service test. Separate Python import subprocesses load configuration only.
+
+No branch creation/switch, git add/commit/push/merge/reset/stash/rebase, PR/tag/Release, CI edit, dependency/lockfile change or remote mutation. Configuration validation and static wiring are implemented; actual production deployment success is NOT claimed. Await ChatGPT Implementation Report Review; do not declare Atomic 2 COMPLETE or begin Atomic 3.
+
+## 17. Review Fix 1 — RF-01 / RF-02
+
+Date: 2026-11-25. This chronological record supersedes the earlier current-branch
+accounting only. Sections 1–16 and their 163/329/330-test results remain historical
+Atomic 2 implementation evidence; they are not new review-fix test executions.
+
+### Exact review baseline
+
+Verified repository D:/agent_project/agentforge, existing branch
+`review/v013-atomic2-configuration-secrets`, exact HEAD
+`6998e4c45ad8a2c3af0fae1c4fb4cf007d7a2a2d`, parent
+`03eea8fea45b0dcb7666f75b6009a63e1967d072`, clean initial working tree, empty staging
+area and passing git diff --check. Read AGENTS.md. No branch or baseline repair
+was performed. ChatGPT's remote review is supplied context; these fixes were
+verified against the actual local source.
+
+### RF-01 — production server entry point
+
+Static reproduction: Makefile run-prod previously only invoked
+`uv run --directory backend agentforge server run --host 0.0.0.0 --port 8000`.
+backend/cli/commands.py server_run does not select production mode/configuration;
+its module imports app.main before running the server. Consequently the old
+recipe permitted development dotenv discovery/local mode. No server was started
+to reproduce or verify this source defect.
+
+Correction: the recipe now prefixes the existing invocation with
+`ENVIRONMENT=production AGENTFORGE_ENV_FILE="$(abspath backend/.env.prod)"`.
+GNU Make resolves the quoted absolute path from the repository before uv changes
+its working directory to backend. Inline assignments override inherited local
+mode/file selectors. The existing Settings selected-file check rejects a missing
+production input instead of falling back, even if other environment values exist.
+Normal make run is unchanged; CLI/configuration architecture is not redesigned.
+
+Regression coverage statically checks the exact recipe, quoted absolute-path
+expression, backend execution directory and unchanged development recipe. It
+expands the path expression for a temporary synthetic repository containing
+spaces, applies only the two environment assignments, changes to its backend
+directory, checks missing-file rejection with a synthetic development .env present,
+then checks valid production selection using temporary synthetic credentials.
+It never invokes make, uv, the CLI or a server. Existing production Compose
+entry-point assertions remain in place. Makefile's baseline no-final-newline
+convention was preserved to avoid an unrelated change.
+
+### RF-02 — PostgreSQL database-name round trip
+
+Offline reproduction with installed **SQLAlchemy 2.0.52**, not the reviewer's
+2.0.50: URL.create(..., database="my?sslmode=disable").render_as_string followed
+by make_url produces database `my` and query `{"sslmode": "disable"}`. Both
+postgresql+asyncpg and postgresql schemes are covered in the new regression.
+The earlier username/password encoding remains correct and unchanged.
+
+Small correction: after existing required-field/host validation, production
+Settings parses both generated URL strings and rejects any database mismatch or
+nonempty query with the fixed validation message
+`POSTGRES_DB: DATABASE_NAME_URL_UNSAFE`. The existing bootstrap boundary exposes
+only CONFIGURATION_INVALID, without the rejected database name, credentials or
+raw exception context. Local/test policy, SQLAlchemy consumers, Alembic,
+connection URL schemes, string attribute types and credential builders are unchanged.
+
+ASCII question marks, including query-like names and a trailing question mark,
+are deliberately unsupported production database-name syntax because the
+existing string URL contract cannot preserve them. No percent-encoding workaround
+or identifier rewrite was introduced. Supported names are preserved verbatim:
+ordinary names, hyphens/underscores, dots, spaces (including boundary spaces),
+Unicode, slash, hash, percent sequences and @, provided both parsers round-trip
+them with no query parameters. This is a URL-contract check, not a claim that a
+database exists or that every PostgreSQL identifier rule has been validated.
+
+New tests cover nine supported names through both async and sync string parsers,
+the two-scheme defect reproduction, five query-like inputs and safe bootstrap
+diagnostics. Supported-name tests also retain reserved-character username/password
+assertions; all existing IPv6/SQLAlchemy dialect/Redis/Celery credential tests remain.
+No database connection or migration was executed.
+
+### Exact changed files
+
+Only these six existing authorized files changed; no untracked file was added:
+
+- Makefile — run-prod production selection only.
+- backend/app/core/config.py — production database URL round-trip validation.
+- backend/tests/core/test_config.py — RF-01 and RF-02 regression coverage.
+- ENV_VARS.md — entry-point and supported database-name contract.
+- docs/configuration.md — corresponding configuration reference updates.
+- docs/v0.13/atomic2-configuration-secrets.md — this chronological record.
+
+### Actual verification commands and results
+
+Before importing pytest/conftest/app, repeated section 12's approved inline
+launcher: clear inherited application environment, retain only Windows
+SYSTEMROOT/WINDIR/TEMP/TMP/PATH, set AGENTFORGE_ENV_FILE=none, ENVIRONMENT=local,
+synthetic SECRET_KEY/API_KEY/POSTGRES_PASSWORD, loopback database/Redis hosts,
+POSTGRES_DB=offline_no_connect and PYTEST_DISABLE_PLUGIN_AUTOLOAD=1. Explicitly
+load only anyio.pytest_plugin. Tests use temporary synthetic files, not actual
+repository dotenv files. Existing dependencies were used without installation.
+As previously approved, pytest ran outside the sandbox solely to permit Windows
+asyncio's internal socketpair; no database, Redis, Provider or service was contacted.
+
+| Actual command/check | Result |
+| --- | --- |
+| Existing backend/.venv/Scripts/python.exe, inline SQLAlchemy URL.create/make_url reproduction (no app import) | Version 2.0.52; supplied database/query defect reproduced; sampled nontrivial names preserved |
+| Isolated launcher with pytest.main(['-p', 'anyio.pytest_plugin', 'tests/core/test_config.py', 'tests/api/test_health.py', 'tests/worker/test_celery_app.py', '-q', '--tb=short']) | 185 passed, 54 existing Pydantic json_encoders warnings; 0 failed/errors/skips |
+| Same launcher with pytest.main(['-p', 'anyio.pytest_plugin', 'tests/core', 'tests/api/test_health.py', 'tests/worker', 'tests/knowledge', 'tests/agent_runtime', 'tests/composition', '-q', '--tb=short']) | 347 passed, 54 warnings; 0 failed/errors/skips |
+| .venv/Scripts/ruff.exe format app/core/config.py tests/core/test_config.py (cwd backend) | Formatted test additions; config already formatted |
+| .venv/Scripts/ruff.exe check app/core/config.py tests/core/test_config.py (cwd backend) | PASS |
+| .venv/Scripts/ruff.exe check app tests cli (cwd backend) | PASS, all checks passed |
+| .venv/Scripts/ruff.exe format --check app/core/config.py tests/core/test_config.py (cwd backend) | PASS, both files formatted |
+| .venv/Scripts/ty.exe check (cwd backend) | Exit 0; the same two pre-existing warnings in unchanged workflow background durability/executor files |
+| Static Makefile/production mapping checks included in configuration tests | PASS; run-prod absolute path, explicit mode, missing-file rejection, inherited-local override, normal run and existing Compose entry points covered |
+| git diff --check; git diff --cached --quiet; final inline scope/branch/HEAD/parent assertions | PASS at local handoff; only six authorized modifications, no untracked files, empty staging |
+
+Inspection commands were Get-Content for the request/AGENTS/explicit source/docs,
+rg targeted symbols, git rev-parse/status/diff, and inline installed-library
+reproduction; apply_patch performed the six scoped changes. A small Python byte
+write restored Makefile's original end-of-file convention. No Git mutation,
+dependency installation, Docker/Compose command, WSL or server command occurred.
+
+### NOT RUN, limitations and handoff
+
+Actual make run-prod/server startup, real production dotenv loading, database and
+Redis authentication/connectivity, migrations, Docker/WSL, Provider calls,
+production deployment, full-stack staging, restore drills and new CI all remain
+NOT RUN. Static recipe/configuration proof and offline URL parsing do not establish
+deployment success. Production database names containing ASCII ? must be changed
+by an authorized operator; this fix does not rename any existing database.
+
+Final branch/HEAD remain the exact review baseline above. All six fixes are local
+and unstaged, with no unauthorized file, Git, secret, data or infrastructure
+operations. Atomic 3 has not started. Await ChatGPT review; do not declare Final
+Source Review PASS or Atomic 2 COMPLETE.
+
+## 18. CI Fix 1 — targeted virtualenv security patch
+
+Date: 2026-11-25. This is a chronological addition; prior implementation and
+Review Fix evidence above remains historical and unchanged.
+
+### Baseline and supplied CI evidence
+
+Verified clean existing branch review/v013-atomic2-configuration-secrets at exact
+HEAD `e546c7501287596cc26f867cbc456a82a5c6449f`, repository
+D:/agent_project/agentforge, empty staging and passing initial git diff --check.
+Main baseline remains `03eea8fea45b0dcb7666f75b6009a63e1967d072`. Read AGENTS.md.
+No baseline repair, branch operation or remote mutation occurred.
+
+PR #41 / [CI #200](https://github.com/WmsL2/agentforge/actions/runs/45607040480)
+failed Security Scan, step Run pip-audit. The supplied independently reviewed log
+reported one vulnerability in virtualenv 21.14.11, **PYSEC-2026-4402**, fixed in
+21.14.13, with exit code 1. The supplied result says the other 14 applicable jobs
+succeeded and Docker was skipped; Final Source Review of the existing Atomic 2
+implementation was PASS. These are supplied remote evidence, not newly retrieved
+logs or a new CI execution. No local pre-fix pip-audit reproduction is claimed.
+
+### Dependency relationship and exact lock changes
+
+Local pyproject/lock/CI source confirms development dependencies → pre-commit
+4.6.2 → virtualenv 21.14.11. HEAD and main-baseline backend/uv.lock Git blob IDs
+both equal `d9461691bada5e7f866c2c427ec80366e132a726`, confirming this was an
+existing dependency vulnerability rather than a dependency introduced by Atomic 2.
+
+Using installed uv 0.12.5, ran from backend:
+
+```text
+uv lock --upgrade-package "virtualenv==21.14.13"
+```
+
+uv resolved 129 packages and updated only **virtualenv 21.14.11 → 21.14.13**.
+The complete diff is three replaced lock lines: version, sdist metadata and wheel
+metadata. The resolver supplied all URLs, hashes, sizes and upload times; none
+was manually generated or edited. Its dependency list and PyPI registry source
+are unchanged. Exact generated metadata:
+
+| Artifact | New metadata |
+| --- | --- |
+| sdist | virtualenv-21.14.13.tar.gz; SHA256 de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905; size 5570301; upload 2026-10-22T20:10:16.952Z |
+| wheel | virtualenv-21.14.13-py3-none-any.whl; SHA256 5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788; size 5557094; upload 2026-10-22T20:10:15.096Z |
+
+Full TOML comparison confirmed the package-name set, every unrelated package
+entry, pre-commit 4.6.2 and top-level lock metadata are unchanged. No global
+upgrade, direct dependency change, pyproject edit, vulnerability ignore or CI
+exception was introduced.
+
+### Lock/environment and security verification
+
+| Actual command/check | Result |
+| --- | --- |
+| uv --version; uv lock --help | uv 0.12.5; targeted --upgrade-package syntax confirmed |
+| uv lock --upgrade-package "virtualenv==21.14.13" | Exit 0; 129 packages resolved; target version available and compatible |
+| uv lock --check | Exit 0; lock current |
+| uv sync --locked --dev | Exit 0; virtualenv replaced; editable agentforge 0.12.0 rebuilt, no project metadata/version change |
+| Existing venv importlib.metadata version check | virtualenv 21.14.13, pre-commit 4.6.2 |
+| uv pip install pip-audit | Exit 0; installed audit tooling as existing CI does, without adding a project/lock dependency |
+| Installed lock-version comparison after audit-tool installation | PASS; all 127 installed packages represented in the platform lock match their locked versions |
+
+Security audit commands from backend and actual results:
+
+```text
+uv pip install pip-audit
+uv run pip-audit --progress-spinner=off
+PIP_AUDIT_EXIT_CODE=0
+
+uv run pip-audit --progress-spinner=off --timeout 10 -v
+PIP_AUDIT_EXIT_CODE=0
+```
+
+Both scans reported **No known vulnerabilities found**. PYSEC-2026-4402 was not
+reported and no additional vulnerability was reported. The first scan took
+several minutes without intermediate output, then returned a completed success
+result while its session was being checked. A diagnostic rerun with bounded
+socket timeout and verbose progress also completed successfully; its package
+progress explicitly included virtualenv 21.14.13. No ignore, skip-editable,
+no-deps or failure-handling bypass flag was used.
+
+Both results also disclosed the scanner's automatic coverage limitation:
+`agentforge (0.12.0)` could not be audited because it was not found on PyPI. This
+is the local editable first-party project, not the patched virtualenv dependency.
+No blanket claim of vulnerability-free application code or complete audit
+coverage is made; the tool's exit 0 and skip are recorded together.
+
+Audit tooling is pip-audit 2.10.1. It installed 18 additional local audit-tool
+packages, with no replacement/drift of project locked packages. These are local
+environment tooling, not new dependency entries. Verification environment is
+Windows/Python 3.12.10; CI uses Ubuntu/Python 3.12, so local audit/regression does
+not establish Linux CI success or audit platform-only packages absent locally.
+
+The initial sandbox uv command failed while persisting its interpreter cache
+(access denied), before changing the lock. Retried using the authorized normal
+cache/registry execution environment and succeeded. uv emitted two legacy package
+specifier-normalization warnings; TOML comparison confirmed no unrelated lock
+change. Sync/install used copy fallback because hardlinks were unavailable. An
+initial TOML comparison used system Python without tomllib and failed; rerunning
+with the existing backend Python 3.12 completed the comparison. These are tool
+environment diagnostics, not suppressed security findings.
+
+### Regression and static checks
+
+Repeated the approved precollection launcher: clear inherited application env,
+retain only Windows SYSTEMROOT/WINDIR/TEMP/TMP/PATH, set synthetic credentials,
+loopback DB/Redis hosts, POSTGRES_DB=offline_no_connect, ENVIRONMENT=local,
+AGENTFORGE_ENV_FILE=none and PYTEST_DISABLE_PLUGIN_AUTOLOAD=1; only then import
+pytest/app/conftest. Explicitly loaded anyio.pytest_plugin. No live flag or actual
+dotenv file was used. The effective pytest selection was:
+
+```text
+tests/core tests/api/test_health.py tests/worker tests/knowledge
+tests/agent_runtime tests/composition -q --tb=short
+```
+
+| Actual command/check | Result |
+| --- | --- |
+| Existing backend Python with isolated pytest.main and -p anyio.pytest_plugin / selection above | 347 passed, 0 failed/errors/skips; 54 existing Pydantic json_encoders deprecation warnings |
+| .venv/Scripts/ruff.exe check app tests cli (cwd backend) | Exit 0, all checks passed |
+| .venv/Scripts/ruff.exe format --check app/core/config.py app/api/routes/v1/health.py tests/core/test_config.py tests/api/test_health.py tests/worker/test_celery_app.py | Exit 0, all five files already formatted; no source formatted/modified |
+| .venv/Scripts/ty.exe check (cwd backend) | Exit 0; same two pre-existing warnings in unchanged workflow background durability/executor |
+| Full lock diff and TOML comparison; git diff --check; final scope/branch/HEAD/staging checks | PASS; only two authorized modified files, no untracked files, unchanged branch/HEAD and empty staging |
+
+### Scope, remaining boundaries and handoff
+
+Only backend/uv.lock and this document are authorized modifications. No app/test
+source, pyproject, frontend dependency, CI, version metadata or earlier audit
+document changes. All changes stay local/unstaged on the exact review branch/HEAD.
+
+Real service/infrastructure/Provider tests, migrations, Docker/WSL/server startup,
+actual secret/dotenv reads, production deployment, full-stack staging and new PR
+CI remain NOT RUN. No branch switch/create, stage/commit/amend/push, PR operation,
+merge/reset/stash/rebase, tag or Release. No pre-commit removal, pip-audit disable,
+advisory ignore or weakened CI handling. Registry/vulnerability access is limited
+to this authorized remediation and audit. Atomic 3 has not started. Do not claim
+PR CI SUCCESS before GitHub executes an authorized new commit; do not declare
+Atomic 2 COMPLETE. Await ChatGPT CI Fix Report Review.
