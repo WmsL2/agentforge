@@ -507,9 +507,9 @@ def test_tracked_production_yaml_roles_and_infrastructure_share_configuration():
     root = Path(__file__).resolve().parents[3]
     config = yaml.safe_load((root / "docker-compose.prod.yml").read_text(encoding="utf-8"))
     common = config["x-production-environment"]
-    for role in ("app", "celery_worker", "celery_beat", "flower"):
+    for role in ("app", "celery_worker", "celery_beat", "flower", "migrate"):
         service = config["services"][role]
-        assert service["env_file"] == ["./backend/.env.prod"]
+        assert service["env_file"] == ["${PROD_ENV_FILE:?PROD_ENV_FILE is required}"]
         for name, value in common.items():
             assert service["environment"][name] == value
         assert service["environment"]["ENVIRONMENT"] == "production"
@@ -521,8 +521,9 @@ def test_tracked_production_yaml_roles_and_infrastructure_share_configuration():
     assert isinstance(redis_command, list)
     assert redis_command[redis_command.index("--requirepass") + 1] == common["REDIS_PASSWORD"]
     for line in (root / "Makefile").read_text(encoding="utf-8").splitlines():
-        if "docker compose" in line and "docker-compose.prod.yml" in line:
-            assert "--env-file backend/.env.prod" in line
+        if line.startswith("PROD_COMPOSE ="):
+            assert '--env-file "$$PROD_ENV_FILE"' in line
+            assert '--project-name "$$PROD_PROJECT"' in line
 
 
 def test_run_prod_selects_absolute_production_file_without_starting_server(monkeypatch, tmp_path):
