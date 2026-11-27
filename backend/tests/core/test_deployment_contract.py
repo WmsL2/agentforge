@@ -78,9 +78,20 @@ def test_migration_success_is_required_for_every_business_role(compose):
         assert services[role]["depends_on"]["migrate"]["condition"] == (
             "service_completed_successfully"
         )
-    for role in ("migrate", "celery_worker", "celery_beat", "flower"):
+    for role in ("migrate", "celery_beat"):
         assert services[role]["healthcheck"] == {"disable": True}
-    assert "healthcheck" not in services["app"]  # A4 owns API semantics.
+    assert "healthcheck" not in services["app"]  # Inherits status-aware image probe.
+    for role, probe in [("celery_worker", "worker"), ("flower", "flower")]:
+        check = services[role]["healthcheck"]
+        assert check["test"] == ["CMD", "python", "-m", "app.services.operational_probe", probe]
+        assert check["timeout"] == "10s" and check["interval"] == "30s"
+    front = services["frontend"]["healthcheck"]
+    assert front["test"][:3] == ["CMD", "bun", "-e"]
+    assert "AbortSignal.timeout(5000)" in front["test"][3] and "r.ok" in front["test"][3]
+    assert front["timeout"] == "10s"
+    backend = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
+    assert "CMD python -m app.services.operational_probe api" in backend
+    assert "--timeout=10s" in backend
 
 
 def test_authenticated_infrastructure_probes(compose):

@@ -122,8 +122,16 @@ content; shared originals do not imply a file reread for indexing.
 Infrastructure checks: PostgreSQL TCP pg_isready excludes the temporary local
 socket server; authenticated Redis CLI must succeed and return PONG without
 printing credentials. Migration proves schema upgrade success separately.
-Inherited API HTTP probes are disabled for migrate/Worker/Beat/Flower until A4
-implements role-specific checks; API/frontend/full health semantics remain A4.
+API image health uses a bounded, status-aware basic HTTP probe. Production Worker
+health targets its own `celery@<hostname>` control ping and requires that exact
+Worker's pong; it does not publish a task or prove successful task execution.
+Flower 2.0.1 `/healthcheck` proves only local Flower HTTP responsiveness, not auth,
+broker health or Worker availability. Migrate and Beat keep the inherited API
+probe disabled: migration exit remains the gate, and Beat process-running is not
+scheduler progress. Frontend uses bounded Bun fetch of `/api/health`, which also
+requires backend basic HTTP availability; it is not frontend-only liveness or
+full API readiness. Docker hard timeouts bound role checks; actual production
+container-probe execution remains NOT RUN in Atomic 4.
 
 Basic /api/v1/health returns status healthy plus max_upload_size_mb; it is not
 worker/provider readiness. Validate login, async runs/indexing, RBAC, private
@@ -140,3 +148,49 @@ standalone Next runtime. No cloud resource provisioning is included.
 
 References: [Compose startup conditions](https://docs.docker.com/compose/how-tos/startup-order/),
 [Compose up flags](https://docs.docker.com/reference/cli/docker/compose/up/).
+
+
+## Operational observability contracts (v0.13 Atomic 4)
+
+`/api/v1/health` remains public basic HTTP health (`status: healthy` and
+`max_upload_size_mb`). `/api/v1/health/live` reports process liveness and the actual
+application version without accessing dependencies. `/api/v1/health/ready` and the
+legacy `/api/v1/ready` alias check PostgreSQL SELECT 1 and Redis ping concurrently.
+Each has a 2-second cooperative async budget; the read-only database session has
+an additional 250ms close budget and never commits. DB/Redis failure gives 503
+`not_ready`; both succeeding gives 200 `ready`. Cancellation propagates. Missing
+Redis lifespan state is unavailable, not an unexpected 500. Failure bodies use
+stable codes only. LLM, Embedding, Knowledge Agent and Worker entries are optional
+configuration/enablement indicators; configured never means connected or healthy.
+Readiness sends no Provider request or Celery remote-control call.
+
+`/api/v1/metrics` requires the existing machine API-key header (401 missing, 403
+invalid); do not put that key in a browser or create an unauthenticated proxy.
+JSON counters cover completed responses, fixed status classes, duration count/sum,
+5xx responses, cancellation and incomplete responses. The endpoint excludes itself.
+Counters are local to each API process/application, reset on restart, are not
+persistent and are not aggregated across production's four Uvicorn workers. They
+are not availability, percentiles, SLAs or workflow recovery statistics.
+
+HTTP correlation accepts one safe ASCII `X-Request-ID` (1–64 characters; first
+alphanumeric, remaining alphanumeric/dot/underscore/hyphen), otherwise generates a
+UUID. It is untrusted metadata, not identity. Responses, including handled errors
+and generated 500s, return the effective ID. Completion events contain only safe
+method/status/duration/outcome and the ID, never raw URL/query/body/auth/cookie
+content. Streaming is not buffered and the request context resets on cancellation.
+No automatic Celery cross-task propagation or distributed tracing is added.
+
+Current Python logging handlers use bounded redacting formatter wrappers; Celery
+root/task logging hooks reapply them after initialization, including Beat's root
+logging setup. Exception details/source traceback lines are omitted in favor of a
+safe type. New third-party handlers installed later require reinstallation; direct
+stdout/stderr, subprocess/external-service output, pre-setup logs and Uvicorn raw
+access-log privacy are not certified by this implementation. This is not universal
+secret detection or a compliance guarantee.
+
+The frontend system page now consumes the explicit uncached readiness proxy,
+preserves valid 503 dependency information and labels unavailable/configured states
+truthfully. It does not fall back to basic health or invent historical uptime.
+See [Atomic 4 evidence and detailed semantics](v0.13/atomic4-operational-observability.md).
+Atomic 3's blocked image/runtime evidence remains deferred under the maintainer
+amendment; these source/test changes do not establish production deployment.

@@ -1,8 +1,19 @@
 """Celery application configuration."""
 
 from celery import Celery
+from celery.signals import after_setup_logger, after_setup_task_logger
 
 from app.core.config import settings
+from app.core.logging import setup_logging
+
+
+def install_worker_log_redaction(logger=None, **kwargs) -> None:
+    """Protect Celery's installed root/task output handlers, including Beat."""
+    setup_logging(logger)
+
+
+after_setup_logger.connect(install_worker_log_redaction, weak=False)
+after_setup_task_logger.connect(install_worker_log_redaction, weak=False)
 
 WORKFLOW_RECOVERY_SCAN_TASK = "agentforge.workflow.recovery.scan"
 KNOWLEDGE_INDEX_RECOVERY_TASK = "agentforge.knowledge.index.recovery.scan"
