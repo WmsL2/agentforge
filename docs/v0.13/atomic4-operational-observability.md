@@ -332,3 +332,115 @@ frontend/src/lib/health.ts
 Exact scope: 26 paths. Other tracked source, test infrastructure, durability/Agent/Tool/MCP/Knowledge business code, migrations, dependencies/locks, version metadata and historical Atomic/roadmap documents remain unchanged. Makefile changes only the stale prod help description. Final verification: main at the required HEAD/tag, empty staging, exact 18 modified tracked + 8 authorized untracked paths, git diff --check exit 0 and whitespace checks for all 8 untracked files passed. Final status and file hashes are recorded in the implementation handoff (.cache/atomic4-offline/final-verification.json).
 
 Await ChatGPT Implementation Report Review; do not declare Final Source Review PASS or Atomic 4 COMPLETE.
+
+## 12. Review Fix 1 — 2026-11-27
+
+Initial review branch `review/v013-atomic4-operational-observability` at
+`4db9fdecd87a3c00b26b0af63947d4eed2fa2dbb`. The parent and local main were
+`3fd830671c6e946744dd989e0744c90e5a644c15`. The peeled v0.12.0 tag remained
+`6e4cca6bc188d829bc09431080b08ad86e37f3fb`. Initial worktree and staging were
+clean. The earlier implementation and verification sections remain historical.
+
+### RF-01 — Request correlation in emitted output
+
+The supported production Uvicorn invocation and the CLI server entry point use
+Uvicorn's default logging configuration. It configures the Uvicorn namespace,
+while an unconfigured application inherits root WARNING and has no output
+formatter that displays request metadata. The previous handler wrapper alone
+could neither enable application INFO nor surface the completion fields.
+
+API setup installs one INFO stream handler for the `app` namespace when it
+inherits Python's default WARNING and has no configured output handler. The
+handler formats the request ID supplied by the existing ContextVar and includes
+the safe exception type when present. The request completion message contains
+the allowlisted method, status, elapsed milliseconds and outcome, and keeps the
+structured fields for operator formatters. The default app handler disables
+propagation to prevent duplicate output. Explicit application levels and
+existing output handlers are respected. Operator formatters can use
+`%(request_id)s` to include the request ID on their own output paths. Celery
+continues to use its existing post-setup hooks and shared formatter wrapping.
+
+A fresh subprocess installed the installed Uvicorn default log configuration
+and executed concurrent synthetic ASGI requests. The test supplied neither a
+test formatter nor an application log level. It checked response IDs, log lines
+from within requests, safe error diagnostics, one completion per request,
+and repeated app setup. Actual emitted lines from the focused run follow.
+
+```text
+INFO app.core.middleware request_id=normal-id http_request_completed method=GET status_code=200 duration_ms=1.260 outcome=completed exception_type=-
+INFO app.core.middleware request_id=handled-id http_request_completed method=GET status_code=401 duration_ms=1.698 outcome=completed exception_type=-
+ERROR app.api.exception_handlers request_id=generated-id Unhandled exception exception_type=RuntimeError
+INFO app.core.middleware request_id=generated-id http_request_completed method=GET status_code=500 duration_ms=2.021 outcome=completed exception_type=-
+```
+
+### RF-02 — Bounded redaction
+
+Before the fixes, the first executable regression run reported 11 failed and
+3 passed. Default Uvicorn logging emitted zero of the three completion events.
+The redaction cases demonstrated partial output from oversized or unterminated
+quoted values, Authorization Basic credentials, multi-value cookies and variants
+that reached the formatter through interpolation or delegate output. An earlier
+test-draft collection error was corrected before this reproduction.
+
+Text beyond 4,096 characters now becomes a fixed
+`[OVERSIZED_LOG_TEXT_REDACTED]` marker before matching. The same bound applies to
+the delegate's rendered result and checks expansion during substitutions.
+Unstructured Authorization, Cookie and Set-Cookie values in colon and equals
+forms redact the remainder of that text, including credentials, cookie values
+and any ambiguous continuation. This intentionally discards adjacent suffix
+text. Supported quoted key/value forms consume escaped quotes and discard an
+unterminated value through the end of the text. The existing record-copy,
+bounded nested-field traversal, sensitive-key masking and safe exception handling
+remain in place.
+
+New emitted-output cases cover double-quoted and single-quoted oversized
+values, a value crossing the output limit, unterminated and escaped quotes,
+Basic and Bearer headers, Cookie and Set-Cookie, interpolation and oversized
+delegate output. The existing emitted-output tests cover nested sensitive fields
+and exception/traceback suppression. The operator test checks handler and level
+preservation and idempotent wrapping. The existing concurrency and Celery hook
+tests were rerun.
+
+### Verification and scope
+
+The existing local offline launcher set `AGENTFORGE_ENV_FILE=none` and injected
+synthetic settings before import and collection. The focused command included
+`-s` to capture the demonstrated output. Commands from the repository root follow.
+
+```text
+python .cache/atomic4-offline/run.py pytest tests/api/test_health.py tests/api/test_metrics.py tests/api/test_exceptions.py tests/core/test_operational_observability.py tests/core/test_deployment_contract.py -q -s --tb=short
+python .cache/atomic4-offline/run.py pytest tests/api tests/core tests/worker tests/workflow tests/knowledge tests/agent_runtime tests/composition tests/integrations tests/tool tests/schemas tests/workspace tests/test_core.py tests/test_version.py -q --tb=short
+python .cache/atomic4-offline/run.py ruff.exe check app tests cli
+python .cache/atomic4-offline/run.py ruff.exe format --check app tests cli
+python .cache/atomic4-offline/run.py ty.exe check
+```
+
+| Check | Result |
+| --- | --- |
+| Focused backend | 147 passed, 54 Pydantic warnings, exit 0 |
+| Broader selected offline backend | 1,284 passed, 150 Pydantic warnings, exit 0 |
+| Ruff check | Exit 0 |
+| Ruff format check | 511 files already formatted, exit 0 |
+| ty | Exit 0, two existing workflow warnings |
+| Frontend | NOT RUN in this fix. Historical evidence remains 1,034 passed. |
+
+Exactly five tracked paths changed, all unstaged.
+
+- `backend/app/core/logging.py`
+- `backend/app/core/middleware.py`
+- `backend/app/main.py`
+- `backend/tests/core/test_operational_observability.py`
+- `docs/v0.13/atomic4-operational-observability.md`
+
+Existing limitations include unsupported secret encodings and unlabelled values,
+Uvicorn access logs, bootstrap and external output, and later handlers that have
+not had redaction installed. The output guard checks the delegate result after
+formatting and cannot cap allocation inside arbitrary custom formatters. Real
+server/container, Celery Worker/Beat process output, database, Redis and Provider
+verification remain NOT RUN. The default-output regression used the installed
+Uvicorn logging defaults and an in-process ASGI transport inside a fresh process.
+
+Final branch, HEAD, parent and tag match the initial baseline. Empty staging and
+`git diff --check` were verified. Git publication, Docker/WSL, real infrastructure,
+network configuration and Atomic 5 were outside this fix. Final Source Review and
+Atomic 4 completion remain pending. Await ChatGPT Review Fix 1 Report Review.

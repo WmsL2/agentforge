@@ -17,7 +17,7 @@ from app.api.router import api_router
 from app.composition.tool_platform import open_tool_platform
 from app.core.config import settings
 from app.db.session import close_db
-from app.core.logging import setup_logging
+from app.core.logging import setup_api_logging
 from app.core.middleware import RequestIDMiddleware
 from app.core.metrics import OperationalMetrics
 from app.clients.redis import RedisClient
@@ -118,7 +118,7 @@ def create_app() -> FastAPI:
         },
     ]
 
-    setup_logging()
+    setup_api_logging()
 
     app = ObservedFastAPI(
         title=settings.PROJECT_NAME,

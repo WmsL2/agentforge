@@ -15,6 +15,11 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.core.logging import request_id_context
 from app.core.metrics import OperationalMetrics
 
+logger = logging.getLogger(__name__)
+HTTP_METHODS = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+)
+
 
 class RequestIDMiddleware:
     """Outer HTTP observer; no buffering, WebSocket changes or untrusted URL logs."""
@@ -70,31 +75,27 @@ class RequestIDMiddleware:
                         status, duration, completed=finished is not None, cancelled=cancelled
                     )
                 method = scope.get("method", "")
-                logging.getLogger(__name__).info(
-                    "http_request_completed",
+                method = method if method in HTTP_METHODS else "OTHER"
+                duration_ms = round(max(0.0, duration) * 1000, 3)
+                outcome = (
+                    "completed"
+                    if finished is not None
+                    else "cancelled"
+                    if cancelled
+                    else "incomplete"
+                )
+                logger.info(
+                    "http_request_completed method=%s status_code=%s duration_ms=%.3f outcome=%s",
+                    method,
+                    status,
+                    duration_ms,
+                    outcome,
                     extra={
                         "request_id": request_id,
-                        "method": method
-                        if method
-                        in {
-                            "GET",
-                            "POST",
-                            "PUT",
-                            "PATCH",
-                            "DELETE",
-                            "HEAD",
-                            "OPTIONS",
-                            "TRACE",
-                            "CONNECT",
-                        }
-                        else "OTHER",
+                        "method": method,
                         "status_code": status,
-                        "duration_ms": round(max(0.0, duration) * 1000, 3),
-                        "outcome": "completed"
-                        if finished is not None
-                        else "cancelled"
-                        if cancelled
-                        else "incomplete",
+                        "duration_ms": duration_ms,
+                        "outcome": outcome,
                     },
                 )
             finally:

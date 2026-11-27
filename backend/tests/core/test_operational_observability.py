@@ -99,7 +99,9 @@ async def test_concurrent_ids_streaming_and_bounded_metrics(caplog):
     assert len(metrics.snapshot()["http_responses_by_status_class"]) == 5
     assert request_id_context.get() is None
     assert len([m for m in messages if m["type"] == "http.response.body"]) == 100
-    completions = [r for r in caplog.records if r.msg == "http_request_completed"]
+    completions = [
+        r for r in caplog.records if r.getMessage().startswith("http_request_completed ")
+    ]
     assert len(completions) == 50 and len({r.request_id for r in completions}) == 50
     assert all("path" not in r.__dict__ for r in completions)
     assert "synthetic-secret" not in caplog.text
@@ -384,3 +386,146 @@ def test_exact_frontend_bun_probe_with_synthetic_fetch(mode, expected):
         },
     )
     assert result.returncode == expected
+
+
+def test_default_uvicorn_emits_correlated_requests():
+    import sys
+
+    code = """
+import asyncio
+import logging
+import uvicorn
+from httpx import ASGITransport, AsyncClient
+
+# Install Uvicorn's actual default configuration before importing the app.
+uvicorn.Config("app.main:app")
+from app.main import app, create_app
+from app.core.exceptions import AuthenticationError
+
+create_app()  # repeated application logging setup
+assert logging.getLogger("third_party.synthetic").getEffectiveLevel() == logging.WARNING
+
+@app.get("/synthetic/{kind}")
+async def example(kind: str):
+    await asyncio.sleep(0)
+    logging.getLogger("app.synthetic").info("synthetic operation")
+    if kind == "handled":
+        raise AuthenticationError(message="Synthetic denial")
+    if kind == "generated":
+        raise RuntimeError("synthetic-private-exception")
+    return {"ok": True}
+
+async def run():
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as client:
+        responses = await asyncio.gather(*(client.get("/synthetic/" + kind + "?unused=synthetic-private-query", headers={"X-Request-ID": kind + "-id"}) for kind in ("normal", "handled", "generated")))
+        assert [r.status_code for r in responses] == [200, 401, 500]
+        assert [r.headers["x-request-id"] for r in responses] == ["normal-id", "handled-id", "generated-id"]
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30, check=True
+    )
+    output = result.stdout + result.stderr
+    lines = output.splitlines()
+    completed = [line for line in lines if "http_request_completed" in line]
+    assert len(completed) == 3, output
+    for kind, status in [("normal", 200), ("handled", 401), ("generated", 500)]:
+        identifier = f"request_id={kind}-id"
+        matching = [line for line in completed if identifier in line]
+        assert len(matching) == 1, output
+        line = matching[0]
+        assert all(
+            field in line
+            for field in [
+                "INFO",
+                "method=GET",
+                f"status_code={status}",
+                "duration_ms=",
+                "outcome=completed",
+            ]
+        )
+        assert any(identifier in line and "synthetic operation" in line for line in lines)
+    assert any("request_id=handled-id" in line and "Synthetic denial" in line for line in lines)
+    assert any("request_id=generated-id" in line and "RuntimeError" in line for line in lines)
+    assert "synthetic-private-" not in output
+    print(
+        "\n".join(
+            line
+            for line in lines
+            if "http_request_completed" in line or "Unhandled exception" in line
+        )
+    )
+
+
+def test_api_logging_respects_operator_handler_and_level(monkeypatch):
+    from app.core.logging import setup_api_logging
+
+    app_logger = logging.getLogger("app")
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("custom %(request_id)s %(message)s"))
+    monkeypatch.setattr(app_logger, "handlers", [handler])
+    monkeypatch.setattr(app_logger, "level", logging.ERROR)
+    monkeypatch.setattr(app_logger, "propagate", False)
+    setup_api_logging()
+    wrapped = handler.formatter
+    setup_api_logging()
+    assert app_logger.handlers == [handler] and handler.formatter is wrapped
+    assert app_logger.level == logging.ERROR and not app_logger.propagate
+    logger = logging.getLogger("app.synthetic.operator")
+    token = request_id_context.set("operator-id")
+    try:
+        logger.info("should not appear")
+        logger.error("operator message")
+    finally:
+        request_id_context.reset(token)
+    assert stream.getvalue().splitlines() == ["custom operator-id operator message"]
+
+
+@pytest.mark.parametrize(
+    "message,args,delegate_suffix",
+    [
+        ('password="first-part synthetic-secret-marker ' + "x" * 4200 + '"', (), ""),
+        ("token='first-part synthetic-secret-marker " + "x" * 4200 + "'", (), ""),
+        ("x" * 4070 + ' password="first-part synthetic-secret-marker long tail"', (), ""),
+        ('password="first-part synthetic-secret-marker', (), ""),
+        ('password="first-part \\"synthetic-secret-marker second"', (), ""),
+        ("Authorization=Basic synthetic-secret-marker", (), ""),
+        ("authorization: Bearer synthetic-secret-marker", (), ""),
+        ("Cookie=session=first; other=synthetic-secret-marker", (), ""),
+        ("Set-Cookie: session=first; extra=synthetic-secret-marker", (), ""),
+        ("Set-Cookie=session=first; extra=synthetic-secret-marker", (), ""),
+        ("header %s", ("Authorization=Basic synthetic-secret-marker",), ""),
+        ("header %s", ("Cookie=session=first; other=synthetic-secret-marker",), ""),
+        ("safe text", (), ' password="first-part synthetic-secret-marker ' + "x" * 4200 + '"'),
+    ],
+    ids=[
+        "oversized-double-quote",
+        "oversized-single-quote",
+        "crossing-limit",
+        "unterminated-quote",
+        "escaped-quote",
+        "basic-equals",
+        "bearer-colon",
+        "cookie-equals",
+        "set-cookie-colon",
+        "set-cookie-equals",
+        "interpolated-basic",
+        "interpolated-cookie",
+        "oversized-delegate",
+    ],
+)
+def test_sensitive_values_never_escape_emitted_output(message, args, delegate_suffix):
+    class Delegate(logging.Formatter):
+        def format(self, record):
+            return super().format(record) + delegate_suffix
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(RedactingFormatter(Delegate()))
+    record = logging.LogRecord("app", logging.INFO, __file__, 1, message, args, None)
+    handler.handle(record)
+    emitted = stream.getvalue().strip()
+    assert emitted and len(emitted) <= 4096
+    assert "synthetic-secret-marker" not in emitted
+    assert record.msg == message and record.args == args

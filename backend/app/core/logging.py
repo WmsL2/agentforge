@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 MAX_TEXT = 4096
+OVERSIZED_TEXT = "[OVERSIZED_LOG_TEXT_REDACTED]"
 SENSITIVE_KEY = re.compile(
     r"password|passwd|pwd|secret|token|api[-_]?key|authorization|cookie|connection[-_]?url|dsn",
     re.IGNORECASE,
@@ -23,13 +24,16 @@ class PiiRedactionFilter(logging.Filter):
         (re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "[JWT_REDACTED]"),
         (re.compile(r"\bsk[-_][A-Za-z0-9_-]{8,}"), "[API_KEY_REDACTED]"),
         (
-            re.compile(r"(\b(?:authorization|(?:set-)?cookie)\s*:\s*)[^\r\n]*", re.IGNORECASE),
+            # Unstructured headers have no reliable end delimiter (cookies contain
+            # semicolons and may have continuations). Discard the full suffix.
+            re.compile(r"(\b(?:authorization|(?:set-)?cookie)[ \t]*[:=][ \t]*).*", re.I | re.S),
             r"\1[REDACTED]",
         ),
         (re.compile(r"Bearer\s+[^\s,;\"']+", re.IGNORECASE), "Bearer [TOKEN_REDACTED]"),
         (
             re.compile(
-                r"(\b(?:password|passwd|pwd|secret(?:_key)?|api[-_]?key|token|auth_token|access_token|refresh_token|authorization|(?:set-)?cookie)[\"']?\s*[=:]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)",
+                r"(\b(?:password|passwd|pwd|secret(?:_key)?|api[-_]?key|token|auth_token|access_token|refresh_token|authorization|(?:set-)?cookie)[\"']?\s*[=:]\s*)"
+                r"""(?:"(?:[^"\\]|\\[\s\S])*(?:"|\\?\Z)|'(?:[^'\\]|\\[\s\S])*(?:'|\\?\Z)|[^\s,;}"']+)""",
                 re.IGNORECASE,
             ),
             r'\1"[REDACTED]"',
@@ -37,9 +41,12 @@ class PiiRedactionFilter(logging.Filter):
     ]
 
     def _redact(self, value: str) -> str:
-        value = value[:MAX_TEXT]
+        if len(value) > MAX_TEXT:
+            return OVERSIZED_TEXT
         for pattern, replacement in self.PATTERNS:
             value = pattern.sub(replacement, value)
+            if len(value) > MAX_TEXT:
+                return OVERSIZED_TEXT
         return value
 
     def filter(self, record: logging.LogRecord) -> logging.LogRecord:  # ty: ignore[invalid-method-override]
@@ -135,3 +142,28 @@ def setup_logging(logger: logging.Logger | None = None) -> None:
     for handler in handlers:
         if not isinstance(handler.formatter, RedactingFormatter):
             handler.setFormatter(RedactingFormatter(handler.formatter))
+
+
+def setup_api_logging() -> None:
+    """Supply app output for Uvicorn's default, which configures only its own loggers."""
+    app_logger = logging.getLogger("app")
+    root = logging.getLogger()
+    if (
+        not app_logger.disabled
+        and app_logger.level == logging.NOTSET
+        and app_logger.propagate
+        and not app_logger.hasHandlers()
+        and root.level == logging.WARNING
+    ):
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter(
+                "%(levelname)s %(name)s request_id=%(request_id)s %(message)s "
+                "exception_type=%(exception_type)s",
+                defaults={"exception_type": "-"},
+            )
+        )
+        app_logger.addHandler(handler)
+        app_logger.setLevel(logging.INFO)
+        app_logger.propagate = False
+    setup_logging()
