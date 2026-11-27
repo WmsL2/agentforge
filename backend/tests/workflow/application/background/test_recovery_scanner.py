@@ -79,3 +79,41 @@ def test_recovery_beat_schedule_targets_the_registered_task() -> None:
     schedule = celery_app.conf.beat_schedule["workflow-recovery-scan"]
     assert schedule["task"] == WORKFLOW_RECOVERY_SCAN_TASK
     assert "app.worker.tasks.recovery" in celery_app.conf.include
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["inventory", "cancel_dispatch"])
+async def test_scan_interruption_does_not_dispatch_more_or_hold_session(monkeypatch, failure):
+    import asyncio
+
+    first, second = uuid4(), uuid4()
+    exits = []
+
+    class TrackedSession(Session):
+        async def __aexit__(self, exc_type, *_):
+            exits.append(exc_type)
+            return False
+
+    async def candidates(*args, **kwargs):
+        if failure == "inventory":
+            raise RuntimeError("synthetic inventory error")
+        return [first, second]
+
+    class InterruptedDispatcher(Dispatcher):
+        async def dispatch(self, job):
+            assert exits == [None, None]
+            self.jobs.append(job.run_id)
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        "app.services.workflow.application.background.recovery_scanner.run_repo.list_recoverable_workflow_run_ids_for_update",
+        candidates,
+    )
+    dispatcher = InterruptedDispatcher()
+    scanner = WorkflowRecoveryScanner(
+        TrackedSession, dispatcher, batch_size=2, redispatch_delay=timedelta(seconds=60)
+    )
+    with pytest.raises(RuntimeError if failure == "inventory" else asyncio.CancelledError):
+        await scanner.scan_once()
+    assert dispatcher.jobs == ([] if failure == "inventory" else [first])
+    assert exits == ([RuntimeError, RuntimeError] if failure == "inventory" else [None, None])

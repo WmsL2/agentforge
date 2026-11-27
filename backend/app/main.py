@@ -1,6 +1,7 @@
 # ruff: noqa: I001 - Imports structured for Jinja2 template conditionals
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -41,17 +42,42 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
     See: https://asgi.readthedocs.io/en/latest/specs/lifespan.html#lifespan-state
     """
     state: LifespanState = {}
-    redis_client = RedisClient()
+    redis_client = None
+    body_error: BaseException | None = None
+    primary: BaseException | None = None
     try:
+        redis_client = RedisClient()
         await redis_client.connect()
         state["redis"] = redis_client
         async with open_tool_platform(settings.MCP_STDIO_SERVERS) as tool_registry:
             state["tool_registry"] = tool_registry
-            yield state
+            try:
+                yield state
+            except BaseException as error:
+                body_error = error
+                raise
+    except BaseException as error:
+        primary = body_error if body_error is not None else error
+        if primary is not error:
+            logger.error("API_TOOL_PLATFORM_CLEANUP_FAILED")
+            raise primary from None
+        raise
     finally:
-        if "redis" in state:
-            await state["redis"].close()
-        await close_db()
+        cleanup_error: BaseException | None = None
+        if redis_client is not None:
+            try:
+                await redis_client.close()
+            except BaseException as error:
+                cleanup_error = error
+                logger.error("API_REDIS_CLOSE_FAILED")
+        try:
+            await close_db()
+        except BaseException as error:
+            if cleanup_error is None or isinstance(error, asyncio.CancelledError):
+                cleanup_error = error
+            logger.error("API_DB_DISPOSE_FAILED")
+        if primary is None and cleanup_error is not None:
+            raise cleanup_error
 
 
 SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")

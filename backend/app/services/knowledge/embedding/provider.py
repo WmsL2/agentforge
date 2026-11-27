@@ -6,7 +6,7 @@ import asyncio
 import math
 from collections.abc import Sequence
 from numbers import Real
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from openai import (
     APIConnectionError,
@@ -25,6 +25,11 @@ class EmbeddingProvider(Protocol):
     def dimensions(self) -> int: ...
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
+
+
+@runtime_checkable
+class AsyncClosableEmbeddingProvider(Protocol):
+    async def aclose(self) -> None: ...
 
 
 class EmbeddingError(RuntimeError):
@@ -84,7 +89,7 @@ class OpenAIEmbeddingProvider:
         return validate_embeddings(vectors, expected_count=len(texts), dimensions=self.dimensions)
 
     async def aclose(self) -> None:
-        """Close the provider client after request-scoped retrieval use."""
+        """Close the client after its owning retrieval request or indexing job."""
         await self._client.close()
 
     async def _embed_batch(self, texts: list[str]) -> list[list[float]]:

@@ -226,7 +226,10 @@ async def test_node_cancellation_propagates_without_failure_or_release(setup):
 
 
 @pytest.mark.anyio
-async def test_approval_pause_is_persisted_before_release_and_stops_downstream(setup):
+@pytest.mark.parametrize("release_fails", [False, True])
+async def test_approval_pause_is_persisted_before_release_and_stops_downstream(
+    setup, release_fails
+):
     setup.definition.nodes[1].kind = WorkflowNodeKind.APPROVAL
     setup.definition.nodes[1].config = {"prompt": "Continue?"}
 
@@ -239,8 +242,13 @@ async def test_approval_pause_is_persisted_before_release_and_stops_downstream(s
         return await delegate.execute(node, context)
 
     setup.nodes.execute.side_effect = dispatch
+    if release_fails:
+        setup.claim_service.release.side_effect = SQLAlchemyError("release unavailable")
     result = await setup.subject.execute(setup.job)
-    assert result.status is BackgroundRunExecutionStatus.PAUSED and result.lease_released
+    assert result.status is BackgroundRunExecutionStatus.PAUSED
+    assert result.lease_released is not release_fails
+    assert (result.release_error is not None) is release_fails
+    assert setup.persistence.persisted_status is WorkflowRunStatus.PAUSED
     setup.persistence.persist_interruption.assert_awaited_once()
     assert setup.nodes.execute.await_count == 2
     setup.persistence.persist_failure.assert_not_awaited()
@@ -347,3 +355,38 @@ def test_public_exports_and_result_immutability():
     result = BackgroundRunExecutionResult(uuid4(), BackgroundRunExecutionStatus.NOT_CLAIMED)
     with pytest.raises(FrozenInstanceError):
         result.status = BackgroundRunExecutionStatus.COMPLETED
+
+
+@pytest.mark.anyio
+async def test_cancellation_after_checkpoint_keeps_committed_boundary(setup):
+    first_checkpoint = asyncio.Event()
+    entered_next_node = asyncio.Event()
+    original_persist = setup.persistence.persist_node_completion.side_effect
+
+    async def persist(run, **kwargs):
+        await original_persist(run, **kwargs)
+        first_checkpoint.set()
+
+    async def execute_node(node, context):
+        if first_checkpoint.is_set():
+            entered_next_node.set()
+            await asyncio.Future()
+        return await DeterministicNodeExecutor().execute(node, context)
+
+    setup.persistence.persist_node_completion.side_effect = persist
+    setup.nodes.execute.side_effect = execute_node
+    task = asyncio.create_task(setup.subject.execute(setup.job))
+    try:
+        async with asyncio.timeout(2):
+            await entered_next_node.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    setup.persistence.persist_node_completion.assert_awaited_once()
+    assert setup.persistence.persisted_status is WorkflowRunStatus.RUNNING
+    setup.persistence.persist_failure.assert_not_awaited()
+    setup.claim_service.release.assert_not_awaited()

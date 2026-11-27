@@ -62,9 +62,23 @@ async def test_upload_uses_edit_permission_commits_and_never_overreads() -> None
 
 
 @pytest.mark.anyio
-async def test_commit_failure_rolls_back_and_deletes_file() -> None:
+@pytest.mark.parametrize("outcome", ["failed", "ack_lost", "cancelled"])
+async def test_uncertain_upload_commit_retains_file(tmp_path, outcome) -> None:
     service, db, _, storage = _service()
-    db.commit.side_effect = RuntimeError("commit failed")
+    from app.services.knowledge.document_storage import KnowledgeDocumentStorage
+
+    real_storage = KnowledgeDocumentStorage(tmp_path)
+    storage.save.side_effect = real_storage.save
+    storage.delete.side_effect = real_storage.delete
+    durable = []
+    failure = asyncio.CancelledError() if outcome == "cancelled" else RuntimeError("commit failed")
+
+    async def commit():
+        if outcome == "ack_lost":
+            durable.append("w/k/d/a.txt")
+        raise failure
+
+    db.commit.side_effect = commit
     upload = UploadFile(
         filename="a.txt",
         file=__import__("io").BytesIO(b"hello"),
@@ -79,11 +93,14 @@ async def test_commit_failure_rolls_back_and_deletes_file() -> None:
             "app.services.knowledge.document_service.document_repo.create",
             AsyncMock(return_value=object()),
         ),
-        pytest.raises(RuntimeError, match="commit failed"),
+        pytest.raises(type(failure)) as caught,
     ):
         await service.upload_document(uuid4(), uuid4(), uuid4(), upload)
     db.rollback.assert_awaited_once()
-    storage.delete.assert_awaited_once_with("w/k/d/a.txt")
+    assert caught.value is failure
+    storage.delete.assert_not_awaited()
+    assert durable == (["w/k/d/a.txt"] if outcome == "ack_lost" else [])
+    assert (tmp_path / "knowledge/w/k/d/a.txt").read_bytes() == b"hello"
 
 
 @pytest.mark.anyio
@@ -112,8 +129,13 @@ async def test_file_write_failure_creates_no_database_row() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("failure", [RuntimeError("flush failed"), asyncio.CancelledError()])
-async def test_database_write_failure_or_interruption_compensates_file(failure) -> None:
+@pytest.mark.parametrize("rollback_fails", [False, True])
+async def test_database_write_failure_or_interruption_compensates_file(
+    failure, rollback_fails
+) -> None:
     service, db, _, storage = _service()
+    if rollback_fails:
+        db.rollback.side_effect = RuntimeError("rollback failed")
     upload = UploadFile(
         filename="a.txt",
         file=__import__("io").BytesIO(b"hello"),
@@ -132,7 +154,11 @@ async def test_database_write_failure_or_interruption_compensates_file(failure) 
     ):
         await service.upload_document(uuid4(), uuid4(), uuid4(), upload)
     db.rollback.assert_awaited_once()
-    storage.delete.assert_awaited_once_with("w/k/d/a.txt")
+    db.commit.assert_not_awaited()
+    if rollback_fails:
+        storage.delete.assert_not_awaited()
+    else:
+        storage.delete.assert_awaited_once_with("w/k/d/a.txt")
 
 
 @pytest.mark.anyio
@@ -182,7 +208,13 @@ async def test_failed_document_content_is_conflict() -> None:
 async def test_delete_commits_before_private_file_cleanup_and_tolerates_cleanup_failure() -> None:
     service, db, _, storage = _service()
     row = SimpleNamespace(storage_path="w/k/d/a.txt")
-    storage.delete.side_effect = OSError("locked")
+
+    async def cleanup(path):
+        assert path == row.storage_path
+        db.commit.assert_awaited_once()
+        raise OSError("locked")
+
+    storage.delete.side_effect = cleanup
     with (
         patch(
             "app.services.knowledge.document_service.knowledge_repo.get_by_workspace_and_id",
@@ -199,6 +231,7 @@ async def test_delete_commits_before_private_file_cleanup_and_tolerates_cleanup_
         await service.delete_document(uuid4(), uuid4(), uuid4(), uuid4())
     delete.assert_awaited_once()
     db.commit.assert_awaited_once()
+    storage.delete.assert_awaited_once_with(row.storage_path)
 
 
 @pytest.mark.anyio
@@ -300,3 +333,21 @@ async def test_duplicate_content_is_allowed_with_distinct_server_keys() -> None:
         "w/k/two/a.txt",
     ]
     assert db.commit.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_preview_requires_complete_inventory_and_propagates_failure(monkeypatch):
+    from app.services.knowledge import document_service as module
+
+    service, db, _, storage = _service()
+    inventory = {"workspace-a/base/doc/a.txt", "workspace-b/base/doc/b.txt"}
+    list_paths = AsyncMock(side_effect=[inventory, RuntimeError("synthetic inventory error")])
+    monkeypatch.setattr(module.document_repo, "all_storage_paths", list_paths)
+    storage.reconcile_orphans.return_value = ["workspace-c/base/doc/c.txt"]
+    assert await service.reconcile_orphans() == ["workspace-c/base/doc/c.txt"]
+    with pytest.raises(RuntimeError, match="synthetic inventory error"):
+        await service.reconcile_orphans()
+    assert list_paths.await_count == 2
+    assert all(call.args == (db,) for call in list_paths.await_args_list)
+    storage.reconcile_orphans.assert_awaited_once_with(inventory)
+    storage.delete.assert_not_awaited()

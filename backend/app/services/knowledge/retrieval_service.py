@@ -6,7 +6,6 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,16 +21,14 @@ from app.core.exceptions import (
 from app.repositories import knowledge as knowledge_repo
 from app.repositories import knowledge_retrieval as retrieval_repo
 from app.services.knowledge.embedding import EmbeddingError, EmbeddingProvider
-from app.services.knowledge.embedding.provider import validate_embeddings
+from app.services.knowledge.embedding.provider import (
+    AsyncClosableEmbeddingProvider,
+    validate_embeddings,
+)
 from app.services.workspace.authorization import WorkspaceAuthorizationService
 from app.services.workspace.domain import WorkspacePermission
 
 logger = logging.getLogger(__name__)
-
-
-@runtime_checkable
-class AsyncClosableEmbeddingProvider(Protocol):
-    async def aclose(self) -> None: ...
 
 
 @dataclass(frozen=True)
