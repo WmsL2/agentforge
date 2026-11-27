@@ -9,6 +9,7 @@ from typing import TypedDict
 from fastapi import FastAPI
 from fastapi_pagination import add_pagination
 from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp
 
 from app import __version__
 from app.api.exception_handlers import register_exception_handlers
@@ -16,8 +17,9 @@ from app.api.router import api_router
 from app.composition.tool_platform import open_tool_platform
 from app.core.config import settings
 from app.db.session import close_db
-from app.core.logging import setup_logging
+from app.core.logging import setup_api_logging
 from app.core.middleware import RequestIDMiddleware
+from app.core.metrics import OperationalMetrics
 from app.clients.redis import RedisClient
 from app.services.tool import ToolRegistry
 
@@ -53,6 +55,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[LifespanState, None]:
 
 
 SHOW_DOCS_ENVIRONMENTS = ("local", "staging", "development")
+
+
+class ObservedFastAPI(FastAPI):
+    """Observe outside ServerErrorMiddleware, including generated HTTP 500 bodies."""
+
+    def build_middleware_stack(self) -> ASGIApp:
+        return RequestIDMiddleware(
+            super().build_middleware_stack(),
+            self.state.operational_metrics,
+            metrics_path=f"{settings.API_V1_STR}/metrics",
+        )
 
 
 def create_app() -> FastAPI:
@@ -105,9 +118,9 @@ def create_app() -> FastAPI:
         },
     ]
 
-    setup_logging()
+    setup_api_logging()
 
-    app = FastAPI(
+    app = ObservedFastAPI(
         title=settings.PROJECT_NAME,
         summary="FastAPI application",
         description="""
@@ -144,7 +157,7 @@ Enterprise Agent Workflow Platform
         lifespan=lifespan,
     )
 
-    app.add_middleware(RequestIDMiddleware)
+    app.state.operational_metrics = OperationalMetrics()
 
     register_exception_handlers(app)
 

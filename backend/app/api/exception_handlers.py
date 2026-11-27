@@ -25,8 +25,8 @@ def _connection_meta(conn: HTTPConnection) -> dict[str, Any]:
     scope type so log filters can still distinguish the two.
     """
     return {
-        "path": conn.url.path,
         "method": getattr(conn, "method", None) or conn.scope.get("type", "unknown"),
+        "request_id": getattr(conn.state, "request_id", "-"),
     }
 
 
@@ -78,10 +78,12 @@ async def unhandled_exception_handler(
 ) -> JSONResponse | None:
     """Handle unexpected exceptions.
 
-    Logs the full exception but returns a generic error to the client
-    to avoid leaking sensitive information.
+    Logs only a bounded exception type and safe correlation metadata.
     """
-    logger.exception("Unhandled exception", extra=_connection_meta(request))
+    logger.error(
+        "Unhandled exception",
+        extra={**_connection_meta(request), "exception_type": type(exc).__name__[:80]},
+    )
 
     if _is_websocket(request):
         return None

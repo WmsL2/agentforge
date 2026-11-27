@@ -517,7 +517,7 @@ help:
 	@echo "  make docker-frontend-build Build frontend image only"
 	@echo ""
 	@echo "Production:"
-	@echo "  make prod                  Build/start production stack + migrate"
+	@echo "  make prod                  Validate/select local release, preflight settings, then gated startup (build separately)"
 	@echo "  make prod-down             Stop production stack"
 	@echo "  make prod-logs             Tail production logs"
 	@echo ""

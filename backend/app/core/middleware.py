@@ -1,30 +1,105 @@
 """Application middleware."""
 
+import asyncio
+import logging
+import re
+from time import perf_counter
 from typing import ClassVar
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.logging import request_id_context
+from app.core.metrics import OperationalMetrics
+
+logger = logging.getLogger(__name__)
+HTTP_METHODS = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+)
 
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Middleware that adds a unique request ID to each request.
+class RequestIDMiddleware:
+    """Outer HTTP observer; no buffering, WebSocket changes or untrusted URL logs."""
 
-    The request ID is taken from the X-Request-ID header if present,
-    otherwise a new UUID is generated. The ID is added to the response
-    headers and is available in request.state.request_id.
-    """
+    def __init__(
+        self,
+        app: ASGIApp,
+        metrics: OperationalMetrics | None = None,
+        metrics_path: str = "/api/v1/metrics",
+    ) -> None:
+        self.app, self.metrics, self.metrics_path = app, metrics, metrics_path
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Add request ID to request state and response headers."""
-        request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        request.state.request_id = request_id
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        values = [v for k, v in scope.get("headers", []) if k.lower() == b"x-request-id"]
+        value = values[0] if len(values) == 1 else b""
+        request_id = (
+            value.decode("ascii")
+            if re.fullmatch(rb"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value)
+            else str(uuid4())
+        )
+        scope.setdefault("state", {})["request_id"] = request_id
+        token = request_id_context.set(request_id)
+        start, status, finished, cancelled = perf_counter(), None, None, False
 
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        async def observed_send(message: Message) -> None:
+            nonlocal status, finished
+            if message["type"] == "http.response.start":
+                status = message["status"]
+                message = dict(message)
+                message["headers"] = [
+                    (k, v) for k, v in message.get("headers", []) if k.lower() != b"x-request-id"
+                ] + [(b"x-request-id", request_id.encode("ascii"))]
+            await send(message)
+            if message["type"] == "http.response.body" and not message.get("more_body", False):
+                finished = perf_counter()
+
+        try:
+            await self.app(scope, receive, observed_send)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        finally:
+            try:
+                duration = (finished if finished is not None else perf_counter()) - start
+                if (
+                    self.metrics is not None
+                    and scope.get("path", "").rstrip("/") != self.metrics_path
+                ):
+                    self.metrics.observe(
+                        status, duration, completed=finished is not None, cancelled=cancelled
+                    )
+                method = scope.get("method", "")
+                method = method if method in HTTP_METHODS else "OTHER"
+                duration_ms = round(max(0.0, duration) * 1000, 3)
+                outcome = (
+                    "completed"
+                    if finished is not None
+                    else "cancelled"
+                    if cancelled
+                    else "incomplete"
+                )
+                logger.info(
+                    "http_request_completed method=%s status_code=%s duration_ms=%.3f outcome=%s",
+                    method,
+                    status,
+                    duration_ms,
+                    outcome,
+                    extra={
+                        "request_id": request_id,
+                        "method": method,
+                        "status_code": status,
+                        "duration_ms": duration_ms,
+                        "outcome": outcome,
+                    },
+                )
+            finally:
+                request_id_context.reset(token)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

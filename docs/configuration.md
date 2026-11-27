@@ -236,7 +236,7 @@ API_BIND_HOST/API_HOST_PORT, FRONTEND_BIND_HOST/FRONTEND_HOST_PORT and
 FLOWER_BIND_HOST/FLOWER_HOST_PORT default to loopback. Public frontend build args
 remain separate from private backend runtime settings and COOKIE_SECURE stays
 true. Runtime image/gate/egress/persistence proof is NOT RUN. TLS is A6; role
-health/metrics A4, backup/restore A5 and full-stack staging A7.
+health/metrics contracts in Atomic 4, backup/restore A5 and portfolio integration/demo A7.
 
 ## Existing deployment-related fields
 
@@ -260,3 +260,29 @@ Before deploying to production, ensure these variables are properly set:
 7. `REDIS_PASSWORD` -- Set a strong password
 8. `LLM_API_KEY` -- Required when Platform Runtime capability is configured for use
 9. `LLM_PROVIDER`, `LLM_BASE_URL`, `AI_MODEL`, and `AI_TEMPERATURE` -- Match the configured compatible provider
+
+
+## Operational health, correlation and metrics
+
+No new credential or monitoring-service dependency is introduced. `API_KEY` and
+`API_KEY_HEADER` protect backend `/api/v1/metrics` through the existing API-key
+dependency; keep the key server-side. The frontend has no metrics proxy. The JSON
+snapshot is per API process/application instance, volatile and unaggregated;
+production Uvicorn workers have separate counters.
+
+Readiness uses the existing database session factory without request-session
+commit, SELECT 1 and Redis ping with finite time budgets. Only these dependencies
+are critical; missing optional LLM/Embedding keys or disabled Knowledge Agent do
+not fail critical API readiness. `LLM_API_KEY` is the Platform Runtime capability
+input; legacy `OPENAI_API_KEY` is not its fallback. Provider and broker settings
+only establish configured/not_configured status, never connectivity. No remote
+model client or Celery ping is initialized by public readiness.
+
+Request IDs are validated untrusted correlation metadata, not auth. Request-local
+logging context is reset at the HTTP lifecycle boundary; cross-task Celery
+correlation is outside this Atomic. Logs use bounded handler/formatter redaction
+and omit arbitrary exception details; configuration values must still never be
+logged deliberately. See [deployment observability contracts](deploy.md#operational-observability-contracts-v013-atomic-4)
+and the [Atomic 4 report](v0.13/atomic4-operational-observability.md) for exact codes,
+coverage and runtime limitations. Cookie security and all Atomic 2 production
+configuration guards remain unchanged.
