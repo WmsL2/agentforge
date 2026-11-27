@@ -1,5 +1,6 @@
 """Per-task isolated composition for knowledge indexing."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -12,26 +13,29 @@ from app.services.knowledge.chunking import ChunkingConfig
 from app.services.knowledge.embedding import OpenAIEmbeddingProvider
 from app.services.knowledge.indexing_service import KnowledgeIndexExecutor
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def open_knowledge_index_worker(
     worker_settings: Settings = settings,
 ) -> AsyncIterator[KnowledgeIndexExecutor]:
     engine = create_async_engine(worker_settings.DATABASE_URL, poolclass=NullPool)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    def provider_factory() -> OpenAIEmbeddingProvider:
-        return OpenAIEmbeddingProvider(
-            api_key=worker_settings.EMBEDDING_API_KEY,
-            model=worker_settings.EMBEDDING_MODEL,
-            dimensions=worker_settings.EMBEDDING_DIMENSIONS,
-            base_url=worker_settings.EMBEDDING_BASE_URL,
-            batch_size=worker_settings.EMBEDDING_BATCH_SIZE,
-            timeout_seconds=worker_settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
-            max_retries=worker_settings.EMBEDDING_MAX_RETRIES,
-        )
-
+    failed = False
     try:
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        def provider_factory() -> OpenAIEmbeddingProvider:
+            return OpenAIEmbeddingProvider(
+                api_key=worker_settings.EMBEDDING_API_KEY,
+                model=worker_settings.EMBEDDING_MODEL,
+                dimensions=worker_settings.EMBEDDING_DIMENSIONS,
+                base_url=worker_settings.EMBEDDING_BASE_URL,
+                batch_size=worker_settings.EMBEDDING_BATCH_SIZE,
+                timeout_seconds=worker_settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+                max_retries=worker_settings.EMBEDDING_MAX_RETRIES,
+            )
+
         yield KnowledgeIndexExecutor(
             session_factory,
             provider_factory,
@@ -42,5 +46,13 @@ async def open_knowledge_index_worker(
             ),
             lease_duration=timedelta(seconds=worker_settings.KNOWLEDGE_INDEX_LEASE_SECONDS),
         )
+    except BaseException:
+        failed = True
+        raise
     finally:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        except BaseException:
+            logger.error("COMPOSITION_ENGINE_DISPOSE_FAILED")
+            if not failed:
+                raise

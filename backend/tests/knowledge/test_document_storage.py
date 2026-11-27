@@ -48,12 +48,16 @@ async def test_traversal_and_symlink_escape_are_rejected(
 
 
 @pytest.mark.anyio
-async def test_reconciliation_removes_only_unreferenced_regular_files(tmp_path: Path) -> None:
+async def test_reconciliation_previews_unreferenced_files_without_mutation(tmp_path: Path) -> None:
     storage = KnowledgeDocumentStorage(tmp_path)
     live, orphan = "w/k/d/live.txt", "w/k/x/orphan.txt"
     await storage.save(live, b"live")
     await storage.save(orphan, b"orphan")
-    assert await storage.reconcile_orphans({live}) == 1
+    inflight = "w/k/a/inflight.txt"
+    await storage.save(inflight, b"in-flight")
+    assert await storage.reconcile_orphans({live}) == [inflight, orphan]
+    assert (await storage.resolve_for_download(inflight)).read_bytes() == b"in-flight"
+    assert (await storage.resolve_for_download(orphan)).read_bytes() == b"orphan"
     assert (await storage.resolve_for_download(live)).read_bytes() == b"live"
 
 
@@ -77,3 +81,24 @@ async def test_reconciliation_rejects_symlinked_root(
 def test_filename_is_basename_sanitized_and_bounded() -> None:
     assert KnowledgeDocumentStorage.sanitize_filename("../../evil name?.txt") == "evil name_.txt"
     assert len(KnowledgeDocumentStorage.sanitize_filename("x" * 300 + ".txt")) <= 255
+
+
+@pytest.mark.anyio
+async def test_preview_skips_link_entries_and_does_not_create_root(tmp_path, monkeypatch):
+    storage = KnowledgeDocumentStorage(tmp_path)
+    root = tmp_path / "knowledge"
+    assert await storage.reconcile_orphans(set()) == []
+    assert not root.exists()
+    await storage.save("candidate.txt", b"review")
+    linked_dir = root / "linked-dir"
+    linked_dir.mkdir()
+    hidden = linked_dir / "outside.txt"
+    hidden.write_bytes(b"untouched")
+    linked_file = root / "linked-file.txt"
+    linked_file.write_bytes(b"untouched")
+    original = Path.is_symlink
+    monkeypatch.setattr(
+        Path, "is_symlink", lambda path: path in {linked_dir, linked_file} or original(path)
+    )
+    assert await storage.reconcile_orphans(set()) == ["candidate.txt"]
+    assert hidden.read_bytes() == linked_file.read_bytes() == b"untouched"

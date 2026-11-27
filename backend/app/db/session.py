@@ -76,24 +76,38 @@ async def get_worker_db_context() -> AsyncGenerator[AsyncSession, None]:
         echo=False,
         poolclass=NullPool,
     )
-    factory = async_sessionmaker(
-        worker_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    async with factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            logger.exception("DB session error, rolling back")
+    transaction_error: BaseException | None = None
+    primary: BaseException | None = None
+    try:
+        factory = async_sessionmaker(
+            worker_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        async with factory() as session:
             try:
-                await session.rollback()
-            except Exception:
-                logger.exception("DB session rollback failed")
-            raise
-        finally:
+                yield session
+                await session.commit()
+            except BaseException as error:
+                transaction_error = error
+                try:
+                    await session.rollback()
+                except BaseException:
+                    logger.error("WORKER_DB_ROLLBACK_FAILED")
+                raise
+    except BaseException as error:
+        primary = transaction_error if transaction_error is not None else error
+        if primary is not error:
+            logger.error("WORKER_DB_SESSION_EXIT_FAILED")
+            raise primary from None
+        raise
+    finally:
+        try:
             await worker_engine.dispose()
+        except BaseException:
+            logger.error("WORKER_DB_DISPOSE_FAILED")
+            if primary is None:
+                raise
 
 
 async def close_db() -> None:

@@ -113,8 +113,9 @@ mount destinations. API/Worker share the same private-media volume and backend
 non-root user identity; fresh volume ownership must be verified at runtime.
 Existing volumes under older project identities are NOT silently adopted,
 renamed/copied/deleted. Any data migration requires separate authorization.
-Redis volume presence is not a zero-data-loss or backup guarantee. Backup/restore
-and private-media consistency drills remain Atomic 5. Indexing consumes DB parsed
+Redis volume presence is not a zero-data-loss or backup guarantee. The
+[paired recovery runbook](recovery.md) records backup/restore prerequisites and
+resume criteria. The paired restore drill remains NOT RUN. Indexing consumes DB parsed
 content; shared originals do not imply a file reread for indexing.
 
 ## Verification and recovery boundaries

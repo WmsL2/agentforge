@@ -1,5 +1,6 @@
 """Per-task composition root for Celery workflow execution."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -34,6 +35,8 @@ from app.services.workflow.execution.executor.agent.knowledge import (
     WorkflowAgentKnowledgeComposition,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def open_workflow_worker(
@@ -45,12 +48,14 @@ async def open_workflow_worker(
         echo=False,
         poolclass=NullPool,
     )
-    session_factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
+    failed = False
     try:
+        session_factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
         observer = SQLAlchemyWorkflowExecutionObserver(session_factory)
 
         def provider_factory() -> OpenAIEmbeddingProvider:
@@ -109,5 +114,13 @@ async def open_workflow_worker(
                 workflow_engine,
                 lease_duration=timedelta(seconds=worker_settings.WORKFLOW_BACKGROUND_LEASE_SECONDS),
             )
+    except BaseException:
+        failed = True
+        raise
     finally:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        except BaseException:
+            logger.error("COMPOSITION_ENGINE_DISPOSE_FAILED")
+            if not failed:
+                raise

@@ -23,11 +23,16 @@ from app.services.knowledge.chunking import (
     chunk_document,
 )
 from app.services.knowledge.embedding import EmbeddingError, EmbeddingProvider
-from app.services.knowledge.embedding.provider import validate_embeddings
+from app.services.knowledge.embedding.provider import (
+    AsyncClosableEmbeddingProvider,
+    validate_embeddings,
+)
 from app.services.workspace.authorization import WorkspaceAuthorizationService
 from app.services.workspace.domain import WorkspacePermission
 
 logger = logging.getLogger(__name__)
+_PROVIDER_CLOSE_TIMEOUT_SECONDS = 2.0
+_HEARTBEAT_STOP_GRACE_SECONDS = 1.0
 
 
 class KnowledgeIndexDispatcher(Protocol):
@@ -166,6 +171,7 @@ class KnowledgeIndexExecutor:
             )
         if lease is None:
             return IndexExecutionResult(job_id, "not_claimed")
+        provider: EmbeddingProvider | None = None
         try:
             async with self._session_factory() as db, db.begin():
                 source = await index_repo.load_claimed_source(db, lease)
@@ -210,6 +216,19 @@ class KnowledgeIndexExecutor:
                 extra={"knowledge_index_job_id": str(job_id)},
             )
             return await self._fail(lease, "KNOWLEDGE_INDEX_INTERNAL_ERROR")
+        finally:
+            if isinstance(provider, AsyncClosableEmbeddingProvider):
+                task = asyncio.current_task()
+                cancelling = task.cancelling() if task is not None else 0
+                try:
+                    async with asyncio.timeout(_PROVIDER_CLOSE_TIMEOUT_SECONDS):
+                        await provider.aclose()
+                except asyncio.CancelledError:
+                    if task is not None and task.cancelling() > cancelling:
+                        raise
+                    logger.warning("KNOWLEDGE_INDEX_PROVIDER_CLOSE_CANCELLED")
+                except Exception:
+                    logger.warning("KNOWLEDGE_INDEX_PROVIDER_CLOSE_FAILED")
 
     async def _embed_with_heartbeat(
         self, lease: index_repo.IndexLease, provider: EmbeddingProvider, texts: list[str]
@@ -220,7 +239,14 @@ class KnowledgeIndexExecutor:
             return await provider.embed_documents(texts)
         finally:
             stop.set()
-            await heartbeat
+            try:
+                await asyncio.wait({heartbeat}, timeout=_HEARTBEAT_STOP_GRACE_SECONDS)
+            finally:
+                if not heartbeat.done():
+                    heartbeat.cancel()
+                (result,) = await asyncio.gather(heartbeat, return_exceptions=True)
+                if isinstance(result, Exception):
+                    logger.warning("KNOWLEDGE_INDEX_HEARTBEAT_STOP_FAILED")
 
     async def _heartbeat_lease(self, lease: index_repo.IndexLease, stop: asyncio.Event) -> None:
         interval = max(min(self._lease_duration.total_seconds() / 3, 60.0), 1.0)

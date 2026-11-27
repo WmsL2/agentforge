@@ -91,20 +91,30 @@ class KnowledgeDocumentService:
                 storage_path=storage_path,
                 parsed=parsed,
             )
-            # This endpoint owns its transaction so a commit failure can compensate
-            # the already-written private file before a success response is emitted.
-            await self._db.commit()
-            return document
         except BaseException:
-            await self._rollback_safely()
-            try:
-                await self._storage.delete(storage_path)
-            except Exception:
-                logger.error(
-                    "Document upload compensation failed; orphan reconciliation required",
-                    extra={"document_id": str(document_id)},
+            if await self._rollback_safely():
+                try:
+                    await self._storage.delete(storage_path)
+                except (Exception, asyncio.CancelledError):
+                    logger.error(
+                        "DOCUMENT_UPLOAD_COMPENSATION_FAILED",
+                        extra={"document_id": str(document_id)},
+                    )
+            else:
+                logger.warning(
+                    "DOCUMENT_UPLOAD_FILE_RETAINED", extra={"document_id": str(document_id)}
                 )
             raise
+        try:
+            await self._db.commit()
+        except BaseException:
+            # Rollback cannot disprove a commit whose acknowledgement was lost.
+            logger.warning(
+                "DOCUMENT_UPLOAD_COMMIT_UNCERTAIN", extra={"document_id": str(document_id)}
+            )
+            await self._rollback_safely()
+            raise
+        return document
 
     async def list_documents(
         self,
@@ -165,20 +175,24 @@ class KnowledgeDocumentService:
         await self._require_knowledge_base(workspace_id, knowledge_base_id)
         document = await self._get_or_404(workspace_id, knowledge_base_id, document_id)
         storage_path = document.storage_path
-        await document_repo.delete(self._db, document=document)
-        await self._db.commit()
+        try:
+            await document_repo.delete(self._db, document=document)
+            await self._db.commit()
+        except BaseException:
+            await self._rollback_safely()
+            raise
         try:
             await self._storage.delete(storage_path)
         except Exception:
             # The row is already gone, so the private file cannot be downloaded.
-            # A later reconciliation pass removes this crash/failure residue.
+            # A later maintenance preview can identify this residue.
             logger.error(
                 "Document file cleanup failed; orphan reconciliation required",
                 extra={"document_id": str(document_id)},
             )
 
-    async def reconcile_orphans(self) -> int:
-        """Remove files with no database row; intended for maintenance/startup jobs."""
+    async def reconcile_orphans(self) -> list[str]:
+        """Preview candidates using the complete inventory; query failures propagate."""
         return await self._storage.reconcile_orphans(
             await document_repo.all_storage_paths(self._db)
         )
@@ -210,11 +224,13 @@ class KnowledgeDocumentService:
             raise NotFoundError(message="Knowledge document not found")
         return document
 
-    async def _rollback_safely(self) -> None:
+    async def _rollback_safely(self) -> bool:
         try:
             await self._db.rollback()
-        except Exception:
-            logger.exception("Document transaction rollback failed")
+        except (Exception, asyncio.CancelledError):
+            logger.error("DOCUMENT_TRANSACTION_ROLLBACK_FAILED")
+            return False
+        return True
 
     async def _parse_bounded(self, *, data: bytes, filename: str, mime_type: str):
         """Keep timed-out parser threads counted until they really finish."""

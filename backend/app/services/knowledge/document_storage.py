@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import stat
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
@@ -45,8 +46,9 @@ class KnowledgeDocumentStorage:
     async def resolve_for_download(self, relative_path: str) -> Path:
         return await asyncio.to_thread(self._resolve_existing, relative_path)
 
-    async def reconcile_orphans(self, live_paths: set[str]) -> int:
-        return await asyncio.to_thread(self._reconcile_sync, live_paths)
+    async def reconcile_orphans(self, live_paths: set[str]) -> list[str]:
+        """Return relative candidates for review. This operation never mutates storage."""
+        return await asyncio.to_thread(self._preview_orphans, set(live_paths))
 
     def _safe_target(self, relative_path: str) -> Path:
         pure = PurePosixPath(relative_path)
@@ -112,18 +114,33 @@ class KnowledgeDocumentStorage:
             raise InternalError(message="Unsafe document storage path")
         return resolved
 
-    def _reconcile_sync(self, live_paths: set[str]) -> int:
-        if not self._root.exists():
-            return 0
-        root = self._ensure_safe_root()
+    def _preview_orphans(self, live_paths: set[str]) -> list[str]:
+        root = self._root
+        if root.is_symlink() or root.resolve() != root:
+            raise InternalError(message="Unsafe document storage root")
+        if not root.exists():
+            return []
+        if not root.is_dir():
+            raise InternalError(message="Unsafe document storage root")
         normalized = {PurePosixPath(path).as_posix() for path in live_paths}
-        removed = 0
-        for candidate in root.rglob("*"):
-            if candidate.is_symlink():
+        candidates: list[str] = []
+        directories = [root]
+        while directories:
+            directory = directories.pop()
+            if directory.resolve() != directory or directory.is_symlink():
                 continue
-            if candidate.is_file():
-                relative = candidate.relative_to(root).as_posix()
-                if relative not in normalized:
-                    candidate.unlink()
-                    removed += 1
-        return removed
+            for entry in directory.iterdir():
+                try:
+                    mode = entry.lstat().st_mode
+                    if entry.is_symlink() or entry.resolve() != entry:
+                        continue
+                except FileNotFoundError:
+                    # A writer may remove a file while a preview is in flight.
+                    continue
+                if stat.S_ISDIR(mode):
+                    directories.append(entry)
+                elif stat.S_ISREG(mode):
+                    relative = entry.relative_to(root).as_posix()
+                    if relative not in normalized:
+                        candidates.append(relative)
+        return sorted(candidates)
