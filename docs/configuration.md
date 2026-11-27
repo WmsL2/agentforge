@@ -207,11 +207,36 @@ requires both LLM and Embedding configuration, as does full-platform staging.
 Legacy OPENAI_API_KEY cannot substitute for LLM_API_KEY. Configuration is not
 connectivity; unavailable capabilities must not be reported as operational.
 
-All production Make commands and backend role env_file inputs use backend/.env.prod.
-Shared mappings propagate the same Compose-resolved connection credentials across
-API, Worker, Beat, Flower and infrastructure despite shell/env_file precedence.
-All roles enforce production and derive canonical Celery URLs; migration exec in
-API inherits these settings. No production runtime verification is implied.
+Production Make uses mandatory PROD_PROJECT=agentforge-prod-<lowercase-id> and
+RELEASE_ID, plus explicit PROD_ENV_FILE (default backend/.env.prod). Private
+.env.prod.<id> variants are supported; development .env/public examples/symlinks
+are rejected. All operations use the same absolute file and --project-name;
+Compose >=2.33.1 is checked before deployment changes. Direct run-prod retains
+Atomic 2's separate explicit production-file selection.
+
+API/Worker/Beat/Flower/migrate share one project/release image and production
+mapping. Explicit PYTHON_IMAGE/UV_IMAGE/BUN_IMAGE/POSTGRES_IMAGE/REDIS_IMAGE are
+required; use verified compatible digests. Build-only prepares artifacts; prod
+verifies images, rejects running migration, executes safe Settings-only preflight
+using migrate with --rm/--no-deps/--pull never/-T, then stops scoped business roles,
+removes old stopped migrate, and
+uses no-build/no-pull startup gated on migration success. Normal down preserves
+volumes. See [deployment guide](deploy.md) for authoritative lifecycle/limits.
+
+Images use agentforge/<project>-backend:<release> and
+agentforge/<project>-frontend:<release>, separating project repository from release
+tag to prevent concatenation collisions. Configuration preflight reuses the same
+private input/image/environment, with no media mount or Alembic/connection. Failure
+must not stop existing roles. Compose run may create project networks, which need
+explicit authorization despite --no-deps; it is not connectivity proof.
+
+The internal network/three named volumes are project scoped. Only API/Worker
+also attach to provider-egress with gateway priority 1. No DB/Redis host ports;
+API_BIND_HOST/API_HOST_PORT, FRONTEND_BIND_HOST/FRONTEND_HOST_PORT and
+FLOWER_BIND_HOST/FLOWER_HOST_PORT default to loopback. Public frontend build args
+remain separate from private backend runtime settings and COOKIE_SECURE stays
+true. Runtime image/gate/egress/persistence proof is NOT RUN. TLS is A6; role
+health/metrics A4, backup/restore A5 and full-stack staging A7.
 
 ## Existing deployment-related fields
 

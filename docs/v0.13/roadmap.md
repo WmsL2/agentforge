@@ -110,3 +110,101 @@ Keep evidence layers distinct: unit/integration; browser HTTP mock integration; 
 Sequence: A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8. Neighboring Atomics coordinate interfaces; later evidence may expose a targeted correction to an earlier implementation under an explicitly authorized scope. A3 network wiring is finalized against A6 policy before A7. A4 probe semantics depend on A3 image identity. A5 and A6 jointly protect restore artifacts/private storage. None of these dependencies permits starting future work in Atomic 1.
 
 Every finding's primary remediation owner and expected evidence appear in the audit table. A7 demonstrates the integrated result; A8 consolidates review/release evidence. Operational commands and checklists are plans until actually authorized and executed. Current status: two local documentation additions only; all runtime checks NOT RUN; no new CI, deployment, Git mutation or later Atomic implementation.
+
+## Maintainer-approved acceptance amendment — 2026-11-26
+
+### Current positioning and precedence
+
+**AgentForge v0.13 — Engineering Hardening** is the current maintainer-approved
+positioning. The project serves job-application portfolios, Agent engineering
+learning, technical demonstrations and interview preparation. Actual commercial
+production deployment is not a project or release prerequisite.
+
+The original 2026-11-24 roadmap above, its audit findings, owner assignments and
+original acceptance requirements remain unchanged as historical context. This
+dated amendment supersedes conflicting acceptance requirements in those historical
+Atomic definitions, dependency notes and handoff gates. In particular, production
+staging, real production deployment and a full production restore drill no longer
+block merge/release by default. Their missing evidence remains explicit; it is
+not relabeled PASS. Existing architecture, automated regressions, security checks,
+durability semantics and authorization boundaries remain mandatory.
+
+Atomic 1 and Atomic 2 are COMPLETE by the supplied maintainer status. Atomic 3 has
+completed local implementation/review fixes and preserved historical offline
+evidence, but remains pending Final Source Review and integration. No later Atomic
+implementation starts in this documentation task.
+
+### Revised Atomic 1 — Architecture Audit
+
+- **Status:** COMPLETE; preserve the existing audit evidence, findings and classifications.
+- **Objective and scope:** retain the evidence-grounded architecture baseline and finding ownership without rewriting the historical audit or redesigning the platform core.
+- **Acceptance:** preserve the accepted audit and its limitations; this amendment does not rerun the audit or fabricate new findings/runtime evidence.
+
+### Revised Atomic 2 — Configuration & Secrets
+
+- **Status:** COMPLETE; preserve the existing implementation, review/security evidence and configuration boundaries.
+- **Objective and scope:** retain capability-aware Settings validation, synthetic/offline tests, safe errors and URL construction, and role-consistent secret/configuration contracts.
+- **Acceptance:** existing regression and security checks remain intact. Configured Provider settings still do not prove connectivity. No credential reads, rotations or implementation changes are authorized here.
+
+### Revised Atomic 3 — Deployment Infrastructure
+
+- **Status:** local implementation and review fixes retained; not COMPLETE.
+- **Objective and scope:** preserve shared versioned backend artifacts, migration-success dependencies, project/resource isolation, repository/tag partition (RF-01) and Settings preflight before business stop (RF-02).
+- **Mandatory acceptance:** exact source/scope review, existing offline regression evidence and security checks, Final Source Review, PR CI, maintainer-approved merge, Main CI and local synchronization. Historical focused 210/broader 389 passed results are retained, not rerun by this task.
+- **Evidence disposition:** RV-Stage 1 and effective Compose validation PASS; 1,072 source-export files verified; RV-Stage 2 BLOCKED AT BUILD; Build Recovery 1 BLOCKED; actual deployment NOT RUN. Observed HTTPS/TLS/registry failures establish no conclusive root cause or source defect. Further local registry troubleshooting stops by maintainer decision.
+- **Deferred acceptance:** actual production Compose deployment is optional/deferred, not a mandatory merge gate. Full production build remains BLOCKED; actual backend image-ID equality, migration success/failure gate, update behavior, dual-project isolation, production-Compose PostgreSQL/Redis authentication, deterministic Provider connectivity, volume persistence and production frontend runtime remain NOT RUN.
+- **Evidence boundary:** retain section 19 of `docs/v0.13/atomic3-deployment-infrastructure.md`, including the missing Stage 2 historical dotenv checksum. This amendment grants no further runtime/Git execution authority.
+
+### Revised Atomic 4 — Operational Observability
+
+- **Objective:** truthful, role-appropriate health contracts and safe useful diagnostics for the existing system.
+- **Reuse and scope:** current health endpoints, request correlation, structured diagnostics, sensitive-information redaction and minimal useful protected operational metrics. Preserve distinctions between process response, dependency readiness, Worker responsiveness, configured capabilities and demonstrated connectivity.
+- **Verification and acceptance:** prefer deterministic offline and existing integration tests for status/timeout/failure, redaction, correlation and bounded metric behavior. Report actual coverage and unexecuted role checks separately; no paid Provider probes by default.
+- **Boundary/dependencies:** reuse A2 safe configuration/errors and A3 source contracts; an unavailable production build is not proof of actual image identity. A6 governs diagnostic exposure. No separate monitoring-platform deployment is required; actual isolated runtime checks need explicit authorization.
+
+### Revised Atomic 5 — Reliability & Recovery
+
+- **Objective:** harden and verify existing workflow/index recovery and graceful resource shutdown without replacing the durability architecture.
+- **Reuse and scope:** checkpoint/resume; claim, lease and fencing semantics; duplicate-delivery handling; workflow recovery; knowledge indexing recovery; task-local engine/client disposal; targeted failure injection; private-media consistency and existing safe reconciliation boundaries. Preserve distinct workflow/index heartbeat and generation contracts, and external-effect limitations.
+- **Verification and acceptance:** prioritize deterministic tests and existing integration evidence for committed-state recovery, stale-write rejection, duplicate handling, checkpoint resume, failed reindex preserving the old generation, shutdown and private-media consistency. Do not claim real PostgreSQL concurrency/durability solely from mocks.
+- **Documentation and boundary:** provide clear backup/restore instructions and limitations, including DB/media consistency and any unmeasured RPO/RTO. A full production disaster-recovery drill is no longer mandatory; unexecuted restores stay NOT RUN. Reuse A2–A4 contracts/evidence, with A6 access protection. No new recovery framework, production interruption or media deletion is implied.
+
+### Revised Atomic 6 — Security Hardening
+
+- **Objective:** preserve authentication/RBAC correctness and protect configuration, logs, private data and resource boundaries.
+- **Reuse and scope:** existing auth/RBAC, safe errors and redaction, private-media access/path boundaries, dockerignore/build-context protection, input/resource bounds, dependency/security checks, protected health/metrics and existing bounded Provider safeguards. Preserve secure-cookie defaults; do not weaken controls to obtain a demo.
+- **Verification and acceptance:** retain deterministic/offline and relevant existing integration security cases, actual dependency findings/dispositions and explicit verification limits. A passing CI job alone does not establish that all vulnerabilities or runtime exposures are resolved.
+- **Deployment boundary/dependencies:** document TLS/proxy/Cookie/CORS and deployment security limitations accurately, using A2–A5 contracts. Public DNS, real certificates, external reverse-proxy deployment and production firewall provisioning are not required. No networking changes, public exposure, security bypass or commercial calls are authorized by the roadmap.
+
+### Revised Atomic 7 — Full-stack Integration & Demo
+
+- **Objective:** portfolio-oriented functional integration and demonstration replaces mandatory production staging.
+- **Demonstrable existing capabilities:** authentication; Workspace/RBAC; workflow creation/execution; Agent Runtime; Tool Platform/MCP; Durable Execution; HITL approval/resume; Execution Trace; background execution; knowledge document upload/index/search; RAG/knowledge-assisted Agent workflows; and frontend interaction.
+- **Reuse and verification:** use existing development infrastructure, deterministic fixtures and integration tests after the applicable A2–A6 work/reviews. A real local demonstration is desirable where the environment permits. Record artifact/config identities and run/job/scenario evidence appropriate to the layer actually tested, without exposing credentials.
+- **Acceptance:** demonstrate supported capabilities with truthful scenario-level PASS/FAIL/BLOCKED/NOT RUN reporting, access-denial/recovery coverage where applicable and clear demo instructions. Browser HTTP mocks are not real connected workflows; backend-only E2E is not connected browser proof. Real workflow claims must follow actual operations through their dependencies.
+- **Optional work and authorization:** production-style deployment, commercial Provider connectivity and previously blocked runtime checks remain optional, subject to explicit authorization/environment availability. A production restore drill is not a prerequisite. Resource lifecycle, private-data boundaries and any commercial budget require explicit scope; reuse infrastructure only when authorized.
+
+### Revised Atomic 8 — Integration & Release
+
+- **Objective:** integrate reviewed engineering hardening into a maintainer-controlled release with accurate evidence and limitations.
+- **Mandatory scope/acceptance:** Final Source Review; required regressions; existing CI/security gates; accurate architecture/configuration/security/recovery documentation; demonstration instructions; release notes; version consistency; explicit unresolved evidence/limitations; and maintainer-controlled release publication.
+- **Dependencies and evidence:** accept A1–A7 work under the revised criteria; resolve or explicitly disposition findings under maintainer review. Preserve the source-review → PR CI → approved merge → Main CI → local synchronization sequence and inspect actual results when authorized. Historical CI/tests cannot replace required new gates. Deferred production-runtime/restore evidence is not a default release blocker, and retains its actual status.
+- **Release boundary:** actual commercial production deployment is not a release prerequisite. Do not claim production-certified or fully production-validated status. Proposed final title: **AgentForge v0.13.0 - Engineering Hardening**. Version metadata is unchanged in this documentation task; any later version alignment, tag or Release needs its own authorization.
+
+### Shared amendment boundaries and current handoff
+
+Retain the original architectural non-goals, finding provenance and evidence-layer
+distinctions. No architecture redesign, test weakening, skipped-check laundering or
+security-gate bypass follows from the portfolio objective. Offline tests, browser
+mocks, real backend PostgreSQL/Redis/Celery E2E, real connected demonstrations,
+production Compose runtime, commercial Provider smoke and restore drills must be
+reported separately. Optional production work still requires explicit permission;
+this amendment does not reopen the blocked runtime plan.
+
+Only `docs/v0.13/atomic3-deployment-infrastructure.md` and this roadmap change in
+this task; all other existing implementation files remain byte-for-byte unchanged.
+No version metadata, runtime resources, CI configuration or tests are changed.
+No application regression rerun is required solely for this amendment; the 389-test
+result remains historical. Atomic 3 awaits source review/integration; Final Source
+Review PASS, runtime verification PASS and Atomic 3 COMPLETE are not declared.
+Await ChatGPT Closeout Report Review.

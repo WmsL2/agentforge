@@ -161,21 +161,48 @@ docker-clean:
 
 # === Production =============================================================
 
-prod:
-	@test -f backend/.env.prod || (echo "❌ backend/.env.prod missing — prepare private production configuration from backend/.env.prod.example" && exit 1)
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml up -d --build
-	@echo "▶ Waiting before applying migrations..."
-	@sleep 5
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml exec -T app agentforge db upgrade
-	@echo "✅ Production stack started. Configure external Nginx with nginx/nginx.conf."
+# Explicit identities are Make inputs, exported into Compose interpolation.
+PROD_PROJECT ?=
+RELEASE_ID ?=
+PROD_ENV_FILE ?= backend/.env.prod
+PROD_DOCKER ?= docker
+export PROD_PROJECT RELEASE_ID PROD_ENV_FILE PROD_DOCKER
+PROD_COMPOSE = "$$PROD_DOCKER" compose --project-name "$$PROD_PROJECT" --env-file "$$PROD_ENV_FILE" -f docker-compose.prod.yml
 
+# POSIX shell + GNU Make; one serialized maintainer operation at a time.
+# Never expand unvalidated identity values as shell source.
+define _prod_context
+set -eu; \
+printf '%s' "$$PROD_PROJECT" | LC_ALL=C grep -Eq '^agentforge-prod-[a-z0-9][a-z0-9-]{0,39}$$' || { echo 'Invalid PROD_PROJECT (agentforge-prod-<lowercase-id> required)' >&2; exit 2; }; \
+printf '%s' "$$RELEASE_ID" | LC_ALL=C grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$$' || { echo 'Invalid RELEASE_ID' >&2; exit 2; }; \
+case "$$(printf '%s' "$$RELEASE_ID" | tr '[:upper:]' '[:lower:]')" in dev|latest) echo 'Reserved RELEASE_ID' >&2; exit 2;; esac; \
+base=$$(basename -- "$$PROD_ENV_FILE"); \
+printf '%s' "$$base" | LC_ALL=C grep -Eq '^\.env\.prod(\.[A-Za-z0-9_-]+)*$$' || { echo 'Private production file name required' >&2; exit 2; }; \
+case "$$base" in *.example|*.example.*) echo 'Public example is not production input' >&2; exit 2;; esac; \
+test -f "$$PROD_ENV_FILE" && test -r "$$PROD_ENV_FILE" && test ! -L "$$PROD_ENV_FILE" || { echo 'Readable non-symlink production file required' >&2; exit 2; }; \
+PROD_ENV_FILE="$$(cd -- "$$(dirname -- "$$PROD_ENV_FILE")" && pwd -P)/$$base"; \
+if command -v cygpath >/dev/null 2>&1; then PROD_ENV_FILE=$$(cygpath -m "$$PROD_ENV_FILE"); fi; export PROD_ENV_FILE; \
+version=$$("$$PROD_DOCKER" compose version --short); \
+printf '%s' "$${version#v}" | awk -F. '{ if ($$1 !~ /^[0-9]+$$/ || $$2 !~ /^[0-9]+$$/ || $$3 !~ /^[0-9]+([+-].*)?$$/) exit 1; if ($$1>2 || ($$1==2 && ($$2>33 || ($$2==33 && $$3+0>=1)))) exit 0; exit 1; }' || { echo 'Docker Compose >= 2.33.1 required' >&2; exit 2; }; \
+$(PROD_COMPOSE) config --quiet;
+endef
+
+prod:
+	@$(_prod_context) \
+	images=$$($(PROD_COMPOSE) config --images); \
+	for image in $$images; do "$$PROD_DOCKER" image inspect -- "$$image" >/dev/null; done; \
+	running=$$($(PROD_COMPOSE) ps --status running --quiet migrate); \
+	test -z "$$running" || { echo 'Migration already running; serialize deployment' >&2; exit 2; }; \
+	$(PROD_COMPOSE) run --rm --no-deps --pull never -T migrate python -c "from app.core.config import settings; print('CONFIGURATION_VALID')"; \
+	$(PROD_COMPOSE) stop app celery_worker celery_beat flower frontend; \
+	$(PROD_COMPOSE) rm --force migrate; \
+	$(PROD_COMPOSE) up --detach --no-build --pull never
 
 prod-down:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml down
-
+	@$(_prod_context) $(PROD_COMPOSE) down
 
 prod-logs:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml logs -f
+	@$(_prod_context) $(PROD_COMPOSE) logs -f
 
 
 # === Setup ==================================================================
@@ -369,22 +396,16 @@ docker-frontend-build:
 
 # === Docker: production =====================================================
 
-docker-prod:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml up -d
-	@echo ""
-	@echo "✅ Production services started"
+docker-prod: prod
 
+docker-prod-down: prod-down
 
-docker-prod-down:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml down
-
-
-docker-prod-logs:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml logs -f
-
+docker-prod-logs: prod-logs
 
 docker-prod-build:
-	docker compose --env-file backend/.env.prod -f docker-compose.prod.yml build
+	@$(_prod_context) \
+	$(PROD_COMPOSE) pull db redis; \
+	$(PROD_COMPOSE) build --pull app frontend
 
 
 # === Docker: individual services ===========================================

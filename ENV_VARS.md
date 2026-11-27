@@ -102,18 +102,37 @@ Configuration validity never proves connectivity, availability or answer quality
 
 ## Production Compose contract
 
-All production Make targets use `--env-file backend/.env.prod`. Backend role
-service env_file inputs also use that file. Compose shell variables override
-interpolation-file values; a shared environment mapping explicitly supplies the
-same resolved DB/Redis/auth/Flower/CORS values to every backend role, and the
-same DB/Redis values to infrastructure. This prevents service env_file precedence
-from splitting credentials. Do not use bare Compose production commands that
-omit the explicit interpolation file. API, Worker, Beat and Flower force
-production, debug false, DB echo false and no dotenv discovery. Migration via
-API exec inherits that contract. Redis command/password arguments use YAML
-lists, not a shell-split command. This is static implementation, not runtime
-production authentication proof. Image identity, migration gating, network
-isolation/egress and TLS remain later Atomics.
+Production operations require PROD_PROJECT (agentforge-prod-<lowercase-id>),
+RELEASE_ID (explicit release identifier, never dev/latest), and PROD_ENV_FILE
+(default backend/.env.prod; private .env.prod.<id> variants supported). Every
+Make path validates the identity/file, requires Compose >=2.33.1 and uses explicit
+project selection plus the same absolute file for interpolation and backend
+service env_file. Shared mappings preserve identical infra/backend credentials.
+API, Worker, Beat, Flower and one-shot migrate enforce production and no dotenv
+discovery. migrate runs alembic upgrade head; API exec migration is no longer the
+deployment mechanism. All business roles require successful migrate completion.
+
+PYTHON_IMAGE/UV_IMAGE/BUN_IMAGE and POSTGRES_IMAGE/REDIS_IMAGE require explicit
+compatible refs; prefer verified immutable digests. docker-prod-build prepares
+infra and builds backend once/frontend; prod only selects/verifies local images,
+checks Settings in a disposable no-deps/no-pull migrate-image container before it
+stops scoped business roles, removes old stopped migrate and starts with no build
+or pull. docker-prod aliases the same gate. No stale gate reuse, sleep, automatic
+recovery restart, volume deletion or implicit old-volume adoption. See
+[deployment guide](docs/deploy.md) for full constraints and commands.
+
+Application references are agentforge/<project>-backend:<release> and
+agentforge/<project>-frontend:<release>; repository/tag separation prevents
+ambiguous project/release concatenation. Preflight uses the same selected file,
+release and five-role production contract, without migrations/media/connections.
+Failure prevents business stop/rm/up. It may create project networks; temporary
+container removal does not imply network cleanup. Volumes/networks are project
+scoped. Only API/Worker have the extra provider-egress network/default gateway;
+DB/Redis remain internal without published ports. API/Frontend/Flower host bindings
+are explicit API_BIND_HOST/API_HOST_PORT etc., default loopback. Browser public
+build args are separate from private runtime fields; COOKIE_SECURE remains true.
+Bridge topology is not an egress firewall. Actual deployment/provider/persistence
+verification is NOT RUN; health is A4, recovery A5, TLS/proxy A6, staging A7.
 
 ## Safe validation
 
