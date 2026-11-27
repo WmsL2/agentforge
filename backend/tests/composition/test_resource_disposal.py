@@ -295,3 +295,69 @@ async def test_api_cleanup_cancellation_propagates_after_other_cleanup_failure(m
     assert caught.value is cancel
     redis_close.assert_awaited_once()
     main.close_db.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "stage,dispose_fails",
+    [
+        ("execution", False),
+        ("cancel", False),
+        ("construction", False),
+        ("execution", True),
+        ("cancel", True),
+        ("successful_body", False),
+    ],
+)
+async def test_workflow_preserves_primary_across_mcp_exit(
+    monkeypatch, caplog, stage, dispose_fails
+):
+    from app.composition import workflow_worker
+
+    events = []
+    primary = asyncio.CancelledError() if stage == "cancel" else ValueError("synthetic primary")
+    mcp_failure = RuntimeError("synthetic-private-mcp-detail")
+    disposal_failure = RuntimeError("synthetic-private-disposal-detail")
+
+    @asynccontextmanager
+    async def tools(_):
+        events.append("mcp entry")
+        try:
+            yield MagicMock()
+        finally:
+            events.append("mcp exit")
+            raise mcp_failure
+
+    async def dispose():
+        events.append("dispose")
+        if dispose_fails:
+            raise disposal_failure
+
+    engine = MagicMock(dispose=AsyncMock(side_effect=dispose))
+    monkeypatch.setattr(workflow_worker, "create_async_engine", MagicMock(return_value=engine))
+    monkeypatch.setattr(workflow_worker, "async_sessionmaker", MagicMock())
+    monkeypatch.setattr(workflow_worker, "open_tool_platform", tools)
+    if stage == "construction":
+        monkeypatch.setattr(workflow_worker, "ToolExecutionService", MagicMock(side_effect=primary))
+
+    try:
+        async with workflow_worker.open_workflow_worker():
+            events.append("body")
+            if stage in {"execution", "cancel"}:
+                raise primary
+    except (ValueError, RuntimeError, asyncio.CancelledError) as error:
+        observed = error
+    else:
+        pytest.fail("Expected workflow or cleanup failure")
+
+    engine.dispose.assert_awaited_once()
+    expected_order = ["mcp entry", "mcp exit", "dispose"]
+    if stage != "construction":
+        expected_order.insert(1, "body")
+    assert events == expected_order
+    assert observed is (mcp_failure if stage == "successful_body" else primary)
+    assert caplog.messages.count("WORKFLOW_TOOL_PLATFORM_CLEANUP_FAILED") == int(
+        stage != "successful_body"
+    )
+    assert caplog.messages.count("COMPOSITION_ENGINE_DISPOSE_FAILED") == int(dispose_fails)
+    assert "synthetic-private-" not in caplog.text

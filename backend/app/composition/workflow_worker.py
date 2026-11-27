@@ -49,6 +49,7 @@ async def open_workflow_worker(
         poolclass=NullPool,
     )
     failed = False
+    tool_body_error: BaseException | None = None
     try:
         session_factory = async_sessionmaker(
             engine,
@@ -78,44 +79,54 @@ async def open_workflow_worker(
             db_statement_timeout_ms=worker_settings.KNOWLEDGE_RETRIEVAL_DB_TIMEOUT_MS,
         )
         async with open_tool_platform(worker_settings.MCP_STDIO_SERVERS) as registry:
-            tool_service = ToolExecutionService(
-                registry=registry,
-                validator=ToolSchemaValidator(),
-                observer=WorkflowToolExecutionObserver(observer),
-            )
-            adapter = LangGraphToolAdapter(tool_service)
-            runner = LangGraphAgentRunner(
-                tools=tuple(adapter.adapt(definition) for definition in registry.definitions())
-            )
-            node_executor = DispatchingNodeExecutor(
-                deterministic_executor=DeterministicNodeExecutor(),
-                agent_executor=AgentNodeExecutor(
-                    {"langgraph": runner},
-                    observer=observer,
-                    knowledge=WorkflowAgentKnowledgeComposition(
-                        retrieval_service,
-                        registry,
-                        lambda tools, limit: LangGraphAgentRunner(
-                            model_factory=LangGraphAgentRunner.create_isolated_model,
-                            tools=tools,
-                            recursion_limit=limit,
+            try:
+                tool_service = ToolExecutionService(
+                    registry=registry,
+                    validator=ToolSchemaValidator(),
+                    observer=WorkflowToolExecutionObserver(observer),
+                )
+                adapter = LangGraphToolAdapter(tool_service)
+                runner = LangGraphAgentRunner(
+                    tools=tuple(adapter.adapt(definition) for definition in registry.definitions())
+                )
+                node_executor = DispatchingNodeExecutor(
+                    deterministic_executor=DeterministicNodeExecutor(),
+                    agent_executor=AgentNodeExecutor(
+                        {"langgraph": runner},
+                        observer=observer,
+                        knowledge=WorkflowAgentKnowledgeComposition(
+                            retrieval_service,
+                            registry,
+                            lambda tools, limit: LangGraphAgentRunner(
+                                model_factory=LangGraphAgentRunner.create_isolated_model,
+                                tools=tools,
+                                recursion_limit=limit,
+                            ),
+                            tool_observer=WorkflowToolExecutionObserver(observer),
+                            timeout_seconds=worker_settings.KNOWLEDGE_AGENT_TIMEOUT_SECONDS,
+                            maximum_calls=worker_settings.KNOWLEDGE_AGENT_MAX_TOOL_CALLS,
                         ),
-                        tool_observer=WorkflowToolExecutionObserver(observer),
-                        timeout_seconds=worker_settings.KNOWLEDGE_AGENT_TIMEOUT_SECONDS,
-                        maximum_calls=worker_settings.KNOWLEDGE_AGENT_MAX_TOOL_CALLS,
                     ),
-                ),
-                approval_executor=ApprovalNodeExecutor(observer=observer),
-                knowledge_executor=KnowledgeNodeExecutor(retrieval_service),
-            )
-            workflow_engine = WorkflowEngine(node_executor, observer=observer)
-            yield BackgroundRunExecutor(
-                session_factory,
-                workflow_engine,
-                lease_duration=timedelta(seconds=worker_settings.WORKFLOW_BACKGROUND_LEASE_SECONDS),
-            )
-    except BaseException:
+                    approval_executor=ApprovalNodeExecutor(observer=observer),
+                    knowledge_executor=KnowledgeNodeExecutor(retrieval_service),
+                )
+                workflow_engine = WorkflowEngine(node_executor, observer=observer)
+                yield BackgroundRunExecutor(
+                    session_factory,
+                    workflow_engine,
+                    lease_duration=timedelta(
+                        seconds=worker_settings.WORKFLOW_BACKGROUND_LEASE_SECONDS
+                    ),
+                )
+            except BaseException as error:
+                # Capture construction and execution failures before MCP unwinds.
+                tool_body_error = error
+                raise
+    except BaseException as error:
         failed = True
+        if tool_body_error is not None and tool_body_error is not error:
+            logger.error("WORKFLOW_TOOL_PLATFORM_CLEANUP_FAILED")
+            raise tool_body_error from None
         raise
     finally:
         try:

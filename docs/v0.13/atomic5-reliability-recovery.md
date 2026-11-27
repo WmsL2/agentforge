@@ -266,3 +266,80 @@ or production process shutdown. Real PostgreSQL/Redis/Celery/Provider, Docker,
 frontend, paired restore and production recovery verification were NOT RUN.
 No protected services or media were used, no Git mutations were performed,
 and Atomic 6 was not started. Await ChatGPT Supplemental Fix Report Review.
+
+## Review Fix 1 — RF-01 workflow exception precedence (2026-11-27)
+
+Initial branch `review/v013-atomic5-reliability-recovery` at
+`c94f6519cdbf54523a3d974dd27fed5997b18484`. Parent and local main were
+`346bcfd971380c8af7692cf5f74b37b712874550`. Peeled v0.12.0 was
+`6e4cca6bc188d829bc09431080b08ad86e37f3fb`. The starting worktree and staging
+were clean. The supplied Final Source Review decision was CHANGES REQUIRED.
+The earlier primary and supplemental results above remain historical evidence.
+
+Reviewed the Workflow worker composition and existing engine-disposal guard,
+API lifespan's primary exception handling, Tool Platform and MCP stdio context
+entry/exit, and the two composition test files. The old worker guard only saw
+the error after MCP exit, which could replace a construction or execution error
+or cancellation. The pre-fix synthetic cases returned exit 1 with 5 failed,
+1 passed, 63 deselected and 54 existing Pydantic warnings. Each of the five
+failures returned the MCP RuntimeError instead of the original ValueError or
+CancelledError. Exit ordering and once-only disposal assertions had already
+passed in all six cases. The sole MCP exit failure case passed throughout.
+
+The worker now captures the original error inside the successfully entered
+Tool Platform scope, including component construction and execution across
+the yield. It re-raises inside the scope so MCP still receives the failure
+during exit. If MCP exit replaces it, the outer guard logs the fixed
+`WORKFLOW_TOOL_PLATFORM_CLEANUP_FAILED` event and re-raises the original
+exception object without displaying the cleanup exception chain. The existing
+disposal guard runs once after MCP exit and preserves the primary exception.
+Sole MCP entry/exit and engine disposal errors propagate. Engine settings,
+NullPool, session options, workflow composition and the MCP implementation
+are preserved. Neither cleanup diagnostic includes exception text or payloads.
+
+The six new regression cases cover execution, cancellation and construction
+after MCP entry with a failing MCP exit, execution and cancellation with both
+cleanup operations failing, and an otherwise successful body with a failing
+MCP exit. The tests assert exception object identity, MCP exit before exactly
+one engine disposal, and fixed diagnostics. Existing successful and independent
+failure paths were rerun. Cleanup remains cooperative and does not establish
+actual process shutdown.
+
+Exact commands from the root, each using its own launcher result name, follow.
+The launcher sets `AGENTFORGE_ENV_FILE=none` and injects synthetic Settings
+before backend imports or collection.
+
+```text
+python .cache/atomic4-offline/run.py pytest tests/composition/test_resource_disposal.py -k preserves_primary_across_mcp_exit -q --tb=short
+python .cache/atomic4-offline/run.py pytest tests/composition/test_resource_disposal.py tests/composition/test_workflow_worker.py -q --tb=short
+python .cache/atomic4-offline/run.py pytest tests/workflow/application/background tests/workflow/application/run/test_async_service.py tests/workflow/application/approval/test_service.py tests/workflow/execution/engine/test_recovery.py tests/workflow/persistence/run/repository/test_claim.py tests/knowledge/test_indexing_service.py tests/knowledge/test_index_recovery.py tests/knowledge/test_embedding_provider.py tests/knowledge/test_retrieval_service.py tests/knowledge/test_document_service.py tests/knowledge/test_document_storage.py tests/composition tests/worker tests/api/test_health.py tests/api/test_metrics.py tests/api/test_exceptions.py tests/core/test_operational_observability.py tests/core/test_deployment_contract.py -q --tb=short
+python .cache/atomic4-offline/run.py pytest tests/api tests/core tests/worker tests/workflow tests/knowledge tests/agent_runtime tests/composition tests/integrations tests/tool tests/schemas tests/workspace tests/test_core.py tests/test_version.py -q --tb=short
+python .cache/atomic4-offline/run.py ruff.exe check app tests cli
+python .cache/atomic4-offline/run.py ruff.exe format --check app tests cli
+python .cache/atomic4-offline/run.py ty.exe check
+git diff --check
+```
+
+| Check | Actual result |
+| --- | --- |
+| Composition lifecycle and Workflow worker files | 72 passed, 54 Pydantic warnings, exit 0 |
+| Earlier focused selection | 440 passed, 54 Pydantic warnings, exit 0 |
+| Earlier broad offline selection | 1,375 passed, 150 Pydantic warnings, exit 0 |
+| Ruff check | Exit 0 |
+| Ruff format check | Exit 0, 512 files conform |
+| ty check | Exit 0, two existing Workflow warnings |
+| Git diff check | Exit 0 |
+
+All three post-fix pytest selections had zero failures and skips. Only
+`backend/app/composition/workflow_worker.py`,
+`backend/tests/composition/test_resource_disposal.py` and
+`docs/v0.13/atomic5-reliability-recovery.md` changed. This section was appended
+with the previous report bytes preserved. The final branch, HEAD, parent,
+local main and peeled tag match the initial baseline. Staging remains empty.
+
+Real MCP service shutdown, real PostgreSQL/Redis/Celery/Providers, Docker,
+frontend, backup/restore and production recovery were NOT RUN. The broad
+offline selection still includes its existing synthetic MCP fixtures.
+No Git mutations, service operations or Atomic 6 work occurred.
+Final Source Review and Atomic 5 completion remain pending. Await ChatGPT
+Review Fix 1 Report Review.
